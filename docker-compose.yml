@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  puppeteer-service:
+    build: .
+    container_name: ra-scraper-service
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      # Puppeteer specific envs just in case, though Dockerfile sets them
+      - PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+      - PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
+    restart: unless-stopped
+    # Mount the app directory for easier development (optional, but useful)
+    # volumes:
+    #   - ./:/usr/src/app
+    #   - /usr/src/app/node_modules
