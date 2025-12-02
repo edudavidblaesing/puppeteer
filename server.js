@@ -32,7 +32,9 @@ async function initBrowser() {
             '--disable-accelerated-2d-canvas',
             '--no-first-run',
             '--no-zygote',
-            '--disable-gpu'
+            '--disable-gpu',
+            '--remote-debugging-port=9222',
+            '--remote-debugging-address=0.0.0.0'
         ]
     });
     page = await browser.newPage();
