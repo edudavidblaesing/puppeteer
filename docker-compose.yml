@@ -11,7 +11,6 @@ services:
       - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
       # Puppeteer specific envs just in case, though Dockerfile sets them
-      - PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
     restart: unless-stopped
     # Mount the app directory for easier development (optional, but useful)
     # volumes:

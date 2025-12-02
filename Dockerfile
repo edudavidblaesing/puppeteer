@@ -9,8 +9,9 @@ WORKDIR /usr/src/app
 COPY package*.json ./
 
 # Install dependencies
-# We skip chromium download because the base image already includes a compatible chrome
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+# We allow puppeteer to download the correct chromium version
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=false \
+    PUPPETEER_CACHE_DIR=/usr/src/app/.cache
 
 RUN npm install
 
