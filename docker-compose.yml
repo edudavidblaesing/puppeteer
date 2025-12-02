@@ -12,7 +12,6 @@ services:
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
       # Puppeteer specific envs just in case, though Dockerfile sets them
       - PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
-      - PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
     restart: unless-stopped
     # Mount the app directory for easier development (optional, but useful)
     # volumes:
