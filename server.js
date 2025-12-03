@@ -21,42 +21,13 @@ if (TELEGRAM_TOKEN) {
 let browser = null;
 let page = null;
 
-const { execSync } = require('child_process');
-const fs = require('fs');
-
-function getChromePath() {
-    const paths = [
-        '/usr/bin/google-chrome-stable',
-        '/usr/bin/google-chrome',
-        '/usr/bin/chromium',
-        '/usr/bin/chromium-browser',
-        '/opt/google/chrome/google-chrome'
-    ];
-
-    for (const p of paths) {
-        if (fs.existsSync(p)) {
-            return p;
-        }
-    }
-
-    // Fallback to which if fs check fails (e.g. if in PATH but not in standard locations)
-    try {
-        const path = execSync('which google-chrome-stable').toString().trim();
-        if (path) return path;
-    } catch (e) { }
-
-    return null;
-}
-
 async function initBrowser() {
     if (browser) return;
 
-    const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || getChromePath();
-    console.log(`Using Chrome executable at: ${executablePath}`);
+    console.log('Launching browser...');
 
     browser = await puppeteer.launch({
         headless: "new", // Set to false if you have a display/VNC
-        executablePath: executablePath,
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
