@@ -22,6 +22,9 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=false \
 # Install dependencies (runs as pptruser)
 RUN npm install
 
+# Explicitly install the browser to ensure it's there
+RUN npx puppeteer browsers install chrome
+
 # Copy app source
 COPY --chown=pptruser:pptruser . .
 
