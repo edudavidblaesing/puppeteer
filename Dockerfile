@@ -14,6 +14,9 @@ RUN apt-get update \
 # Create app directory
 WORKDIR /usr/src/app
 
+# Set Puppeteer cache directory to ensure it's consistent
+ENV PUPPETEER_CACHE_DIR=/usr/src/app/.cache/puppeteer
+
 # Copy package files
 COPY package*.json ./
 COPY .puppeteerrc.cjs ./
