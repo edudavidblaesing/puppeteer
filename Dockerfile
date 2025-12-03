@@ -23,7 +23,7 @@ RUN chown -R pptruser:pptruser /usr/src/app
 # Switch back to the non-root user provided by the base image
 USER pptruser
 
-EXPOSE 3000
+EXPOSE 3001
 EXPOSE 9222
 
 CMD [ "node", "server.js" ]

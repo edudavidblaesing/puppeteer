@@ -5,10 +5,10 @@ services:
     build: .
     container_name: ra-scraper-service-v2
     ports:
-      - "3006:3000"
-      - "9224:9222"
+      - "3007:3001"
+      - "9225:9222"
     environment:
-      - PORT=3000
+      - PORT=3001
       - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
       # Puppeteer specific envs just in case, though Dockerfile sets them
