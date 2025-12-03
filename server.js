@@ -185,6 +185,13 @@ app.post('/scrape-event', async (req, res) => {
     }
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
     console.log(`Puppeteer service running on port ${PORT}`);
+    try {
+        console.log('Launching browser...');
+        await initBrowser();
+        console.log('Browser launched and ready for debugging on port 9222');
+    } catch (err) {
+        console.error('Failed to launch browser on startup:', err);
+    }
 });
