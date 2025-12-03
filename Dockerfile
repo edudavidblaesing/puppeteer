@@ -16,14 +16,16 @@ COPY --chown=pptruser:pptruser package*.json ./
 
 # Env vars
 # We allow puppeteer to download the correct chromium version
+# CRITICAL: Unset the base image's executable path so Puppeteer uses our downloaded version
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=false \
-    PUPPETEER_CACHE_DIR=/home/pptruser/.cache/puppeteer
+    PUPPETEER_EXECUTABLE_PATH=""
 
 # Install dependencies (runs as pptruser)
 RUN npm install
 
-# Explicitly install the browser to ensure it's there
+# Explicitly install the browsers to ensure they are there
 RUN npx puppeteer browsers install chrome
+RUN npx puppeteer browsers install chrome-headless-shell
 
 # Copy app source
 COPY --chown=pptruser:pptruser . .
