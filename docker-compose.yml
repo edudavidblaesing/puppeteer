@@ -5,8 +5,8 @@ services:
     build: .
     container_name: ra-scraper-service
     ports:
-      - "3000:3000"
-      - "9222:9222"
+      - "3005:3000"
+      - "9223:9222"
     environment:
       - PORT=3000
       - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
