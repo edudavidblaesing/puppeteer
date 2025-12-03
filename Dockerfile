@@ -24,5 +24,6 @@ RUN chown -R pptruser:pptruser /usr/src/app
 USER pptruser
 
 EXPOSE 3000
+EXPOSE 9222
 
 CMD [ "node", "server.js" ]
