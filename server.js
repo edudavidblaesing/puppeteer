@@ -22,22 +22,29 @@ let browser = null;
 let page = null;
 
 const { execSync } = require('child_process');
+const fs = require('fs');
 
 function getChromePath() {
-    try {
-        // Try to find google-chrome-stable or google-chrome or chromium
-        const paths = ['google-chrome-stable', 'google-chrome', 'chromium'];
-        for (const p of paths) {
-            try {
-                const path = execSync(`which ${p}`).toString().trim();
-                if (path) return path;
-            } catch (e) {
-                // ignore
-            }
+    const paths = [
+        '/usr/bin/google-chrome-stable',
+        '/usr/bin/google-chrome',
+        '/usr/bin/chromium',
+        '/usr/bin/chromium-browser',
+        '/opt/google/chrome/google-chrome'
+    ];
+
+    for (const p of paths) {
+        if (fs.existsSync(p)) {
+            return p;
         }
-    } catch (e) {
-        console.error('Error finding chrome path:', e);
     }
+
+    // Fallback to which if fs check fails (e.g. if in PATH but not in standard locations)
+    try {
+        const path = execSync('which google-chrome-stable').toString().trim();
+        if (path) return path;
+    } catch (e) { }
+
     return null;
 }
 
