@@ -21,10 +21,35 @@ if (TELEGRAM_TOKEN) {
 let browser = null;
 let page = null;
 
+const { execSync } = require('child_process');
+
+function getChromePath() {
+    try {
+        // Try to find google-chrome-stable or google-chrome or chromium
+        const paths = ['google-chrome-stable', 'google-chrome', 'chromium'];
+        for (const p of paths) {
+            try {
+                const path = execSync(`which ${p}`).toString().trim();
+                if (path) return path;
+            } catch (e) {
+                // ignore
+            }
+        }
+    } catch (e) {
+        console.error('Error finding chrome path:', e);
+    }
+    return null;
+}
+
 async function initBrowser() {
     if (browser) return;
+
+    const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || getChromePath();
+    console.log(`Using Chrome executable at: ${executablePath}`);
+
     browser = await puppeteer.launch({
         headless: "new", // Set to false if you have a display/VNC
+        executablePath: executablePath,
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
