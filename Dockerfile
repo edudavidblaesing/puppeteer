@@ -1,34 +1,38 @@
-FROM ghcr.io/puppeteer/puppeteer:latest
+FROM node:20-slim
 
-USER root
+# Install latest chrome dev package and fonts to support major charsets
+# We install google-chrome-stable to get all necessary shared library dependencies
+RUN apt-get update \
+    && apt-get install -y wget gnupg \
+    && wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/googlechrome-linux-keyring.gpg \
+    && sh -c 'echo "deb [arch=amd64 signed-by=/usr/share/keyrings/googlechrome-linux-keyring.gpg] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list' \
+    && apt-get update \
+    && apt-get install -y google-chrome-stable fonts-ipafont-gothic fonts-wqy-zenhei fonts-thai-tlwg fonts-kacst fonts-freefont-ttf libxss1 \
+    --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
 
-# Setup app dir and cache dir permissions
+# Create app directory
 WORKDIR /usr/src/app
-RUN mkdir -p /home/pptruser/.cache/puppeteer && \
-    chown -R pptruser:pptruser /home/pptruser && \
-    chown -R pptruser:pptruser /usr/src/app
 
-# Switch to user
-USER pptruser
+# Copy package files
+COPY package*.json ./
+COPY .puppeteerrc.cjs ./
 
-# Copy package files with ownership
-COPY --chown=pptruser:pptruser package*.json ./
-
-# Env vars
-# We allow puppeteer to download the correct chromium version
-# CRITICAL: Unset the base image's executable path so Puppeteer uses our downloaded version
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=false \
-    PUPPETEER_EXECUTABLE_PATH=""
-
-# Install dependencies (runs as pptruser)
+# Install deps
 RUN npm install
 
-# Explicitly install the browsers to ensure they are there
+# Install puppeteer browsers (Chrome + Headless Shell)
+# This will use the cache dir defined in .puppeteerrc.cjs
 RUN npx puppeteer browsers install chrome
 RUN npx puppeteer browsers install chrome-headless-shell
 
-# Copy app source
-COPY --chown=pptruser:pptruser . .
+# Copy source
+COPY . .
+
+# Fix permissions for the 'node' user
+RUN chown -R node:node /usr/src/app
+
+USER node
 
 EXPOSE 3001
 EXPOSE 9222
