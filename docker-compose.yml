@@ -3,10 +3,10 @@ version: '3.8'
 services:
   puppeteer-service:
     build: .
-    container_name: ra-scraper-service
+    container_name: ra-scraper-service-v2
     ports:
-      - "3005:3000"
-      - "9223:9222"
+      - "3006:3000"
+      - "9224:9222"
     environment:
       - PORT=3000
       - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
