@@ -382,3 +382,55 @@ export async function fetchScrapeStats() {
   if (!response.ok) throw new Error('Failed to fetch scrape stats');
   return response.json();
 }
+
+// Scraped & Unified Venues
+export async function fetchScrapedVenues(params?: { source?: string; city?: string; search?: string; linked?: boolean; limit?: number; offset?: number }) {
+  const searchParams = new URLSearchParams();
+  if (params?.source) searchParams.set('source', params.source);
+  if (params?.city) searchParams.set('city', params.city);
+  if (params?.search) searchParams.set('search', params.search);
+  if (params?.linked !== undefined) searchParams.set('linked', params.linked.toString());
+  if (params?.limit) searchParams.set('limit', params.limit.toString());
+  if (params?.offset) searchParams.set('offset', params.offset.toString());
+
+  const response = await fetch(`${API_URL}/scraped/venues?${searchParams}`, { headers });
+  if (!response.ok) throw new Error('Failed to fetch scraped venues');
+  return response.json();
+}
+
+export async function fetchUnifiedVenues(params?: { city?: string; search?: string; limit?: number; offset?: number }) {
+  const searchParams = new URLSearchParams();
+  if (params?.city) searchParams.set('city', params.city);
+  if (params?.search) searchParams.set('search', params.search);
+  if (params?.limit) searchParams.set('limit', params.limit.toString());
+  if (params?.offset) searchParams.set('offset', params.offset.toString());
+
+  const response = await fetch(`${API_URL}/unified/venues?${searchParams}`, { headers });
+  if (!response.ok) throw new Error('Failed to fetch unified venues');
+  return response.json();
+}
+
+// Scraped & Unified Artists
+export async function fetchScrapedArtists(params?: { source?: string; search?: string; linked?: boolean; limit?: number; offset?: number }) {
+  const searchParams = new URLSearchParams();
+  if (params?.source) searchParams.set('source', params.source);
+  if (params?.search) searchParams.set('search', params.search);
+  if (params?.linked !== undefined) searchParams.set('linked', params.linked.toString());
+  if (params?.limit) searchParams.set('limit', params.limit.toString());
+  if (params?.offset) searchParams.set('offset', params.offset.toString());
+
+  const response = await fetch(`${API_URL}/scraped/artists?${searchParams}`, { headers });
+  if (!response.ok) throw new Error('Failed to fetch scraped artists');
+  return response.json();
+}
+
+export async function fetchUnifiedArtists(params?: { search?: string; limit?: number; offset?: number }) {
+  const searchParams = new URLSearchParams();
+  if (params?.search) searchParams.set('search', params.search);
+  if (params?.limit) searchParams.set('limit', params.limit.toString());
+  if (params?.offset) searchParams.set('offset', params.offset.toString());
+
+  const response = await fetch(`${API_URL}/unified/artists?${searchParams}`, { headers });
+  if (!response.ok) throw new Error('Failed to fetch unified artists');
+  return response.json();
+}

@@ -3743,6 +3743,236 @@ app.patch('/unified/events/:id', async (req, res) => {
     }
 });
 
+// Get scraped venues
+app.get('/scraped/venues', async (req, res) => {
+    try {
+        const { source, city, linked, search, limit = 100, offset = 0 } = req.query;
+        
+        let query = `
+            SELECT sv.*, 
+                EXISTS(SELECT 1 FROM venue_source_links vsl WHERE vsl.scraped_venue_id = sv.id) as is_linked,
+                (SELECT uv.name FROM venue_source_links vsl JOIN unified_venues uv ON uv.id = vsl.unified_venue_id WHERE vsl.scraped_venue_id = sv.id LIMIT 1) as linked_venue_name
+            FROM scraped_venues sv 
+            WHERE 1=1
+        `;
+        const params = [];
+        let paramIndex = 1;
+        
+        if (source) {
+            query += ` AND sv.source_code = $${paramIndex++}`;
+            params.push(source);
+        }
+        if (city) {
+            query += ` AND LOWER(sv.city) = LOWER($${paramIndex++})`;
+            params.push(city);
+        }
+        if (search) {
+            query += ` AND (sv.name ILIKE $${paramIndex++} OR sv.address ILIKE $${paramIndex - 1})`;
+            params.push(`%${search}%`);
+        }
+        if (linked === 'true') {
+            query += ` AND EXISTS(SELECT 1 FROM venue_source_links vsl WHERE vsl.scraped_venue_id = sv.id)`;
+        } else if (linked === 'false') {
+            query += ` AND NOT EXISTS(SELECT 1 FROM venue_source_links vsl WHERE vsl.scraped_venue_id = sv.id)`;
+        }
+        
+        const dataQuery = query + ` ORDER BY sv.name ASC LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
+        params.push(parseInt(limit), parseInt(offset));
+        
+        const result = await pool.query(dataQuery, params);
+        
+        // Count query
+        const countParams = params.slice(0, -2);
+        let countQuery = `SELECT COUNT(*) FROM scraped_venues sv WHERE 1=1`;
+        let countParamIndex = 1;
+        if (source) countQuery += ` AND sv.source_code = $${countParamIndex++}`;
+        if (city) countQuery += ` AND LOWER(sv.city) = LOWER($${countParamIndex++})`;
+        if (search) countQuery += ` AND (sv.name ILIKE $${countParamIndex++} OR sv.address ILIKE $${countParamIndex - 1})`;
+        if (linked === 'true') countQuery += ` AND EXISTS(SELECT 1 FROM venue_source_links vsl WHERE vsl.scraped_venue_id = sv.id)`;
+        else if (linked === 'false') countQuery += ` AND NOT EXISTS(SELECT 1 FROM venue_source_links vsl WHERE vsl.scraped_venue_id = sv.id)`;
+        
+        const countResult = await pool.query(countQuery, countParams);
+        
+        res.json({
+            data: result.rows,
+            total: parseInt(countResult.rows[0].count),
+            limit: parseInt(limit),
+            offset: parseInt(offset)
+        });
+    } catch (error) {
+        console.error('Scraped venues error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get scraped artists
+app.get('/scraped/artists', async (req, res) => {
+    try {
+        const { source, search, linked, limit = 100, offset = 0 } = req.query;
+        
+        let query = `
+            SELECT sa.*, 
+                EXISTS(SELECT 1 FROM artist_source_links asl WHERE asl.scraped_artist_id = sa.id) as is_linked,
+                (SELECT ua.name FROM artist_source_links asl JOIN unified_artists ua ON ua.id = asl.unified_artist_id WHERE asl.scraped_artist_id = sa.id LIMIT 1) as linked_artist_name
+            FROM scraped_artists sa 
+            WHERE 1=1
+        `;
+        const params = [];
+        let paramIndex = 1;
+        
+        if (source) {
+            query += ` AND sa.source_code = $${paramIndex++}`;
+            params.push(source);
+        }
+        if (search) {
+            query += ` AND sa.name ILIKE $${paramIndex++}`;
+            params.push(`%${search}%`);
+        }
+        if (linked === 'true') {
+            query += ` AND EXISTS(SELECT 1 FROM artist_source_links asl WHERE asl.scraped_artist_id = sa.id)`;
+        } else if (linked === 'false') {
+            query += ` AND NOT EXISTS(SELECT 1 FROM artist_source_links asl WHERE asl.scraped_artist_id = sa.id)`;
+        }
+        
+        const dataQuery = query + ` ORDER BY sa.name ASC LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
+        params.push(parseInt(limit), parseInt(offset));
+        
+        const result = await pool.query(dataQuery, params);
+        
+        // Count query
+        const countParams = params.slice(0, -2);
+        let countQuery = `SELECT COUNT(*) FROM scraped_artists sa WHERE 1=1`;
+        let countParamIndex = 1;
+        if (source) countQuery += ` AND sa.source_code = $${countParamIndex++}`;
+        if (search) countQuery += ` AND sa.name ILIKE $${countParamIndex++}`;
+        if (linked === 'true') countQuery += ` AND EXISTS(SELECT 1 FROM artist_source_links asl WHERE asl.scraped_artist_id = sa.id)`;
+        else if (linked === 'false') countQuery += ` AND NOT EXISTS(SELECT 1 FROM artist_source_links asl WHERE asl.scraped_artist_id = sa.id)`;
+        
+        const countResult = await pool.query(countQuery, countParams);
+        
+        res.json({
+            data: result.rows,
+            total: parseInt(countResult.rows[0].count),
+            limit: parseInt(limit),
+            offset: parseInt(offset)
+        });
+    } catch (error) {
+        console.error('Scraped artists error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get unified venues
+app.get('/unified/venues', async (req, res) => {
+    try {
+        const { city, search, limit = 100, offset = 0 } = req.query;
+        
+        let query = `
+            SELECT uv.*,
+                (SELECT json_agg(json_build_object(
+                    'source_code', sv.source_code,
+                    'source_venue_id', sv.source_venue_id,
+                    'name', sv.name,
+                    'content_url', sv.content_url
+                ))
+                FROM venue_source_links vsl
+                JOIN scraped_venues sv ON sv.id = vsl.scraped_venue_id
+                WHERE vsl.unified_venue_id = uv.id) as source_references,
+                (SELECT COUNT(*) FROM unified_events ue WHERE ue.unified_venue_id = uv.id) as event_count
+            FROM unified_venues uv
+            WHERE 1=1
+        `;
+        const params = [];
+        let paramIndex = 1;
+        
+        if (city) {
+            query += ` AND LOWER(uv.city) = LOWER($${paramIndex++})`;
+            params.push(city);
+        }
+        if (search) {
+            query += ` AND (uv.name ILIKE $${paramIndex++} OR uv.address ILIKE $${paramIndex - 1})`;
+            params.push(`%${search}%`);
+        }
+        
+        const dataQuery = query + ` ORDER BY uv.name ASC LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
+        params.push(parseInt(limit), parseInt(offset));
+        
+        const result = await pool.query(dataQuery, params);
+        
+        // Count
+        const countParams = params.slice(0, -2);
+        let countQuery = `SELECT COUNT(*) FROM unified_venues uv WHERE 1=1`;
+        let countParamIndex = 1;
+        if (city) countQuery += ` AND LOWER(uv.city) = LOWER($${countParamIndex++})`;
+        if (search) countQuery += ` AND (uv.name ILIKE $${countParamIndex++} OR uv.address ILIKE $${countParamIndex - 1})`;
+        
+        const countResult = await pool.query(countQuery, countParams);
+        
+        res.json({
+            data: result.rows,
+            total: parseInt(countResult.rows[0].count),
+            limit: parseInt(limit),
+            offset: parseInt(offset)
+        });
+    } catch (error) {
+        console.error('Unified venues error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get unified artists  
+app.get('/unified/artists', async (req, res) => {
+    try {
+        const { search, limit = 100, offset = 0 } = req.query;
+        
+        let query = `
+            SELECT ua.*,
+                (SELECT json_agg(json_build_object(
+                    'source_code', sa.source_code,
+                    'source_artist_id', sa.source_artist_id,
+                    'name', sa.name,
+                    'content_url', sa.content_url,
+                    'image_url', sa.image_url
+                ))
+                FROM artist_source_links asl
+                JOIN scraped_artists sa ON sa.id = asl.scraped_artist_id
+                WHERE asl.unified_artist_id = ua.id) as source_references,
+                (SELECT COUNT(DISTINCT uea.unified_event_id) FROM unified_event_artists uea WHERE uea.unified_artist_id = ua.id) as event_count
+            FROM unified_artists ua
+            WHERE 1=1
+        `;
+        const params = [];
+        let paramIndex = 1;
+        
+        if (search) {
+            query += ` AND ua.name ILIKE $${paramIndex++}`;
+            params.push(`%${search}%`);
+        }
+        
+        const dataQuery = query + ` ORDER BY ua.name ASC LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
+        params.push(parseInt(limit), parseInt(offset));
+        
+        const result = await pool.query(dataQuery, params);
+        
+        // Count
+        const countParams = params.slice(0, -2);
+        let countQuery = `SELECT COUNT(*) FROM unified_artists ua WHERE 1=1`;
+        if (search) countQuery += ` AND ua.name ILIKE $1`;
+        
+        const countResult = await pool.query(countQuery, countParams);
+        
+        res.json({
+            data: result.rows,
+            total: parseInt(countResult.rows[0].count),
+            limit: parseInt(limit),
+            offset: parseInt(offset)
+        });
+    } catch (error) {
+        console.error('Unified artists error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Scrape stats
 app.get('/scrape/stats', async (req, res) => {
     try {
