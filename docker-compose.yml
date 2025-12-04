@@ -51,13 +51,13 @@ services:
       context: ./admin
       args:
         - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-https://pptr.davidblaesing.com}
-        - API_KEY=${API_KEY:-your-secure-api-key-here}
+        - NEXT_PUBLIC_API_KEY=${API_KEY:-your-secure-api-key-here}
     container_name: events-admin
     ports:
       - "3008:3000"
     environment:
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-https://pptr.davidblaesing.com}
-      - API_KEY=${API_KEY:-your-secure-api-key-here}
+      - NEXT_PUBLIC_API_KEY=${API_KEY:-your-secure-api-key-here}
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.events-admin.rule=Host(`eventadmin.davidblaesing.com`)"

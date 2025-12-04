@@ -2,8 +2,8 @@
 const nextConfig = {
   output: 'standalone',
   env: {
-    API_URL: process.env.API_URL || 'https://pptr.davidblaesing.com',
-    API_KEY: process.env.API_KEY || 'your-secure-api-key-here',
+    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || 'https://pptr.davidblaesing.com',
+    NEXT_PUBLIC_API_KEY: process.env.NEXT_PUBLIC_API_KEY || 'your-secure-api-key-here',
   },
 };
 
