@@ -2768,7 +2768,7 @@ app.get('/db/dashboard', async (req, res) => {
 // MULTI-SOURCE SCRAPING SYSTEM
 // =====================================================
 
-const TICKETMASTER_API_KEY = process.env.TICKETMASTER_API_KEY || 'YX7oyk3K4mzYNxVTWjXsuX2fU7nJPPqOT';
+const TICKETMASTER_API_KEY = process.env.TICKETMASTER_API_KEY || 'key';
 
 // City to country code mapping for Ticketmaster
 const TICKETMASTER_CITY_MAP = {
@@ -3579,7 +3579,13 @@ app.get('/scraped/events', async (req, res) => {
         
         const result = await pool.query(query, params);
         
-        const countQuery = query.replace(/SELECT se\.\*, EXISTS.*FROM/, 'SELECT COUNT(*) FROM').replace(/ORDER BY.*$/, '');
+        // Build count query separately
+        let countQuery = 'SELECT COUNT(*) FROM scraped_events se WHERE 1=1';
+        if (source) countQuery += ` AND se.source_code = $1`;
+        if (city) countQuery += ` AND LOWER(se.venue_city) = LOWER($${source ? 2 : 1})`;
+        if (linked === 'true') countQuery += ` AND EXISTS(SELECT 1 FROM event_source_links esl WHERE esl.scraped_event_id = se.id)`;
+        else if (linked === 'false') countQuery += ` AND NOT EXISTS(SELECT 1 FROM event_source_links esl WHERE esl.scraped_event_id = se.id)`;
+        
         const countParams = params.slice(0, -2);
         const countResult = await pool.query(countQuery, countParams);
         
@@ -3590,6 +3596,7 @@ app.get('/scraped/events', async (req, res) => {
             offset: parseInt(offset)
         });
     } catch (error) {
+        console.error('Scraped events error:', error);
         res.status(500).json({ error: error.message });
     }
 });
