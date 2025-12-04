@@ -1074,7 +1074,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                       <div key={event.id} className="px-4 py-2 border-b hover:bg-gray-50 flex items-center gap-3">
                         <span className={clsx(
                           'px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0',
-                          event.source_code === 'ra' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
+                          event.source_code === 'ra' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'
                         )}>
                           {event.source_code?.toUpperCase()}
                         </span>
@@ -1530,7 +1530,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                             <span className={clsx(
                               'px-1.5 py-0.5 rounded font-medium uppercase',
                               source.source_code === 'manual' ? 'bg-green-100 text-green-700' :
-                              source.source_code === 'ra' ? 'bg-purple-100 text-purple-700' :
+                              source.source_code === 'ra' ? 'bg-red-100 text-red-700' :
                               source.source_code === 'ticketmaster' ? 'bg-blue-100 text-blue-700' :
                               'bg-gray-100 text-gray-700'
                             )}>
