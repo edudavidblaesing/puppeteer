@@ -58,10 +58,16 @@ import {
   fetchScrapeStats,
   fetchScrapedEvents,
   fetchUnifiedEvents,
+  fetchUnifiedEvent,
+  updateUnifiedEvent,
   fetchScrapedVenues,
   fetchUnifiedVenues,
+  fetchUnifiedVenue,
+  updateUnifiedVenue,
   fetchScrapedArtists,
   fetchUnifiedArtists,
+  fetchUnifiedArtist,
+  updateUnifiedArtist,
 } from '@/lib/api';
 
 // Dynamic import for map (client-side only)
@@ -137,6 +143,8 @@ export default function AdminDashboard() {
   const [editingItem, setEditingItem] = useState<any>(null);
   const [editForm, setEditForm] = useState<any>({});
   const [showEditPanel, setShowEditPanel] = useState(false);
+  const [sourceReferences, setSourceReferences] = useState<any[]>([]);
+  const [selectedSourceFields, setSelectedSourceFields] = useState<Record<string, string>>({});
 
   // Load events data
   const loadEvents = useCallback(async () => {
@@ -345,6 +353,8 @@ export default function AdminDashboard() {
   // Edit handlers
   const handleEdit = (item: any) => {
     setEditingItem(item);
+    setSourceReferences([]);
+    setSelectedSourceFields({});
     
     // Format date and time fields for events
     if (activeTab === 'events') {
@@ -362,6 +372,23 @@ export default function AdminDashboard() {
         formData.start_time = formData.start_time.substring(0, 5);
       }
       setEditForm(formData);
+      
+      // Fetch source references for unified events
+      if (dataSource === 'unified' && item.id) {
+        fetchUnifiedEvent(item.id).then(data => {
+          setSourceReferences(data.source_references || []);
+        }).catch(console.error);
+      }
+    } else if (activeTab === 'artists' && dataSource === 'unified' && item.id) {
+      setEditForm({ ...item });
+      fetchUnifiedArtist(item.id).then(data => {
+        setSourceReferences(data.source_references || []);
+      }).catch(console.error);
+    } else if (activeTab === 'venues' && dataSource === 'unified' && item.id) {
+      setEditForm({ ...item });
+      fetchUnifiedVenue(item.id).then(data => {
+        setSourceReferences(data.source_references || []);
+      }).catch(console.error);
     } else {
       setEditForm({ ...item });
     }
@@ -370,6 +397,8 @@ export default function AdminDashboard() {
 
   const handleCreate = () => {
     setEditingItem(null);
+    setSourceReferences([]);
+    setSelectedSourceFields({});
     if (activeTab === 'events') {
       setEditForm({ title: '', date: '', venue_name: '', venue_city: '', artists: '', is_published: false });
     } else if (activeTab === 'artists') {
@@ -387,12 +416,22 @@ export default function AdminDashboard() {
     try {
       if (activeTab === 'events') {
         if (editingItem) {
-          await updateEvent(editingItem.id, editForm);
-          setEvents(events.map(e => e.id === editingItem.id ? { ...e, ...editForm } : e));
+          // Use unified API if in unified mode
+          if (dataSource === 'unified') {
+            await updateUnifiedEvent(editingItem.id, editForm);
+            loadEvents();
+          } else {
+            await updateEvent(editingItem.id, editForm);
+            setEvents(events.map(e => e.id === editingItem.id ? { ...e, ...editForm } : e));
+          }
         }
       } else if (activeTab === 'artists') {
         if (editingItem) {
-          await updateArtist(editingItem.id, editForm);
+          if (dataSource === 'unified') {
+            await updateUnifiedArtist(editingItem.id, editForm);
+          } else {
+            await updateArtist(editingItem.id, editForm);
+          }
         } else {
           await createArtist(editForm);
         }
@@ -404,7 +443,11 @@ export default function AdminDashboard() {
           longitude: editForm.longitude ? parseFloat(editForm.longitude) : undefined,
         };
         if (editingItem) {
-          await updateVenue(editingItem.id, payload);
+          if (dataSource === 'unified') {
+            await updateUnifiedVenue(editingItem.id, payload);
+          } else {
+            await updateVenue(editingItem.id, payload);
+          }
         } else {
           await createVenue(payload);
         }
@@ -1380,6 +1423,62 @@ export default function AdminDashboard() {
               </div>
 
               <div className="p-4 space-y-4">
+                {/* Source References Section */}
+                {dataSource === 'unified' && sourceReferences.length > 0 && editingItem && (
+                  <div className="bg-gray-50 rounded-lg p-3 border">
+                    <h3 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+                      <Layers className="w-4 h-4" />
+                      Data Sources ({sourceReferences.length})
+                    </h3>
+                    <div className="space-y-2 max-h-32 overflow-auto">
+                      {sourceReferences.map((source: any, idx: number) => (
+                        <div key={idx} className="flex items-center justify-between text-xs bg-white rounded px-2 py-1.5 border">
+                          <span className="flex items-center gap-2">
+                            <span className={clsx(
+                              'px-1.5 py-0.5 rounded font-medium uppercase',
+                              source.source_code === 'original' ? 'bg-green-100 text-green-700' :
+                              source.source_code === 'ra' ? 'bg-purple-100 text-purple-700' :
+                              source.source_code === 'ticketmaster' ? 'bg-blue-100 text-blue-700' :
+                              'bg-gray-100 text-gray-700'
+                            )}>
+                              {source.source_code}
+                            </span>
+                            <span className="text-gray-600 truncate max-w-[150px]">{source.title || source.name}</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              // Apply source data to form
+                              const sourceData = { ...source };
+                              delete sourceData.id;
+                              delete sourceData.source_code;
+                              delete sourceData.source_event_id;
+                              delete sourceData.source_venue_id;
+                              delete sourceData.source_artist_id;
+                              delete sourceData.is_primary;
+                              delete sourceData.confidence;
+                              // Only copy non-empty values
+                              const updates: Record<string, any> = {};
+                              Object.entries(sourceData).forEach(([key, value]) => {
+                                if (value !== null && value !== undefined && value !== '') {
+                                  updates[key] = value;
+                                }
+                              });
+                              setEditForm({ ...editForm, ...updates });
+                            }}
+                            className="text-indigo-600 hover:text-indigo-800 font-medium"
+                          >
+                            Use
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-xs text-gray-500 mt-2">
+                      Click "Use" to apply source data. Changes will be saved as "original" source.
+                    </p>
+                  </div>
+                )}
+
                 {/* Event form */}
                 {activeTab === 'events' && (
                   <>

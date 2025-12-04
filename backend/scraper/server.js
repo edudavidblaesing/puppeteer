@@ -2112,71 +2112,142 @@ app.get('/db/artists/:id', async (req, res) => {
     }
 });
 
-// Create artist
+// Create artist (goes through unified flow)
 app.post('/db/artists', async (req, res) => {
     try {
-        const { id, name, country, content_url, image_url, source_code = 'ra' } = req.body;
+        const { name, country, content_url, image_url, genres } = req.body;
         
         if (!name) {
             return res.status(400).json({ error: 'Name is required' });
         }
         
-        const artistId = id || `manual-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        // Save as 'original' source entry
+        const { scrapedId, sourceId } = await saveOriginalEntry('artist', {
+            name, country, content_url, image_url, genres
+        });
         
+        // Link to unified (finds match or creates new)
+        const unifiedId = await linkToUnified('artist', scrapedId, {
+            source_code: 'original', name, country, content_url, image_url, genres
+        });
+        
+        // Return the unified artist
         const result = await pool.query(`
-            INSERT INTO artists (id, name, country, content_url, image_url, source_code)
-            VALUES ($1, $2, $3, $4, $5, $6)
-            ON CONFLICT (id) DO UPDATE SET
-                name = EXCLUDED.name,
-                country = EXCLUDED.country,
-                content_url = EXCLUDED.content_url,
-                image_url = EXCLUDED.image_url,
-                updated_at = CURRENT_TIMESTAMP
-            RETURNING *
-        `, [artistId, name, country || null, content_url || null, image_url || null, source_code]);
+            SELECT ua.*, 
+                (SELECT json_agg(json_build_object(
+                    'source_code', sa.source_code,
+                    'name', sa.name,
+                    'image_url', sa.image_url,
+                    'content_url', sa.content_url
+                ))
+                FROM artist_source_links asl
+                JOIN scraped_artists sa ON sa.id = asl.scraped_artist_id
+                WHERE asl.unified_artist_id = ua.id) as source_references
+            FROM unified_artists ua WHERE ua.id = $1
+        `, [unifiedId]);
         
-        res.json({ success: true, artist: result.rows[0] });
+        res.json({ success: true, artist: result.rows[0], unified_id: unifiedId });
     } catch (error) {
         console.error('Error creating artist:', error);
         res.status(500).json({ error: error.message });
     }
 });
 
-// Update artist
+// Update artist (updates original source, refreshes unified)
 app.patch('/db/artists/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const updates = req.body;
         
-        const allowedFields = ['name', 'country', 'content_url', 'image_url'];
-        const setClauses = [];
-        const values = [];
-        let paramIndex = 1;
+        // Check if this is a unified ID (UUID) or old artist ID
+        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
         
-        for (const [key, value] of Object.entries(updates)) {
-            if (allowedFields.includes(key)) {
-                setClauses.push(`${key} = $${paramIndex++}`);
-                values.push(value);
+        if (isUUID) {
+            // Get the original source entry for this unified artist
+            const originalLink = await pool.query(`
+                SELECT sa.id as scraped_id, sa.source_artist_id 
+                FROM artist_source_links asl
+                JOIN scraped_artists sa ON sa.id = asl.scraped_artist_id
+                WHERE asl.unified_artist_id = $1 AND sa.source_code = 'original'
+            `, [id]);
+            
+            let scrapedId;
+            if (originalLink.rows.length > 0) {
+                // Update existing original entry
+                scrapedId = originalLink.rows[0].scraped_id;
+                await pool.query(`
+                    UPDATE scraped_artists SET
+                        name = COALESCE($1, name),
+                        country = COALESCE($2, country),
+                        image_url = COALESCE($3, image_url),
+                        content_url = COALESCE($4, content_url),
+                        genres = COALESCE($5, genres),
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = $6
+                `, [updates.name, updates.country, updates.image_url, updates.content_url, 
+                    updates.genres ? JSON.stringify(updates.genres) : null, scrapedId]);
+            } else {
+                // Create new original entry and link it
+                const saved = await saveOriginalEntry('artist', updates);
+                scrapedId = saved.scrapedId;
+                await pool.query(`
+                    INSERT INTO artist_source_links (unified_artist_id, scraped_artist_id, match_confidence, is_primary, priority)
+                    VALUES ($1, $2, 1.0, true, 1)
+                `, [id, scrapedId]);
             }
+            
+            // Refresh unified with merged data
+            await refreshUnifiedArtist(id);
+            
+            // Return updated unified artist
+            const result = await pool.query(`
+                SELECT ua.*, 
+                    (SELECT json_agg(json_build_object(
+                        'source_code', sa.source_code,
+                        'name', sa.name,
+                        'image_url', sa.image_url,
+                        'content_url', sa.content_url
+                    ))
+                    FROM artist_source_links asl
+                    JOIN scraped_artists sa ON sa.id = asl.scraped_artist_id
+                    WHERE asl.unified_artist_id = ua.id) as source_references
+                FROM unified_artists ua WHERE ua.id = $1
+            `, [id]);
+            
+            res.json({ success: true, artist: result.rows[0] });
+        } else {
+            // Legacy: update old artists table directly
+            const allowedFields = ['name', 'country', 'content_url', 'image_url'];
+            const setClauses = [];
+            const values = [];
+            let paramIndex = 1;
+            
+            for (const [key, value] of Object.entries(updates)) {
+                if (allowedFields.includes(key)) {
+                    setClauses.push(`${key} = $${paramIndex++}`);
+                    values.push(value);
+                }
+            }
+            
+            if (setClauses.length === 0) {
+                return res.status(400).json({ error: 'No valid fields to update' });
+            }
+            
+            setClauses.push('updated_at = CURRENT_TIMESTAMP');
+            values.push(id);
+            
+            const result = await pool.query(`
+                UPDATE artists SET ${setClauses.join(', ')} WHERE id = $${paramIndex} RETURNING *
+            `, values);
+            
+            if (result.rows.length === 0) {
+                return res.status(404).json({ error: 'Artist not found' });
+            }
+            
+            res.json({ success: true, artist: result.rows[0] });
         }
-        
-        if (setClauses.length === 0) {
-            return res.status(400).json({ error: 'No valid fields to update' });
-        }
-        
-        setClauses.push('updated_at = CURRENT_TIMESTAMP');
-        values.push(id);
-        
-        const result = await pool.query(`
-            UPDATE artists SET ${setClauses.join(', ')} WHERE id = $${paramIndex} RETURNING *
-        `, values);
-        
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Artist not found' });
-        }
-        
-        res.json({ success: true, artist: result.rows[0] });
     } catch (error) {
+        console.error('Error updating artist:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -2501,75 +2572,145 @@ app.get('/db/venues/:id', async (req, res) => {
     }
 });
 
-// Create venue
+// Create venue (goes through unified flow)
 app.post('/db/venues', async (req, res) => {
     try {
-        const { id, name, address, city, country, blurb, content_url, latitude, longitude, source_code = 'ra' } = req.body;
+        const { name, address, city, country, blurb, content_url, latitude, longitude, capacity } = req.body;
         
         if (!name) {
             return res.status(400).json({ error: 'Name is required' });
         }
         
-        const venueId = id || `manual-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        // Save as 'original' source entry
+        const { scrapedId, sourceId } = await saveOriginalEntry('venue', {
+            name, address, city, country, content_url, latitude, longitude, capacity
+        });
         
+        // Link to unified (finds match or creates new)
+        const unifiedId = await linkToUnified('venue', scrapedId, {
+            source_code: 'original', name, address, city, country, content_url, latitude, longitude, capacity
+        });
+        
+        // Return the unified venue
         const result = await pool.query(`
-            INSERT INTO venues (id, name, address, city, country, blurb, content_url, latitude, longitude, source_code)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-            ON CONFLICT (id) DO UPDATE SET
-                name = EXCLUDED.name,
-                address = EXCLUDED.address,
-                city = EXCLUDED.city,
-                country = EXCLUDED.country,
-                blurb = EXCLUDED.blurb,
-                content_url = EXCLUDED.content_url,
-                latitude = EXCLUDED.latitude,
-                longitude = EXCLUDED.longitude,
-                updated_at = CURRENT_TIMESTAMP
-            RETURNING *
-        `, [venueId, name, address || null, city || null, country || null, blurb || null, content_url || null, latitude || null, longitude || null, source_code]);
+            SELECT uv.*, 
+                (SELECT json_agg(json_build_object(
+                    'source_code', sv.source_code,
+                    'name', sv.name,
+                    'address', sv.address,
+                    'content_url', sv.content_url
+                ))
+                FROM venue_source_links vsl
+                JOIN scraped_venues sv ON sv.id = vsl.scraped_venue_id
+                WHERE vsl.unified_venue_id = uv.id) as source_references
+            FROM unified_venues uv WHERE uv.id = $1
+        `, [unifiedId]);
         
-        res.json({ success: true, venue: result.rows[0] });
+        res.json({ success: true, venue: result.rows[0], unified_id: unifiedId });
     } catch (error) {
         console.error('Error creating venue:', error);
         res.status(500).json({ error: error.message });
     }
 });
 
-// Update venue
+// Update venue (updates original source, refreshes unified)
 app.patch('/db/venues/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const updates = req.body;
         
-        const allowedFields = ['name', 'address', 'city', 'country', 'blurb', 'content_url', 'latitude', 'longitude'];
-        const setClauses = [];
-        const values = [];
-        let paramIndex = 1;
+        // Check if this is a unified ID (UUID)
+        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
         
-        for (const [key, value] of Object.entries(updates)) {
-            if (allowedFields.includes(key)) {
-                setClauses.push(`${key} = $${paramIndex++}`);
-                values.push(value);
+        if (isUUID) {
+            // Get the original source entry for this unified venue
+            const originalLink = await pool.query(`
+                SELECT sv.id as scraped_id, sv.source_venue_id 
+                FROM venue_source_links vsl
+                JOIN scraped_venues sv ON sv.id = vsl.scraped_venue_id
+                WHERE vsl.unified_venue_id = $1 AND sv.source_code = 'original'
+            `, [id]);
+            
+            let scrapedId;
+            if (originalLink.rows.length > 0) {
+                // Update existing original entry
+                scrapedId = originalLink.rows[0].scraped_id;
+                await pool.query(`
+                    UPDATE scraped_venues SET
+                        name = COALESCE($1, name),
+                        address = COALESCE($2, address),
+                        city = COALESCE($3, city),
+                        country = COALESCE($4, country),
+                        latitude = COALESCE($5, latitude),
+                        longitude = COALESCE($6, longitude),
+                        content_url = COALESCE($7, content_url),
+                        capacity = COALESCE($8, capacity),
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = $9
+                `, [updates.name, updates.address, updates.city, updates.country,
+                    updates.latitude, updates.longitude, updates.content_url, updates.capacity, scrapedId]);
+            } else {
+                // Create new original entry and link it
+                const saved = await saveOriginalEntry('venue', updates);
+                scrapedId = saved.scrapedId;
+                await pool.query(`
+                    INSERT INTO venue_source_links (unified_venue_id, scraped_venue_id, match_confidence, is_primary, priority)
+                    VALUES ($1, $2, 1.0, true, 1)
+                `, [id, scrapedId]);
             }
+            
+            // Refresh unified with merged data
+            await refreshUnifiedVenue(id);
+            
+            // Return updated unified venue
+            const result = await pool.query(`
+                SELECT uv.*, 
+                    (SELECT json_agg(json_build_object(
+                        'source_code', sv.source_code,
+                        'name', sv.name,
+                        'address', sv.address,
+                        'content_url', sv.content_url
+                    ))
+                    FROM venue_source_links vsl
+                    JOIN scraped_venues sv ON sv.id = vsl.scraped_venue_id
+                    WHERE vsl.unified_venue_id = uv.id) as source_references
+                FROM unified_venues uv WHERE uv.id = $1
+            `, [id]);
+            
+            res.json({ success: true, venue: result.rows[0] });
+        } else {
+            // Legacy: update old venues table directly
+            const allowedFields = ['name', 'address', 'city', 'country', 'blurb', 'content_url', 'latitude', 'longitude'];
+            const setClauses = [];
+            const values = [];
+            let paramIndex = 1;
+            
+            for (const [key, value] of Object.entries(updates)) {
+                if (allowedFields.includes(key)) {
+                    setClauses.push(`${key} = $${paramIndex++}`);
+                    values.push(value);
+                }
+            }
+            
+            if (setClauses.length === 0) {
+                return res.status(400).json({ error: 'No valid fields to update' });
+            }
+            
+            setClauses.push('updated_at = CURRENT_TIMESTAMP');
+            values.push(id);
+            
+            const result = await pool.query(`
+                UPDATE venues SET ${setClauses.join(', ')} WHERE id = $${paramIndex} RETURNING *
+            `, values);
+            
+            if (result.rows.length === 0) {
+                return res.status(404).json({ error: 'Venue not found' });
+            }
+            
+            res.json({ success: true, venue: result.rows[0] });
         }
-        
-        if (setClauses.length === 0) {
-            return res.status(400).json({ error: 'No valid fields to update' });
-        }
-        
-        setClauses.push('updated_at = CURRENT_TIMESTAMP');
-        values.push(id);
-        
-        const result = await pool.query(`
-            UPDATE venues SET ${setClauses.join(', ')} WHERE id = $${paramIndex} RETURNING *
-        `, values);
-        
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Venue not found' });
-        }
-        
-        res.json({ success: true, venue: result.rows[0] });
     } catch (error) {
+        console.error('Error updating venue:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -3260,6 +3401,426 @@ function stringSimilarity(a, b) {
     return intersection.length / union.size;
 }
 
+// =====================================================
+// SOURCE PRIORITY & DATA MERGING
+// =====================================================
+
+// Source priority (lower = higher priority)
+const SOURCE_PRIORITY = {
+    'original': 1,
+    'ra': 5,
+    'ticketmaster': 6,
+    'eventbrite': 7,
+    'dice': 8
+};
+
+function getSourcePriority(sourceCode) {
+    return SOURCE_PRIORITY[sourceCode] || 10;
+}
+
+// Merge data from multiple sources, respecting priority
+function mergeSourceData(sources, fieldMapping = null) {
+    // Sort sources by priority (original first)
+    const sorted = [...sources].sort((a, b) => 
+        getSourcePriority(a.source_code) - getSourcePriority(b.source_code)
+    );
+    
+    const merged = {};
+    const fieldSources = {};
+    
+    // Define fields to merge (default event fields)
+    const fields = fieldMapping || [
+        'title', 'date', 'start_time', 'end_time', 'description', 
+        'flyer_front', 'content_url', 'ticket_url', 'price_info',
+        'venue_name', 'venue_address', 'venue_city', 'venue_country',
+        'venue_latitude', 'venue_longitude'
+    ];
+    
+    for (const field of fields) {
+        for (const source of sorted) {
+            const value = source[field];
+            if (value !== null && value !== undefined && value !== '') {
+                if (merged[field] === undefined) {
+                    merged[field] = value;
+                    fieldSources[field] = source.source_code;
+                    break;
+                }
+            }
+        }
+    }
+    
+    return { merged, fieldSources };
+}
+
+// Create or update scraped entry for 'original' source
+async function saveOriginalEntry(type, data, unifiedId = null) {
+    const sourceCode = 'original';
+    const sourceId = data.id || `manual-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    let scrapedId;
+    
+    if (type === 'event') {
+        const result = await pool.query(`
+            INSERT INTO scraped_events (
+                source_code, source_event_id, title, date, start_time, end_time,
+                content_url, flyer_front, description, venue_name, venue_address,
+                venue_city, venue_country, venue_latitude, venue_longitude, price_info
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+            ON CONFLICT (source_code, source_event_id) DO UPDATE SET
+                title = EXCLUDED.title,
+                date = EXCLUDED.date,
+                start_time = EXCLUDED.start_time,
+                end_time = EXCLUDED.end_time,
+                content_url = EXCLUDED.content_url,
+                flyer_front = EXCLUDED.flyer_front,
+                description = EXCLUDED.description,
+                venue_name = EXCLUDED.venue_name,
+                venue_address = EXCLUDED.venue_address,
+                venue_city = EXCLUDED.venue_city,
+                venue_country = EXCLUDED.venue_country,
+                venue_latitude = EXCLUDED.venue_latitude,
+                venue_longitude = EXCLUDED.venue_longitude,
+                price_info = EXCLUDED.price_info,
+                updated_at = CURRENT_TIMESTAMP
+            RETURNING id
+        `, [
+            sourceCode, sourceId, data.title, data.date, data.start_time, data.end_time,
+            data.content_url, data.flyer_front, data.description, data.venue_name,
+            data.venue_address, data.venue_city, data.venue_country,
+            data.venue_latitude || data.latitude, data.venue_longitude || data.longitude,
+            data.price_info ? JSON.stringify(data.price_info) : null
+        ]);
+        scrapedId = result.rows[0].id;
+    } else if (type === 'venue') {
+        const result = await pool.query(`
+            INSERT INTO scraped_venues (
+                source_code, source_venue_id, name, address, city, country,
+                latitude, longitude, content_url, capacity
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            ON CONFLICT (source_code, source_venue_id) DO UPDATE SET
+                name = EXCLUDED.name,
+                address = EXCLUDED.address,
+                city = EXCLUDED.city,
+                country = EXCLUDED.country,
+                latitude = EXCLUDED.latitude,
+                longitude = EXCLUDED.longitude,
+                content_url = EXCLUDED.content_url,
+                capacity = EXCLUDED.capacity,
+                updated_at = CURRENT_TIMESTAMP
+            RETURNING id
+        `, [
+            sourceCode, sourceId, data.name, data.address, data.city, data.country,
+            data.latitude, data.longitude, data.content_url, data.capacity
+        ]);
+        scrapedId = result.rows[0].id;
+    } else if (type === 'artist') {
+        const result = await pool.query(`
+            INSERT INTO scraped_artists (
+                source_code, source_artist_id, name, genres, image_url, content_url
+            ) VALUES ($1, $2, $3, $4, $5, $6)
+            ON CONFLICT (source_code, source_artist_id) DO UPDATE SET
+                name = EXCLUDED.name,
+                genres = EXCLUDED.genres,
+                image_url = EXCLUDED.image_url,
+                content_url = EXCLUDED.content_url,
+                updated_at = CURRENT_TIMESTAMP
+            RETURNING id
+        `, [
+            sourceCode, sourceId, data.name, 
+            data.genres ? JSON.stringify(data.genres) : null,
+            data.image_url, data.content_url
+        ]);
+        scrapedId = result.rows[0].id;
+    }
+    
+    return { scrapedId, sourceId };
+}
+
+// Find or create unified entry and link to scraped entry
+async function linkToUnified(type, scrapedId, scrapedData, existingUnifiedId = null) {
+    const priority = getSourcePriority(scrapedData.source_code || 'original');
+    let unifiedId = existingUnifiedId;
+    
+    if (type === 'event') {
+        if (!unifiedId) {
+            // Try to find matching unified event
+            const match = await findMatchingUnifiedEvent(scrapedData);
+            unifiedId = match?.id;
+        }
+        
+        if (!unifiedId) {
+            // Create new unified event
+            const result = await pool.query(`
+                INSERT INTO unified_events (
+                    title, date, start_time, end_time, description, flyer_front,
+                    ticket_url, price_info, venue_name, venue_address, venue_city, venue_country
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                RETURNING id
+            `, [
+                scrapedData.title, scrapedData.date, scrapedData.start_time, scrapedData.end_time,
+                scrapedData.description, scrapedData.flyer_front, scrapedData.content_url,
+                scrapedData.price_info, scrapedData.venue_name, scrapedData.venue_address,
+                scrapedData.venue_city, scrapedData.venue_country
+            ]);
+            unifiedId = result.rows[0].id;
+        }
+        
+        // Create link
+        await pool.query(`
+            INSERT INTO event_source_links (unified_event_id, scraped_event_id, match_confidence, is_primary, priority)
+            VALUES ($1, $2, 1.0, $3, $4)
+            ON CONFLICT (unified_event_id, scraped_event_id) DO UPDATE SET
+                priority = EXCLUDED.priority,
+                is_primary = EXCLUDED.is_primary
+        `, [unifiedId, scrapedId, priority === 1, priority]);
+        
+        // Refresh merged data on unified event
+        await refreshUnifiedEvent(unifiedId);
+        
+    } else if (type === 'venue') {
+        if (!unifiedId) {
+            const match = await findMatchingUnifiedVenue(scrapedData);
+            unifiedId = match?.id;
+        }
+        
+        if (!unifiedId) {
+            const result = await pool.query(`
+                INSERT INTO unified_venues (name, address, city, country, latitude, longitude, website, capacity)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                RETURNING id
+            `, [
+                scrapedData.name, scrapedData.address, scrapedData.city, scrapedData.country,
+                scrapedData.latitude, scrapedData.longitude, scrapedData.content_url, scrapedData.capacity
+            ]);
+            unifiedId = result.rows[0].id;
+        }
+        
+        await pool.query(`
+            INSERT INTO venue_source_links (unified_venue_id, scraped_venue_id, match_confidence, is_primary, priority)
+            VALUES ($1, $2, 1.0, $3, $4)
+            ON CONFLICT (unified_venue_id, scraped_venue_id) DO UPDATE SET
+                priority = EXCLUDED.priority,
+                is_primary = EXCLUDED.is_primary
+        `, [unifiedId, scrapedId, priority === 1, priority]);
+        
+        await refreshUnifiedVenue(unifiedId);
+        
+    } else if (type === 'artist') {
+        if (!unifiedId) {
+            const match = await findMatchingUnifiedArtist(scrapedData);
+            unifiedId = match?.id;
+        }
+        
+        if (!unifiedId) {
+            const result = await pool.query(`
+                INSERT INTO unified_artists (name, genres, country, image_url, website)
+                VALUES ($1, $2, $3, $4, $5)
+                RETURNING id
+            `, [
+                scrapedData.name, scrapedData.genres, scrapedData.country,
+                scrapedData.image_url, scrapedData.content_url
+            ]);
+            unifiedId = result.rows[0].id;
+        }
+        
+        await pool.query(`
+            INSERT INTO artist_source_links (unified_artist_id, scraped_artist_id, match_confidence, is_primary, priority)
+            VALUES ($1, $2, 1.0, $3, $4)
+            ON CONFLICT (unified_artist_id, scraped_artist_id) DO UPDATE SET
+                priority = EXCLUDED.priority,
+                is_primary = EXCLUDED.is_primary
+        `, [unifiedId, scrapedId, priority === 1, priority]);
+        
+        await refreshUnifiedArtist(unifiedId);
+    }
+    
+    return unifiedId;
+}
+
+// Find matching unified event
+async function findMatchingUnifiedEvent(scrapedData, minConfidence = 0.7) {
+    if (!scrapedData.date) return null;
+    
+    const potentialMatches = await pool.query(`
+        SELECT ue.* FROM unified_events ue
+        WHERE ue.date = $1
+        AND (LOWER(ue.venue_city) = LOWER($2) OR LOWER(ue.venue_name) ILIKE $3)
+    `, [scrapedData.date, scrapedData.venue_city || '', `%${scrapedData.venue_name || ''}%`]);
+    
+    let bestMatch = null;
+    let bestScore = 0;
+    
+    for (const potential of potentialMatches.rows) {
+        const titleScore = stringSimilarity(scrapedData.title, potential.title);
+        const venueScore = stringSimilarity(scrapedData.venue_name, potential.venue_name);
+        const score = (titleScore * 0.6) + (venueScore * 0.4);
+        
+        if (score > bestScore && score >= minConfidence) {
+            bestScore = score;
+            bestMatch = potential;
+        }
+    }
+    
+    return bestMatch;
+}
+
+// Find matching unified venue
+async function findMatchingUnifiedVenue(scrapedData, minConfidence = 0.7) {
+    if (!scrapedData.name) return null;
+    
+    const potentialMatches = await pool.query(`
+        SELECT uv.* FROM unified_venues uv
+        WHERE LOWER(uv.city) = LOWER($1) OR similarity(LOWER(uv.name), LOWER($2)) > 0.3
+    `, [scrapedData.city || '', scrapedData.name]);
+    
+    let bestMatch = null;
+    let bestScore = 0;
+    
+    for (const potential of potentialMatches.rows) {
+        const nameScore = stringSimilarity(scrapedData.name, potential.name);
+        const cityScore = scrapedData.city && potential.city ? 
+            (scrapedData.city.toLowerCase() === potential.city.toLowerCase() ? 1 : 0) : 0;
+        const score = (nameScore * 0.8) + (cityScore * 0.2);
+        
+        if (score > bestScore && score >= minConfidence) {
+            bestScore = score;
+            bestMatch = potential;
+        }
+    }
+    
+    return bestMatch;
+}
+
+// Find matching unified artist
+async function findMatchingUnifiedArtist(scrapedData, minConfidence = 0.85) {
+    if (!scrapedData.name) return null;
+    
+    const potentialMatches = await pool.query(`
+        SELECT ua.* FROM unified_artists ua
+        WHERE similarity(LOWER(ua.name), LOWER($1)) > 0.5
+    `, [scrapedData.name]);
+    
+    let bestMatch = null;
+    let bestScore = 0;
+    
+    for (const potential of potentialMatches.rows) {
+        const score = stringSimilarity(scrapedData.name, potential.name);
+        if (score > bestScore && score >= minConfidence) {
+            bestScore = score;
+            bestMatch = potential;
+        }
+    }
+    
+    return bestMatch;
+}
+
+// Refresh unified event with merged data from all sources
+async function refreshUnifiedEvent(unifiedId) {
+    // Get all linked sources ordered by priority
+    const sourcesResult = await pool.query(`
+        SELECT se.*, esl.priority, esl.is_primary
+        FROM event_source_links esl
+        JOIN scraped_events se ON se.id = esl.scraped_event_id
+        WHERE esl.unified_event_id = $1
+        ORDER BY esl.priority ASC, esl.is_primary DESC
+    `, [unifiedId]);
+    
+    if (sourcesResult.rows.length === 0) return;
+    
+    const { merged, fieldSources } = mergeSourceData(sourcesResult.rows);
+    
+    await pool.query(`
+        UPDATE unified_events SET
+            title = COALESCE($1, title),
+            date = COALESCE($2, date),
+            start_time = COALESCE($3, start_time),
+            end_time = COALESCE($4, end_time),
+            description = COALESCE($5, description),
+            flyer_front = COALESCE($6, flyer_front),
+            ticket_url = COALESCE($7, ticket_url),
+            venue_name = COALESCE($8, venue_name),
+            venue_address = COALESCE($9, venue_address),
+            venue_city = COALESCE($10, venue_city),
+            venue_country = COALESCE($11, venue_country),
+            field_sources = $12,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $13
+    `, [
+        merged.title, merged.date, merged.start_time, merged.end_time,
+        merged.description, merged.flyer_front, merged.content_url || merged.ticket_url,
+        merged.venue_name, merged.venue_address, merged.venue_city, merged.venue_country,
+        JSON.stringify(fieldSources), unifiedId
+    ]);
+}
+
+// Refresh unified venue with merged data
+async function refreshUnifiedVenue(unifiedId) {
+    const sourcesResult = await pool.query(`
+        SELECT sv.*, vsl.priority
+        FROM venue_source_links vsl
+        JOIN scraped_venues sv ON sv.id = vsl.scraped_venue_id
+        WHERE vsl.unified_venue_id = $1
+        ORDER BY vsl.priority ASC
+    `, [unifiedId]);
+    
+    if (sourcesResult.rows.length === 0) return;
+    
+    const { merged, fieldSources } = mergeSourceData(sourcesResult.rows, [
+        'name', 'address', 'city', 'country', 'latitude', 'longitude', 'content_url', 'capacity'
+    ]);
+    
+    await pool.query(`
+        UPDATE unified_venues SET
+            name = COALESCE($1, name),
+            address = COALESCE($2, address),
+            city = COALESCE($3, city),
+            country = COALESCE($4, country),
+            latitude = COALESCE($5, latitude),
+            longitude = COALESCE($6, longitude),
+            website = COALESCE($7, website),
+            capacity = COALESCE($8, capacity),
+            field_sources = $9,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $10
+    `, [
+        merged.name, merged.address, merged.city, merged.country,
+        merged.latitude, merged.longitude, merged.content_url, merged.capacity,
+        JSON.stringify(fieldSources), unifiedId
+    ]);
+}
+
+// Refresh unified artist with merged data
+async function refreshUnifiedArtist(unifiedId) {
+    const sourcesResult = await pool.query(`
+        SELECT sa.*, asl.priority
+        FROM artist_source_links asl
+        JOIN scraped_artists sa ON sa.id = asl.scraped_artist_id
+        WHERE asl.unified_artist_id = $1
+        ORDER BY asl.priority ASC
+    `, [unifiedId]);
+    
+    if (sourcesResult.rows.length === 0) return;
+    
+    const { merged, fieldSources } = mergeSourceData(sourcesResult.rows, [
+        'name', 'genres', 'country', 'image_url', 'content_url'
+    ]);
+    
+    await pool.query(`
+        UPDATE unified_artists SET
+            name = COALESCE($1, name),
+            genres = COALESCE($2, genres),
+            country = COALESCE($3, country),
+            image_url = COALESCE($4, image_url),
+            website = COALESCE($5, website),
+            field_sources = $6,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $7
+    `, [
+        merged.name, merged.genres, merged.country, merged.image_url, 
+        merged.content_url, JSON.stringify(fieldSources), unifiedId
+    ]);
+}
+
 // Match scraped events to unified events or create new ones
 async function matchAndLinkEvents(options = {}) {
     const { dryRun = false, minConfidence = 0.7 } = options;
@@ -3314,13 +3875,14 @@ async function matchAndLinkEvents(options = {}) {
         }
         
         if (bestMatch) {
-            // Link to existing unified event
+            // Link to existing unified event with priority
+            const priority = getSourcePriority(scraped.source_code);
             if (!dryRun) {
                 await pool.query(`
-                    INSERT INTO event_source_links (unified_event_id, scraped_event_id, match_confidence)
-                    VALUES ($1, $2, $3)
+                    INSERT INTO event_source_links (unified_event_id, scraped_event_id, match_confidence, priority)
+                    VALUES ($1, $2, $3, $4)
                     ON CONFLICT DO NOTHING
-                `, [bestMatch.id, scraped.id, bestScore]);
+                `, [bestMatch.id, scraped.id, bestScore, priority]);
             }
             matched++;
             results.push({
@@ -3329,9 +3891,15 @@ async function matchAndLinkEvents(options = {}) {
                 unified: { id: bestMatch.id, title: bestMatch.title },
                 confidence: bestScore
             });
+            
+            // Refresh the unified event with merged data
+            if (!dryRun) {
+                await refreshUnifiedEvent(bestMatch.id);
+            }
         } else {
             // Create new unified event
             if (!dryRun) {
+                const priority = getSourcePriority(scraped.source_code);
                 const newEvent = await pool.query(`
                     INSERT INTO unified_events (
                         title, date, start_time, end_time, description, flyer_front,
@@ -3353,11 +3921,11 @@ async function matchAndLinkEvents(options = {}) {
                     scraped.venue_country
                 ]);
                 
-                // Link to the new unified event
+                // Link to the new unified event with priority
                 await pool.query(`
-                    INSERT INTO event_source_links (unified_event_id, scraped_event_id, match_confidence, is_primary)
-                    VALUES ($1, $2, 1.0, true)
-                `, [newEvent.rows[0].id, scraped.id]);
+                    INSERT INTO event_source_links (unified_event_id, scraped_event_id, match_confidence, is_primary, priority)
+                    VALUES ($1, $2, 1.0, true, $3)
+                `, [newEvent.rows[0].id, scraped.id, priority]);
             }
             created++;
             results.push({
@@ -3694,51 +4262,120 @@ app.get('/unified/events/:id', async (req, res) => {
     }
 });
 
-// Update unified event (user edits)
+// Update unified event (user edits go to 'original' source)
 app.patch('/unified/events/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const updates = req.body;
         
-        // Build dynamic update query
-        const allowedFields = ['title', 'date', 'start_time', 'end_time', 'description', 
-            'flyer_front', 'ticket_url', 'price_info', 'unified_venue_id', 'venue_name',
-            'venue_address', 'venue_city', 'venue_country', 'is_published', 'is_featured'];
-        
-        const setClauses = [];
-        const values = [];
-        let paramIndex = 1;
-        
-        for (const [key, value] of Object.entries(updates)) {
-            if (allowedFields.includes(key)) {
-                setClauses.push(`${key} = $${paramIndex++}`);
-                values.push(key === 'price_info' ? JSON.stringify(value) : value);
-            }
-        }
-        
-        if (setClauses.length === 0) {
-            return res.status(400).json({ error: 'No valid fields to update' });
-        }
-        
-        // Handle publish timestamp
-        if (updates.is_published === true) {
-            setClauses.push(`published_at = COALESCE(published_at, CURRENT_TIMESTAMP)`);
-        }
-        
-        values.push(id);
-        
-        const result = await pool.query(`
-            UPDATE unified_events SET ${setClauses.join(', ')}, updated_at = CURRENT_TIMESTAMP
-            WHERE id = $${paramIndex}
-            RETURNING *
-        `, values);
-        
-        if (result.rows.length === 0) {
+        // Check if unified event exists
+        const existing = await pool.query('SELECT * FROM unified_events WHERE id = $1', [id]);
+        if (existing.rows.length === 0) {
             return res.status(404).json({ error: 'Event not found' });
         }
         
+        const dataFields = ['title', 'date', 'start_time', 'end_time', 'description', 
+            'flyer_front', 'ticket_url', 'price_info', 'venue_name',
+            'venue_address', 'venue_city', 'venue_country'];
+        const metaFields = ['is_published', 'is_featured', 'unified_venue_id'];
+        
+        // Separate data updates from meta updates
+        const dataUpdates = {};
+        const metaUpdates = {};
+        for (const [key, value] of Object.entries(updates)) {
+            if (dataFields.includes(key)) dataUpdates[key] = value;
+            if (metaFields.includes(key)) metaUpdates[key] = value;
+        }
+        
+        // If there are data updates, create/update 'original' source entry
+        if (Object.keys(dataUpdates).length > 0) {
+            // Check if original source already exists
+            const existingOriginal = await pool.query(`
+                SELECT se.id FROM event_source_links esl
+                JOIN scraped_events se ON se.id = esl.scraped_event_id
+                WHERE esl.unified_event_id = $1 AND se.source_code = 'original'
+            `, [id]);
+            
+            if (existingOriginal.rows.length > 0) {
+                // Update existing original source entry
+                const originalId = existingOriginal.rows[0].id;
+                const updateClauses = [];
+                const updateValues = [];
+                let idx = 1;
+                for (const [key, value] of Object.entries(dataUpdates)) {
+                    updateClauses.push(`${key} = $${idx++}`);
+                    updateValues.push(key === 'price_info' ? JSON.stringify(value) : value);
+                }
+                updateValues.push(originalId);
+                await pool.query(`
+                    UPDATE scraped_events SET ${updateClauses.join(', ')}, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = $${idx}
+                `, updateValues);
+            } else {
+                // Create new 'original' source entry with current unified data + updates
+                const unified = existing.rows[0];
+                const mergedData = { ...unified, ...dataUpdates };
+                const originalId = `original_${id}_${Date.now()}`;
+                
+                await pool.query(`
+                    INSERT INTO scraped_events (
+                        id, source_code, source_event_id, title, date, start_time, end_time,
+                        description, flyer_front, content_url, venue_name, venue_address, 
+                        venue_city, venue_country
+                    ) VALUES ($1, 'original', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                `, [
+                    originalId, id, mergedData.title, mergedData.date, mergedData.start_time,
+                    mergedData.end_time, mergedData.description, mergedData.flyer_front,
+                    mergedData.ticket_url, mergedData.venue_name, mergedData.venue_address,
+                    mergedData.venue_city, mergedData.venue_country
+                ]);
+                
+                // Link to unified event with highest priority
+                await pool.query(`
+                    INSERT INTO event_source_links (scraped_event_id, unified_event_id, match_confidence, priority, is_primary)
+                    VALUES ($1, $2, 1.0, 1, true)
+                `, [originalId, id]);
+            }
+            
+            // Refresh unified data from all sources
+            await refreshUnifiedEvent(id);
+        }
+        
+        // Apply meta updates directly to unified event
+        if (Object.keys(metaUpdates).length > 0) {
+            const metaClauses = [];
+            const metaValues = [];
+            let idx = 1;
+            for (const [key, value] of Object.entries(metaUpdates)) {
+                metaClauses.push(`${key} = $${idx++}`);
+                metaValues.push(value);
+            }
+            if (metaUpdates.is_published === true) {
+                metaClauses.push(`published_at = COALESCE(published_at, CURRENT_TIMESTAMP)`);
+            }
+            metaValues.push(id);
+            await pool.query(`
+                UPDATE unified_events SET ${metaClauses.join(', ')}, updated_at = CURRENT_TIMESTAMP
+                WHERE id = $${idx}
+            `, metaValues);
+        }
+        
+        // Return updated event with sources
+        const result = await pool.query(`
+            SELECT ue.*,
+                (SELECT json_agg(json_build_object(
+                    'id', se.id, 'source_code', se.source_code, 'title', se.title,
+                    'date', se.date, 'venue_name', se.venue_name, 'is_primary', esl.is_primary
+                ))
+                FROM event_source_links esl
+                JOIN scraped_events se ON se.id = esl.scraped_event_id
+                WHERE esl.unified_event_id = ue.id) as source_references
+            FROM unified_events ue WHERE ue.id = $1
+        `, [id]);
+        
         res.json(result.rows[0]);
     } catch (error) {
+        console.error('Error updating unified event:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -3920,6 +4557,123 @@ app.get('/unified/venues', async (req, res) => {
     }
 });
 
+// Get unified venue by ID with source references
+app.get('/unified/venues/:id', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT uv.*,
+                (SELECT json_agg(json_build_object(
+                    'id', sv.id,
+                    'source_code', sv.source_code,
+                    'source_venue_id', sv.source_venue_id,
+                    'name', sv.name,
+                    'address', sv.address,
+                    'city', sv.city,
+                    'country', sv.country,
+                    'latitude', sv.latitude,
+                    'longitude', sv.longitude,
+                    'content_url', sv.content_url,
+                    'capacity', sv.capacity
+                ))
+                FROM venue_source_links vsl
+                JOIN scraped_venues sv ON sv.id = vsl.scraped_venue_id
+                WHERE vsl.unified_venue_id = uv.id) as source_references,
+                (SELECT COUNT(*) FROM unified_events ue WHERE ue.unified_venue_id = uv.id) as event_count
+            FROM unified_venues uv
+            WHERE uv.id = $1
+        `, [req.params.id]);
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Venue not found' });
+        }
+        
+        res.json(result.rows[0]);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Update unified venue (user edits go to 'original' source)
+app.patch('/unified/venues/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const updates = req.body;
+        
+        const existing = await pool.query('SELECT * FROM unified_venues WHERE id = $1', [id]);
+        if (existing.rows.length === 0) {
+            return res.status(404).json({ error: 'Venue not found' });
+        }
+        
+        const dataFields = ['name', 'address', 'city', 'country', 'latitude', 'longitude', 'website', 'capacity'];
+        const dataUpdates = {};
+        for (const [key, value] of Object.entries(updates)) {
+            if (dataFields.includes(key)) dataUpdates[key] = value;
+        }
+        
+        if (Object.keys(dataUpdates).length > 0) {
+            // Check if original source already exists
+            const existingOriginal = await pool.query(`
+                SELECT sv.id FROM venue_source_links vsl
+                JOIN scraped_venues sv ON sv.id = vsl.scraped_venue_id
+                WHERE vsl.unified_venue_id = $1 AND sv.source_code = 'original'
+            `, [id]);
+            
+            if (existingOriginal.rows.length > 0) {
+                const originalId = existingOriginal.rows[0].id;
+                const updateClauses = [];
+                const updateValues = [];
+                let idx = 1;
+                for (const [key, value] of Object.entries(dataUpdates)) {
+                    updateClauses.push(`${key} = $${idx++}`);
+                    updateValues.push(value);
+                }
+                updateValues.push(originalId);
+                await pool.query(`
+                    UPDATE scraped_venues SET ${updateClauses.join(', ')}, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = $${idx}
+                `, updateValues);
+            } else {
+                const unified = existing.rows[0];
+                const mergedData = { ...unified, ...dataUpdates };
+                const originalId = `original_venue_${id}_${Date.now()}`;
+                
+                await pool.query(`
+                    INSERT INTO scraped_venues (
+                        id, source_code, source_venue_id, name, address, city, country, latitude, longitude, content_url, capacity
+                    ) VALUES ($1, 'original', $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                `, [
+                    originalId, id, mergedData.name, mergedData.address, mergedData.city,
+                    mergedData.country, mergedData.latitude, mergedData.longitude,
+                    mergedData.website, mergedData.capacity
+                ]);
+                
+                await pool.query(`
+                    INSERT INTO venue_source_links (scraped_venue_id, unified_venue_id, match_confidence, priority)
+                    VALUES ($1, $2, 1.0, 1)
+                `, [originalId, id]);
+            }
+            
+            await refreshUnifiedVenue(id);
+        }
+        
+        const result = await pool.query(`
+            SELECT uv.*,
+                (SELECT json_agg(json_build_object(
+                    'id', sv.id, 'source_code', sv.source_code, 'name', sv.name, 'city', sv.city
+                ))
+                FROM venue_source_links vsl
+                JOIN scraped_venues sv ON sv.id = vsl.scraped_venue_id
+                WHERE vsl.unified_venue_id = uv.id) as source_references
+            FROM unified_venues uv WHERE uv.id = $1
+        `, [id]);
+        
+        res.json(result.rows[0]);
+    } catch (error) {
+        console.error('Error updating unified venue:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Get unified artists  
 app.get('/unified/artists', async (req, res) => {
     try {
@@ -3969,6 +4723,118 @@ app.get('/unified/artists', async (req, res) => {
         });
     } catch (error) {
         console.error('Unified artists error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get unified artist by ID with source references
+app.get('/unified/artists/:id', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT ua.*,
+                (SELECT json_agg(json_build_object(
+                    'id', sa.id,
+                    'source_code', sa.source_code,
+                    'source_artist_id', sa.source_artist_id,
+                    'name', sa.name,
+                    'genres', sa.genres,
+                    'country', sa.country,
+                    'image_url', sa.image_url,
+                    'content_url', sa.content_url
+                ))
+                FROM artist_source_links asl
+                JOIN scraped_artists sa ON sa.id = asl.scraped_artist_id
+                WHERE asl.unified_artist_id = ua.id) as source_references,
+                (SELECT COUNT(DISTINCT uea.unified_event_id) FROM unified_event_artists uea WHERE uea.unified_artist_id = ua.id) as event_count
+            FROM unified_artists ua
+            WHERE ua.id = $1
+        `, [req.params.id]);
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Artist not found' });
+        }
+        
+        res.json(result.rows[0]);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Update unified artist (user edits go to 'original' source)
+app.patch('/unified/artists/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const updates = req.body;
+        
+        const existing = await pool.query('SELECT * FROM unified_artists WHERE id = $1', [id]);
+        if (existing.rows.length === 0) {
+            return res.status(404).json({ error: 'Artist not found' });
+        }
+        
+        const dataFields = ['name', 'genres', 'country', 'image_url', 'website'];
+        const dataUpdates = {};
+        for (const [key, value] of Object.entries(updates)) {
+            if (dataFields.includes(key)) dataUpdates[key] = value;
+        }
+        
+        if (Object.keys(dataUpdates).length > 0) {
+            const existingOriginal = await pool.query(`
+                SELECT sa.id FROM artist_source_links asl
+                JOIN scraped_artists sa ON sa.id = asl.scraped_artist_id
+                WHERE asl.unified_artist_id = $1 AND sa.source_code = 'original'
+            `, [id]);
+            
+            if (existingOriginal.rows.length > 0) {
+                const originalId = existingOriginal.rows[0].id;
+                const updateClauses = [];
+                const updateValues = [];
+                let idx = 1;
+                for (const [key, value] of Object.entries(dataUpdates)) {
+                    updateClauses.push(`${key} = $${idx++}`);
+                    updateValues.push(value);
+                }
+                updateValues.push(originalId);
+                await pool.query(`
+                    UPDATE scraped_artists SET ${updateClauses.join(', ')}, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = $${idx}
+                `, updateValues);
+            } else {
+                const unified = existing.rows[0];
+                const mergedData = { ...unified, ...dataUpdates };
+                const originalId = `original_artist_${id}_${Date.now()}`;
+                
+                await pool.query(`
+                    INSERT INTO scraped_artists (
+                        id, source_code, source_artist_id, name, genres, country, image_url, content_url
+                    ) VALUES ($1, 'original', $2, $3, $4, $5, $6, $7)
+                `, [
+                    originalId, id, mergedData.name, mergedData.genres, mergedData.country,
+                    mergedData.image_url, mergedData.website
+                ]);
+                
+                await pool.query(`
+                    INSERT INTO artist_source_links (scraped_artist_id, unified_artist_id, match_confidence, priority)
+                    VALUES ($1, $2, 1.0, 1)
+                `, [originalId, id]);
+            }
+            
+            await refreshUnifiedArtist(id);
+        }
+        
+        const result = await pool.query(`
+            SELECT ua.*,
+                (SELECT json_agg(json_build_object(
+                    'id', sa.id, 'source_code', sa.source_code, 'name', sa.name, 'country', sa.country
+                ))
+                FROM artist_source_links asl
+                JOIN scraped_artists sa ON sa.id = asl.scraped_artist_id
+                WHERE asl.unified_artist_id = ua.id) as source_references
+            FROM unified_artists ua WHERE ua.id = $1
+        `, [id]);
+        
+        res.json(result.rows[0]);
+    } catch (error) {
+        console.error('Error updating unified artist:', error);
         res.status(500).json({ error: error.message });
     }
 });

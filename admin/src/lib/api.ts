@@ -434,3 +434,41 @@ export async function fetchUnifiedArtists(params?: { search?: string; limit?: nu
   if (!response.ok) throw new Error('Failed to fetch unified artists');
   return response.json();
 }
+
+export async function fetchUnifiedArtist(id: string) {
+  const response = await fetch(`${API_URL}/unified/artists/${id}`, { headers });
+  if (!response.ok) throw new Error('Failed to fetch unified artist');
+  return response.json();
+}
+
+export async function updateUnifiedArtist(id: string, data: Record<string, any>) {
+  const response = await fetch(`${API_URL}/unified/artists/${id}`, {
+    method: 'PATCH',
+    headers,
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to update unified artist');
+  }
+  return response.json();
+}
+
+export async function fetchUnifiedVenue(id: string) {
+  const response = await fetch(`${API_URL}/unified/venues/${id}`, { headers });
+  if (!response.ok) throw new Error('Failed to fetch unified venue');
+  return response.json();
+}
+
+export async function updateUnifiedVenue(id: string, data: Record<string, any>) {
+  const response = await fetch(`${API_URL}/unified/venues/${id}`, {
+    method: 'PATCH',
+    headers,
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to update unified venue');
+  }
+  return response.json();
+}
