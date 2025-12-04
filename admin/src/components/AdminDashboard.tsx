@@ -69,7 +69,6 @@ import {
 import { MiniBarChart, MiniAreaChart, StatCard, RecentActivity } from '@/components/ScrapeCharts';
 
 export type ActiveTab = 'events' | 'artists' | 'venues' | 'cities' | 'scrape';
-type DataSource = 'main' | 'scraped';
 
 export interface AdminDashboardProps {
   initialTab?: ActiveTab;
@@ -100,7 +99,6 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
   const [activeTab, setActiveTabState] = useState<ActiveTab>(initialTab || getTabFromPathname(pathname));
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [dataSource, setDataSource] = useState<DataSource>('main');
   
   // Handle tab changes with URL navigation
   const setActiveTab = useCallback((tab: ActiveTab) => {
@@ -303,7 +301,13 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
       else if (activeTab === 'artists') await loadArtists();
       else if (activeTab === 'venues') await loadVenues();
       else if (activeTab === 'cities') await loadCities();
-      else if (activeTab === 'scrape') await loadScrapeData();
+      else if (activeTab === 'scrape') {
+        // Load both scrape data AND events for pending list
+        await Promise.all([
+          loadScrapeData(),
+          loadEvents()
+        ]);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -347,7 +351,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
     setSelectedIds(new Set());
     setShowEditPanel(false);
     setEditingItem(null);
-  }, [activeTab, cityFilter, searchQuery, statusFilter, dataSource]);
+  }, [activeTab, cityFilter, searchQuery, statusFilter]);
 
   // Filter events locally
   const filteredEvents = useMemo(() => {
@@ -368,23 +372,14 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
     return sortEventsSmart(filtered);
   }, [events, searchQuery, statusFilter]);
 
-  // Get current total based on tab and data source
+  // Get current total based on tab
   const currentTotal = useMemo(() => {
-    if (activeTab === 'events') {
-      if (dataSource === 'scraped') return scrapedEventsTotal;
-      return total;
-    }
-    if (activeTab === 'artists') {
-      if (dataSource === 'scraped') return scrapedArtistsTotal;
-      return artistsTotal;
-    }
-    if (activeTab === 'venues') {
-      if (dataSource === 'scraped') return scrapedVenuesTotal;
-      return venuesTotal;
-    }
+    if (activeTab === 'events') return total;
+    if (activeTab === 'artists') return artistsTotal;
+    if (activeTab === 'venues') return venuesTotal;
     if (activeTab === 'cities') return citiesTotal;
     return 0;
-  }, [activeTab, dataSource, total, scrapedEventsTotal, artistsTotal, venuesTotal, citiesTotal, scrapedArtistsTotal, scrapedVenuesTotal]);
+  }, [activeTab, total, artistsTotal, venuesTotal, citiesTotal]);
 
   const totalPages = Math.ceil(currentTotal / pageSize);
 
@@ -426,18 +421,18 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
       }
       setEditForm(formData);
       
-      // Fetch source references for main events (from linked scraped sources)
-      if (dataSource === 'main' && item.id) {
+      // Fetch source references for events (from linked scraped sources)
+      if (item.id) {
         fetchEvent(item.id).then(data => {
           setSourceReferences(data.source_references || []);
         }).catch(console.error);
       }
-    } else if (activeTab === 'artists' && dataSource === 'main' && item.id) {
+    } else if (activeTab === 'artists' && item.id) {
       setEditForm({ ...item });
       fetchArtist(item.id).then(data => {
         setSourceReferences(data.source_references || []);
       }).catch(console.error);
-    } else if (activeTab === 'venues' && dataSource === 'main' && item.id) {
+    } else if (activeTab === 'venues' && item.id) {
       setEditForm({ ...item });
       fetchVenue(item.id).then(data => {
         setSourceReferences(data.source_references || []);
@@ -721,8 +716,6 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
   // Render list items based on active tab
   const renderListItem = (item: any) => {
     if (activeTab === 'events') {
-      const isMain = dataSource === 'main';
-      const isScraped = dataSource === 'scraped';
       return (
         <div
           key={item.id}
@@ -732,14 +725,12 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
             editingItem?.id === item.id && 'bg-indigo-50 border-l-2 border-l-indigo-500'
           )}
         >
-          {isMain && (
-            <input
-              type="checkbox"
-              checked={selectedIds.has(item.id)}
-              onChange={(e) => { e.stopPropagation(); handleSelect(item.id); }}
-              className="rounded text-indigo-600"
-            />
-          )}
+          <input
+            type="checkbox"
+            checked={selectedIds.has(item.id)}
+            onChange={(e) => { e.stopPropagation(); handleSelect(item.id); }}
+            className="rounded text-indigo-600"
+          />
           <div className="w-10 h-10 rounded bg-gray-200 flex items-center justify-center flex-shrink-0 overflow-hidden">
             {item.flyer_front ? (
               <img src={item.flyer_front} alt="" className="w-full h-full object-cover" />
@@ -750,15 +741,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <p className="font-medium text-sm truncate">{item.title}</p>
-              {isScraped && item.source_code && (
-                <span className={clsx(
-                  'text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 font-medium',
-                  item.source_code === 'ra' ? 'bg-blue-100 text-blue-700' : 'bg-cyan-100 text-cyan-700'
-                )}>
-                  {item.source_code.toUpperCase()}
-                </span>
-              )}
-              {isMain && item.source_references?.length > 0 && (
+              {item.source_references?.length > 0 && (
                 <span className="text-[10px] bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded flex-shrink-0">
                   {item.source_references.map((s: any) => s.source_code?.toUpperCase()).join(' + ')}
                 </span>
@@ -778,29 +761,25 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                 );
               })()}
             </div>
-            {isMain && (
-              <button
-                onClick={(e) => { e.stopPropagation(); handleCycleStatus(item); }}
-                className={clsx(
-                  'text-xs px-2 py-0.5 rounded',
-                  item.publish_status === 'approved' ? 'bg-green-100 text-green-700' : 
-                  item.publish_status === 'rejected' ? 'bg-red-100 text-red-700' : 
-                  'bg-yellow-100 text-yellow-700'
-                )}
-              >
-                {item.publish_status === 'approved' ? '✓ Live' : 
-                 item.publish_status === 'rejected' ? '✗ Hidden' : 
-                 '? Pending'}
-              </button>
-            )}
+            <button
+              onClick={(e) => { e.stopPropagation(); handleCycleStatus(item); }}
+              className={clsx(
+                'text-xs px-2 py-0.5 rounded',
+                item.publish_status === 'approved' ? 'bg-green-100 text-green-700' : 
+                item.publish_status === 'rejected' ? 'bg-red-100 text-red-700' : 
+                'bg-yellow-100 text-yellow-700'
+              )}
+            >
+              {item.publish_status === 'approved' ? '✓ Live' : 
+               item.publish_status === 'rejected' ? '✗ Hidden' : 
+               '? Pending'}
+            </button>
           </div>
         </div>
       );
     }
 
     if (activeTab === 'artists') {
-      const isMain = dataSource === 'main';
-      const isScraped = dataSource === 'scraped';
       return (
         <div
           key={item.id}
@@ -821,22 +800,9 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
             <p className="font-medium text-sm truncate">{item.name}</p>
             <div className="flex items-center gap-2 text-xs text-gray-500">
               <span>{item.country || item.genres || '—'}</span>
-              {isMain && item.source_references?.length > 0 && (
+              {item.source_references?.length > 0 && (
                 <span className="bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded">
                   {item.source_references.length} sources
-                </span>
-              )}
-              {isScraped && item.source_code && (
-                <span className={clsx(
-                  'px-1.5 py-0.5 rounded',
-                  item.source_code === 'ra' ? 'bg-blue-100 text-blue-700' : 'bg-cyan-100 text-cyan-700'
-                )}>
-                  {item.source_code.toUpperCase()}
-                </span>
-              )}
-              {isScraped && item.is_linked && (
-                <span className="bg-green-100 text-green-700 px-1.5 py-0.5 rounded flex items-center gap-0.5">
-                  <Link2 className="w-3 h-3" /> linked
                 </span>
               )}
             </div>
@@ -851,8 +817,6 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
     }
 
     if (activeTab === 'venues') {
-      const isMain = dataSource === 'main';
-      const isScraped = dataSource === 'scraped';
       return (
         <div
           key={item.id}
@@ -869,16 +833,11 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
             <p className="font-medium text-sm truncate">{item.name}</p>
             <p className="text-xs text-gray-500 truncate">{item.city || '—'}{item.country && `, ${item.country}`}</p>
           </div>
-          <div className="flex items-center gap-2">
-            {item.source_code && (
-              <span className={clsx(
-                'text-xs px-2 py-0.5 rounded font-medium',
-                item.source_code === 'ra' ? 'bg-blue-100 text-blue-700' : 'bg-cyan-100 text-cyan-700'
-              )}>
-                {item.source_code.toUpperCase()}
-              </span>
-            )}
-          </div>
+          {item.source_references?.length > 0 && (
+            <span className="bg-indigo-100 text-indigo-600 text-xs px-2 py-0.5 rounded">
+              {item.source_references.length} sources
+            </span>
+          )}
         </div>
       );
     }
@@ -911,23 +870,14 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
     return null;
   };
 
-  // Get items for current tab based on data source
+  // Get items for current tab
   const currentItems = useMemo(() => {
-    if (activeTab === 'events') {
-      if (dataSource === 'scraped') return scrapedEventsData;
-      return filteredEvents;
-    }
-    if (activeTab === 'artists') {
-      if (dataSource === 'scraped') return scrapedArtists;
-      return artists;
-    }
-    if (activeTab === 'venues') {
-      if (dataSource === 'scraped') return scrapedVenues;
-      return venues;
-    }
+    if (activeTab === 'events') return filteredEvents;
+    if (activeTab === 'artists') return artists;
+    if (activeTab === 'venues') return venues;
     if (activeTab === 'cities') return adminCities;
     return [];
-  }, [activeTab, dataSource, filteredEvents, scrapedEventsData, artists, venues, adminCities, scrapedArtists, scrapedVenues]);
+  }, [activeTab, filteredEvents, artists, venues, adminCities]);
 
   return (
     <div className="h-screen flex flex-col bg-gray-100">
@@ -981,45 +931,10 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
             </select>
           )}
 
-          {/* Data source toggle (for events, artists, venues - to view raw scraped data) */}
-          {(activeTab === 'events' || activeTab === 'artists' || activeTab === 'venues') && (
-            <div className="flex items-center bg-gray-100 rounded-lg p-0.5">
-              <button
-                onClick={() => setDataSource('main')}
-                className={clsx(
-                  'px-2 py-1 text-xs font-medium rounded transition-all flex items-center gap-1',
-                  dataSource === 'main' ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'
-                )}
-                title="Main database"
-              >
-                <Database className="w-3 h-3" />
-                Main
-              </button>
-              <button
-                onClick={() => setDataSource('scraped')}
-                className={clsx(
-                  'px-2 py-1 text-xs font-medium rounded transition-all flex items-center gap-1',
-                  dataSource === 'scraped' ? 'bg-white shadow text-amber-600' : 'text-gray-500 hover:text-gray-700'
-                )}
-                title="Raw scraped data (for debugging)"
-              >
-                <Layers className="w-3 h-3" />
-                Scraped
-                {activeTab === 'events' && scrapedEventsTotal > 0 && (
-                  <span className="ml-1 bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded text-[10px]">{scrapedEventsTotal}</span>
-                )}
-                {activeTab === 'artists' && scrapedArtistsTotal > 0 && (
-                  <span className="ml-1 bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded text-[10px]">{scrapedArtistsTotal}</span>
-                )}
-                {activeTab === 'venues' && scrapedVenuesTotal > 0 && (
-                  <span className="ml-1 bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded text-[10px]">{scrapedVenuesTotal}</span>
-                )}
-              </button>
-            </div>
-          )}
+
 
           {/* Dedupe button for venues only */}
-          {activeTab === 'venues' && dataSource === 'main' && (
+          {activeTab === 'venues' && (
             <button
               onClick={() => handleDeduplicate('venues')}
               disabled={isDeduplicating}
@@ -1070,218 +985,221 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
 
       {/* Main Content */}
       <main className="flex-1 flex overflow-hidden">
-        {/* Scrape Tab Content */}
+        {/* Scrape Tab Content - Split View */}
         {activeTab === 'scrape' ? (
-          <div className="flex-1 overflow-auto p-6">
-            <div className="max-w-7xl mx-auto space-y-6">
-              {/* Last Scraped Info */}
-              {scrapeStats?.last_scraped_at && (
-                <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl p-4 border border-indigo-100">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse" />
-                      <span className="text-sm text-gray-600">
-                        Last synced: <span className="font-medium text-gray-900">
-                          {new Date(scrapeStats.last_scraped_at).toLocaleString('en-US', { 
-                            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
-                          })}
-                        </span>
-                        {scrapeStats.last_scraped_city && (
-                          <span className="text-gray-500"> • {scrapeStats.last_scraped_city}</span>
-                        )}
-                        {scrapeStats.last_scraped_source && (
-                          <span className={`ml-2 px-1.5 py-0.5 rounded text-xs font-medium ${
-                            scrapeStats.last_scraped_source === 'ra' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
-                          }`}>
-                            {scrapeStats.last_scraped_source.toUpperCase()}
-                          </span>
-                        )}
-                      </span>
-                    </div>
-                    {historyTotals && (
-                      <span className="text-xs text-gray-500">
-                        {historyTotals.total_scrape_runs} total runs since {new Date(historyTotals.first_scrape).toLocaleDateString()}
-                      </span>
-                    )}
-                  </div>
+          <div className="flex-1 flex">
+            {/* LEFT SIDE - Pending Events TODO List */}
+            <div className="bg-white border-r flex flex-col w-[420px]">
+              {/* List header */}
+              <div className="px-4 py-3 bg-gradient-to-r from-amber-50 to-orange-50 border-b flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <CloudDownload className="w-4 h-4 text-amber-600" />
+                  <span className="font-medium text-gray-700">Pending Events</span>
+                  <span className="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full font-medium">
+                    {events.filter(e => e.publish_status === 'pending').length} to review
+                  </span>
                 </div>
-              )}
-
-              {/* Stats Overview with Charts */}
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-                <StatCard
-                  title="Scraped Events"
-                  value={scrapeStats?.total_scraped_events || 0}
-                  color="#6366f1"
-                  chartData={scrapeHistory}
-                  chartKey="events_fetched"
-                />
-                <StatCard
-                  title="Main Events"
-                  value={scrapeStats?.total_main_events || 0}
-                  subValue={`${scrapeStats?.published_events || 0} published`}
-                  color="#22c55e"
-                  chartData={scrapeHistory}
-                  chartKey="events_inserted"
-                />
-                <StatCard
-                  title="Main Venues"
-                  value={scrapeStats?.total_main_venues || 0}
-                  subValue={`${scrapeStats?.total_scraped_venues || 0} scraped`}
-                  color="#f59e0b"
-                  chartData={scrapeHistory}
-                  chartKey="venues_created"
-                />
-                <StatCard
-                  title="Main Artists"
-                  value={scrapeStats?.total_main_artists || 0}
-                  subValue={`${scrapeStats?.total_scraped_artists || 0} scraped`}
-                  color="#ec4899"
-                  chartData={scrapeHistory}
-                  chartKey="artists_created"
-                />
-                <StatCard
-                  title="From RA"
-                  value={scrapeStats?.ra_events || 0}
-                  color="#8b5cf6"
-                />
-                <StatCard
-                  title="From Ticketmaster"
-                  value={scrapeStats?.ticketmaster_events || 0}
-                  color="#06b6d4"
-                />
+                <button
+                  onClick={loadData}
+                  className="p-1.5 hover:bg-amber-100 rounded"
+                  title="Refresh"
+                >
+                  <RefreshCw className={clsx('w-4 h-4 text-amber-600', isLoading && 'animate-spin')} />
+                </button>
               </div>
 
-              {/* Activity Chart */}
-              {scrapeHistory.length > 0 && (
-                <div className="bg-white rounded-xl shadow-sm p-6">
-                  <h3 className="font-semibold text-lg mb-4">Scraping Activity (Last 30 Days)</h3>
-                  <MiniAreaChart
-                    data={scrapeHistory}
-                    lines={[
-                      { dataKey: 'events_fetched', color: '#6366f1', label: 'Events Fetched' },
-                      { dataKey: 'events_inserted', color: '#22c55e', label: 'New Events' },
-                      { dataKey: 'venues_created', color: '#f59e0b', label: 'New Venues' },
-                      { dataKey: 'artists_created', color: '#ec4899', label: 'New Artists' },
-                    ]}
-                    height={120}
-                  />
+              {/* Pending events list */}
+              <div className="flex-1 overflow-auto">
+                {isLoading ? (
+                  <div className="flex items-center justify-center h-32">
+                    <RefreshCw className="w-6 h-6 animate-spin text-gray-400" />
+                  </div>
+                ) : events.filter(e => e.publish_status === 'pending').length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-48 text-gray-500 p-4">
+                    <Check className="w-12 h-12 text-green-400 mb-3" />
+                    <p className="font-medium">All caught up!</p>
+                    <p className="text-sm text-gray-400 text-center mt-1">No pending events to review.</p>
+                  </div>
+                ) : (
+                  sortEventsSmart(events.filter(e => e.publish_status === 'pending')).map((event) => (
+                    <div
+                      key={event.id}
+                      onClick={() => { setActiveTabState('events'); handleEdit(event); }}
+                      className="px-4 py-3 flex items-center gap-3 cursor-pointer hover:bg-amber-50 border-b transition-colors"
+                    >
+                      <div className="w-10 h-10 rounded bg-gray-200 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                        {event.flyer_front ? (
+                          <img src={event.flyer_front} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <Calendar className="w-5 h-5 text-gray-400" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm truncate">{event.title}</p>
+                        <p className="text-xs text-gray-500 truncate">{event.venue_name} • {event.venue_city}</p>
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <p className="text-xs font-medium">{event.date ? format(new Date(event.date), 'MMM d') : '—'}</p>
+                        {(() => {
+                          const badge = getTimingBadge(event);
+                          return (
+                            <span className={clsx('text-[10px] px-1.5 py-0.5 rounded', badge.bg, badge.text)}>
+                              {badge.label}
+                            </span>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+              
+              {/* Unlinked Scraped Events */}
+              {scrapedEvents.length > 0 && (
+                <div className="border-t">
+                  <div className="px-4 py-2 bg-gray-50 border-b flex items-center gap-2">
+                    <Layers className="w-4 h-4 text-gray-500" />
+                    <span className="text-sm font-medium text-gray-600">Unlinked Scraped ({scrapedEvents.length})</span>
+                  </div>
+                  <div className="max-h-48 overflow-auto">
+                    {scrapedEvents.slice(0, 10).map((event) => (
+                      <div key={event.id} className="px-4 py-2 border-b hover:bg-gray-50 flex items-center gap-3">
+                        <span className={clsx(
+                          'px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0',
+                          event.source_code === 'ra' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
+                        )}>
+                          {event.source_code?.toUpperCase()}
+                        </span>
+                        <span className="text-xs truncate flex-1">{event.title}</span>
+                        <span className="text-[10px] text-gray-400">{event.date ? format(new Date(event.date), 'MMM d') : ''}</span>
+                        {event.content_url && (
+                          <a href={event.content_url} target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-indigo-600" onClick={e => e.stopPropagation()}>
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
+            </div>
 
-              {/* Scrape Controls */}
-              <div className="bg-white rounded-xl shadow-sm p-6">
-                <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">
-                  <CloudDownload className="w-5 h-5 text-indigo-600" />
-                  Sync Events
-                </h3>
-                
-                <div className="grid md:grid-cols-3 gap-6">
-                  {/* City Selection */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">City</label>
-                    <select
-                      value={scrapeCity}
-                      onChange={(e) => setScrapeCity(e.target.value)}
-                      className="w-full px-3 py-2 border rounded-lg bg-white"
-                    >
-                      <option value="all">🌍 All Cities (from database)</option>
-                      <optgroup label="🇩🇪 Germany">
-                        <option value="berlin">Berlin</option>
-                        <option value="hamburg">Hamburg</option>
-                        <option value="munich">Munich</option>
-                        <option value="cologne">Cologne</option>
-                        <option value="frankfurt">Frankfurt</option>
-                        <option value="dusseldorf">Düsseldorf</option>
-                        <option value="stuttgart">Stuttgart</option>
-                        <option value="leipzig">Leipzig</option>
-                        <option value="dresden">Dresden</option>
-                        <option value="hannover">Hannover</option>
-                        <option value="nuremberg">Nuremberg</option>
-                        <option value="dortmund">Dortmund</option>
-                        <option value="essen">Essen</option>
-                        <option value="bremen">Bremen</option>
-                        <option value="mannheim">Mannheim</option>
-                        <option value="freiburg">Freiburg</option>
-                        <option value="munster">Münster</option>
-                        <option value="aachen">Aachen</option>
-                        <option value="karlsruhe">Karlsruhe</option>
-                        <option value="rostock">Rostock</option>
-                        <option value="kiel">Kiel</option>
-                        <option value="mainz">Mainz</option>
-                        <option value="bonn">Bonn</option>
-                        <option value="augsburg">Augsburg</option>
-                        <option value="wiesbaden">Wiesbaden</option>
-                      </optgroup>
-                      <optgroup label="🇬🇧 UK">
-                        <option value="london">London</option>
-                        <option value="manchester">Manchester</option>
-                        <option value="birmingham">Birmingham</option>
-                        <option value="glasgow">Glasgow</option>
-                        <option value="leeds">Leeds</option>
-                        <option value="liverpool">Liverpool</option>
-                        <option value="bristol">Bristol</option>
-                        <option value="edinburgh">Edinburgh</option>
-                      </optgroup>
-                      <optgroup label="🇪🇺 Europe">
-                        <option value="amsterdam">Amsterdam</option>
-                        <option value="paris">Paris</option>
-                        <option value="barcelona">Barcelona</option>
-                        <option value="madrid">Madrid</option>
-                        <option value="vienna">Vienna</option>
-                        <option value="zurich">Zurich</option>
-                        <option value="brussels">Brussels</option>
-                        <option value="prague">Prague</option>
-                        <option value="copenhagen">Copenhagen</option>
-                        <option value="stockholm">Stockholm</option>
-                        <option value="oslo">Oslo</option>
-                        <option value="milan">Milan</option>
-                        <option value="rome">Rome</option>
-                        <option value="ibiza">Ibiza</option>
-                      </optgroup>
-                      <optgroup label="🇺🇸 USA">
-                        <option value="new york">New York</option>
-                        <option value="los angeles">Los Angeles</option>
-                        <option value="chicago">Chicago</option>
-                        <option value="miami">Miami</option>
-                        <option value="san francisco">San Francisco</option>
-                        <option value="detroit">Detroit</option>
-                        <option value="seattle">Seattle</option>
-                        <option value="boston">Boston</option>
-                        <option value="austin">Austin</option>
-                        <option value="denver">Denver</option>
-                        <option value="atlanta">Atlanta</option>
-                      </optgroup>
-                    </select>
-                  </div>
-
-                  {/* Source Selection */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Sources</label>
-                    <div className="flex gap-3">
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={scrapeSources.includes('ra')}
-                          onChange={() => toggleSource('ra')}
-                          className="rounded text-indigo-600"
-                        />
-                        <span className="text-sm">Resident Advisor</span>
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={scrapeSources.includes('ticketmaster')}
-                          onChange={() => toggleSource('ticketmaster')}
-                          className="rounded text-indigo-600"
-                        />
-                        <span className="text-sm">Ticketmaster</span>
-                      </label>
+            {/* RIGHT SIDE - Stats & Controls */}
+            <div className="flex-1 overflow-auto p-6 bg-gray-50">
+              <div className="max-w-3xl mx-auto space-y-6">
+                {/* Last Scraped Info */}
+                {scrapeStats?.last_scraped_at && (
+                  <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl p-4 border border-indigo-100">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse" />
+                        <span className="text-sm text-gray-600">
+                          Last synced: <span className="font-medium text-gray-900">
+                            {new Date(scrapeStats.last_scraped_at).toLocaleString('en-US', { 
+                              month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+                            })}
+                          </span>
+                          {scrapeStats.last_scraped_city && (
+                            <span className="text-gray-500"> • {scrapeStats.last_scraped_city}</span>
+                          )}
+                          {scrapeStats.last_scraped_source && (
+                            <span className={`ml-2 px-1.5 py-0.5 rounded text-xs font-medium ${
+                              scrapeStats.last_scraped_source === 'ra' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
+                            }`}>
+                              {scrapeStats.last_scraped_source.toUpperCase()}
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                      {historyTotals && (
+                        <span className="text-xs text-gray-500">
+                          {historyTotals.total_scrape_runs} total runs
+                        </span>
+                      )}
                     </div>
                   </div>
+                )}
 
-                  {/* Single Sync Button - triggers full pipeline */}
-                  <div className="flex items-end">
+                {/* Sync Controls Card */}
+                <div className="bg-white rounded-xl shadow-sm p-6">
+                  <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">
+                    <CloudDownload className="w-5 h-5 text-indigo-600" />
+                    Fetch New Events
+                  </h3>
+                  
+                  <div className="space-y-4">
+                    <div className="grid md:grid-cols-2 gap-4">
+                      {/* City Selection */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">City</label>
+                        <select
+                          value={scrapeCity}
+                          onChange={(e) => setScrapeCity(e.target.value)}
+                          className="w-full px-3 py-2 border rounded-lg bg-white"
+                        >
+                          <option value="all">🌍 All Cities (from database)</option>
+                          <optgroup label="🇩🇪 Germany">
+                            <option value="berlin">Berlin</option>
+                            <option value="hamburg">Hamburg</option>
+                            <option value="munich">Munich</option>
+                            <option value="cologne">Cologne</option>
+                            <option value="frankfurt">Frankfurt</option>
+                            <option value="dusseldorf">Düsseldorf</option>
+                            <option value="stuttgart">Stuttgart</option>
+                            <option value="leipzig">Leipzig</option>
+                            <option value="dresden">Dresden</option>
+                          </optgroup>
+                          <optgroup label="🇬🇧 UK">
+                            <option value="london">London</option>
+                            <option value="manchester">Manchester</option>
+                            <option value="birmingham">Birmingham</option>
+                            <option value="glasgow">Glasgow</option>
+                            <option value="bristol">Bristol</option>
+                          </optgroup>
+                          <optgroup label="🇪🇺 Europe">
+                            <option value="amsterdam">Amsterdam</option>
+                            <option value="paris">Paris</option>
+                            <option value="barcelona">Barcelona</option>
+                            <option value="vienna">Vienna</option>
+                            <option value="prague">Prague</option>
+                            <option value="ibiza">Ibiza</option>
+                          </optgroup>
+                          <optgroup label="🇺🇸 USA">
+                            <option value="new york">New York</option>
+                            <option value="los angeles">Los Angeles</option>
+                            <option value="miami">Miami</option>
+                            <option value="detroit">Detroit</option>
+                          </optgroup>
+                        </select>
+                      </div>
+
+                      {/* Source Selection */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Sources</label>
+                        <div className="flex gap-4 mt-3">
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={scrapeSources.includes('ra')}
+                              onChange={() => toggleSource('ra')}
+                              className="rounded text-indigo-600"
+                            />
+                            <span className="text-sm">Resident Advisor</span>
+                          </label>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={scrapeSources.includes('ticketmaster')}
+                              onChange={() => toggleSource('ticketmaster')}
+                              className="rounded text-indigo-600"
+                            />
+                            <span className="text-sm">Ticketmaster</span>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Sync Button */}
                     <button
                       onClick={handleSyncWorkflow}
                       disabled={isSyncing || scrapeSources.length === 0}
@@ -1299,122 +1217,104 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                         </>
                       )}
                     </button>
-                  </div>
-                </div>
 
-                {/* Pipeline Info */}
-                <div className="mt-4 px-4 py-3 bg-gray-50 rounded-lg border border-gray-200">
-                  <p className="text-xs text-gray-600">
-                    <span className="font-medium">Pipeline:</span> Scrape Events → Match & Link → Enrich Venues/Artists → Deduplicate
-                  </p>
-                  {scrapeCity === 'all' && (
-                    <p className="text-xs text-amber-600 mt-1">
-                      ⚠️ Syncing all cities may take several minutes. Cities are processed sequentially with a 2-second pause between each.
-                    </p>
-                  )}
-                </div>
+                    {/* Pipeline Info */}
+                    <div className="px-4 py-3 bg-gray-50 rounded-lg border border-gray-200 text-xs text-gray-600">
+                      <span className="font-medium">Pipeline:</span> Scrape → Match & Link → Enrich → Deduplicate
+                      {scrapeCity === 'all' && (
+                        <p className="text-amber-600 mt-1">⚠️ Syncing all cities may take several minutes.</p>
+                      )}
+                    </div>
 
-                {/* Sync Result */}
-                {syncResult && (
-                  <div className={clsx(
-                    'mt-4 p-4 rounded-lg',
-                    syncResult.error ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'
-                  )}>
-                    {syncResult.error ? (
-                      <p>Error: {syncResult.error}</p>
-                    ) : (
-                      <div className="space-y-2">
-                        <p className="font-medium">✓ Sync pipeline completed</p>
-                        {syncResult.scrape && (
-                          <div className="text-sm">
-                            <p className="font-medium">Scrape:</p>
-                            <p className="text-xs">
-                              {syncResult.scrape.fetched || 0} fetched, {syncResult.scrape.inserted || 0} new
-                            </p>
-                          </div>
-                        )}
-                        {syncResult.enrich && (
-                          <div className="text-sm">
-                            <p className="font-medium">Enrich:</p>
-                            <p className="text-xs">
-                              {syncResult.enrich.venues_enriched || 0} venues, {syncResult.enrich.artists_enriched || 0} artists enriched
-                            </p>
-                          </div>
-                        )}
-                        {syncResult.dedupe && (
-                          <div className="text-sm">
-                            <p className="font-medium">Dedupe:</p>
-                            <p className="text-xs">
-                              {syncResult.dedupe.events_merged || 0} events, {syncResult.dedupe.venues_merged || 0} venues, {syncResult.dedupe.artists_merged || 0} artists merged
-                            </p>
+                    {/* Sync Result */}
+                    {syncResult && (
+                      <div className={clsx(
+                        'p-4 rounded-lg',
+                        syncResult.error ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'
+                      )}>
+                        {syncResult.error ? (
+                          <p>Error: {syncResult.error}</p>
+                        ) : (
+                          <div className="space-y-1 text-sm">
+                            <p className="font-medium">✓ Sync completed</p>
+                            {syncResult.scrape && (
+                              <p className="text-xs">{syncResult.scrape.fetched || 0} fetched, {syncResult.scrape.inserted || 0} new</p>
+                            )}
+                            {syncResult.dedupe && (
+                              <p className="text-xs">{syncResult.dedupe.events_merged || 0} events merged</p>
+                            )}
                           </div>
                         )}
                       </div>
                     )}
                   </div>
+                </div>
+
+                {/* Stats Overview */}
+                <div className="bg-white rounded-xl shadow-sm p-6">
+                  <h3 className="font-semibold text-lg mb-4">Database Overview</h3>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    <StatCard
+                      title="Total Events"
+                      value={scrapeStats?.total_main_events || 0}
+                      subValue={`${scrapeStats?.published_events || 0} approved`}
+                      color="#22c55e"
+                    />
+                    <StatCard
+                      title="Pending Review"
+                      value={events.filter(e => e.publish_status === 'pending').length}
+                      color="#f59e0b"
+                    />
+                    <StatCard
+                      title="Venues"
+                      value={scrapeStats?.total_main_venues || 0}
+                      color="#6366f1"
+                    />
+                    <StatCard
+                      title="Artists"
+                      value={scrapeStats?.total_main_artists || 0}
+                      color="#ec4899"
+                    />
+                    <StatCard
+                      title="From RA"
+                      value={scrapeStats?.ra_events || 0}
+                      color="#8b5cf6"
+                    />
+                    <StatCard
+                      title="From Ticketmaster"
+                      value={scrapeStats?.ticketmaster_events || 0}
+                      color="#06b6d4"
+                    />
+                  </div>
+                </div>
+
+                {/* Activity Chart */}
+                {scrapeHistory.length > 0 && (
+                  <div className="bg-white rounded-xl shadow-sm p-6">
+                    <h3 className="font-semibold text-lg mb-4">Scraping Activity (Last 30 Days)</h3>
+                    <MiniAreaChart
+                      data={scrapeHistory}
+                      lines={[
+                        { dataKey: 'events_fetched', color: '#6366f1', label: 'Events Fetched' },
+                        { dataKey: 'events_inserted', color: '#22c55e', label: 'New Events' },
+                        { dataKey: 'venues_created', color: '#f59e0b', label: 'New Venues' },
+                      ]}
+                      height={100}
+                    />
+                  </div>
+                )}
+
+                {/* Recent Activity */}
+                {recentScrapes.length > 0 && (
+                  <div className="bg-white rounded-xl shadow-sm p-6">
+                    <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">
+                      <RefreshCw className="w-5 h-5 text-gray-400" />
+                      Recent Activity
+                    </h3>
+                    <RecentActivity activities={recentScrapes} />
+                  </div>
                 )}
               </div>
-
-              {/* Unlinked Scraped Events */}
-              <div className="bg-white rounded-xl shadow-sm p-6">
-                <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">
-                  <CloudDownload className="w-5 h-5 text-amber-500" />
-                  Unlinked Scraped Events ({scrapedEvents.length})
-                </h3>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-gray-500 border-b">
-                        <th className="pb-2 font-medium">Source</th>
-                        <th className="pb-2 font-medium">Title</th>
-                        <th className="pb-2 font-medium">Date</th>
-                        <th className="pb-2 font-medium">Venue</th>
-                        <th className="pb-2 font-medium">City</th>
-                        <th className="pb-2 font-medium">Link</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {scrapedEvents.slice(0, 20).map((event) => (
-                        <tr key={event.id} className="border-b hover:bg-gray-50">
-                          <td className="py-2">
-                            <span className={clsx(
-                              'px-2 py-0.5 rounded text-xs font-medium',
-                              event.source_code === 'ra' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
-                            )}>
-                              {event.source_code?.toUpperCase()}
-                            </span>
-                          </td>
-                          <td className="py-2 max-w-xs truncate">{event.title}</td>
-                          <td className="py-2">{event.date ? format(new Date(event.date), 'MMM d, yyyy') : '—'}</td>
-                          <td className="py-2 max-w-[150px] truncate">{event.venue_name || '—'}</td>
-                          <td className="py-2">{event.venue_city || '—'}</td>
-                          <td className="py-2">
-                            {event.content_url && (
-                              <a href={event.content_url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:text-indigo-800">
-                                <ExternalLink className="w-4 h-4" />
-                              </a>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {scrapedEvents.length === 0 && (
-                    <p className="text-center py-8 text-gray-500">No unlinked events. All scraped data is matched!</p>
-                  )}
-                </div>
-              </div>
-
-              {/* Recent Scrape Activity */}
-              {recentScrapes.length > 0 && (
-                <div className="bg-white rounded-xl shadow-sm p-6">
-                  <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">
-                    <RefreshCw className="w-5 h-5 text-gray-400" />
-                    Recent Activity
-                  </h3>
-                  <RecentActivity activities={recentScrapes} />
-                </div>
-              )}
             </div>
           </div>
         ) : (
@@ -1507,7 +1407,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
 
               <div className="p-4 space-y-4">
                 {/* Source References Section - show linked scraped sources */}
-                {dataSource === 'main' && sourceReferences.length > 0 && editingItem && (
+                {sourceReferences.length > 0 && editingItem && (
                   <div className="bg-gray-50 rounded-lg p-3 border">
                     <h3 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
                       <Layers className="w-4 h-4" />
@@ -1980,7 +1880,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                 </button>
               </div>
             </div>
-          ) : activeTab === 'events' && dataSource === 'main' ? (
+          ) : activeTab === 'events' ? (
             <div className="flex-1 bg-white border-l overflow-hidden">
               <EventMap
                 events={filteredEvents}
