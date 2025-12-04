@@ -146,7 +146,8 @@ export default function AdminDashboard() {
   const handleBulkDelete = async () => {
     if (!confirm(`Delete ${selectedIds.size} events?`)) return;
 
-    for (const id of selectedIds) {
+    const idsToDelete = Array.from(selectedIds);
+    for (const id of idsToDelete) {
       try {
         await deleteEvent(id);
       } catch (error) {
