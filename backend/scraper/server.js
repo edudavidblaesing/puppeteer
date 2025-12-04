@@ -4046,9 +4046,23 @@ process.on('uncaughtException', (err) => {
     // process.exit(1); // Optional: restart the process
 });
 
+// Initialize required extensions on startup
+async function initDatabase() {
+    try {
+        await pool.query('CREATE EXTENSION IF NOT EXISTS pg_trgm');
+        console.log('Database extensions initialized (pg_trgm)');
+    } catch (error) {
+        console.error('Failed to initialize database extensions:', error.message);
+    }
+}
+
 app.listen(PORT, async () => {
     console.log(`Puppeteer service running on port ${PORT}`);
     console.log(`Proxy list loaded: ${PROXY_LIST.length} proxies`);
+    
+    // Initialize database extensions
+    await initDatabase();
+    
     try {
         console.log('Launching browser with first proxy...');
         currentProxy = getNextProxy();

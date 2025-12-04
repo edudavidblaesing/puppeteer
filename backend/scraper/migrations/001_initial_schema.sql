@@ -1,6 +1,9 @@
 -- Migration 001: Initial Schema
 -- Social Events Database Schema
 
+-- Enable extensions
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
 -- Event sources (RA, Eventbrite, Facebook, etc.)
 CREATE TABLE IF NOT EXISTS event_sources (
     id SERIAL PRIMARY KEY,
