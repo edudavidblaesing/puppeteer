@@ -2768,7 +2768,7 @@ app.get('/db/dashboard', async (req, res) => {
 // MULTI-SOURCE SCRAPING SYSTEM
 // =====================================================
 
-const TICKETMASTER_API_KEY = process.env.TICKETMASTER_API_KEY || 'key';
+const TICKETMASTER_API_KEY = process.env.TICKETMASTER_API_KEY || 'X7oyk3K4mzYNxVTWjXsuX2fU7nJPPqOT';
 
 // City to country code mapping for Ticketmaster
 const TICKETMASTER_CITY_MAP = {
