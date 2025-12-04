@@ -4310,6 +4310,65 @@ async function refreshUnifiedArtist(unifiedId) {
     ]);
 }
 
+// Refresh main event with merged data from all linked scraped sources
+async function refreshMainEvent(eventId) {
+    // Get all linked scraped events ordered by source priority
+    const sourcesResult = await pool.query(`
+        SELECT se.*, esl.match_confidence
+        FROM event_scraped_links esl
+        JOIN scraped_events se ON se.id = esl.scraped_event_id
+        WHERE esl.event_id = $1
+        ORDER BY 
+            CASE se.source_code 
+                WHEN 'original' THEN 1 
+                WHEN 'ra' THEN 5 
+                WHEN 'ticketmaster' THEN 6 
+                ELSE 10 
+            END ASC
+    `, [eventId]);
+    
+    if (sourcesResult.rows.length === 0) return;
+    
+    const { merged, fieldSources } = mergeSourceData(sourcesResult.rows);
+    
+    // Combine date with time for timestamp fields
+    const startTimestamp = merged.date && merged.start_time 
+        ? `${merged.date} ${merged.start_time}` 
+        : (merged.date || null);
+    const endTimestamp = merged.date && merged.end_time 
+        ? `${merged.date} ${merged.end_time}` 
+        : null;
+    
+    // Update main event with merged data
+    await pool.query(`
+        UPDATE events SET
+            title = COALESCE($1, title),
+            date = COALESCE($2, date),
+            start_time = COALESCE($3, start_time),
+            end_time = COALESCE($4, end_time),
+            description = COALESCE($5, description),
+            flyer_front = COALESCE($6, flyer_front),
+            content_url = COALESCE($7, content_url),
+            venue_name = COALESCE($8, venue_name),
+            venue_address = COALESCE($9, venue_address),
+            venue_city = COALESCE($10, venue_city),
+            venue_country = COALESCE($11, venue_country),
+            latitude = COALESCE($12, latitude),
+            longitude = COALESCE($13, longitude),
+            field_sources = $14,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $15
+    `, [
+        merged.title, merged.date, startTimestamp, endTimestamp,
+        merged.description, merged.flyer_front, merged.content_url,
+        merged.venue_name, merged.venue_address, merged.venue_city, merged.venue_country,
+        merged.venue_latitude, merged.venue_longitude,
+        JSON.stringify(fieldSources), eventId
+    ]);
+    
+    console.log(`[Refresh] Updated main event ${eventId} with merged data from ${sourcesResult.rows.length} sources`);
+}
+
 // Match scraped events to main events or create new ones
 // Uses main 'events' table with 'event_scraped_links' for source tracking
 async function matchAndLinkEvents(options = {}) {
@@ -4397,6 +4456,9 @@ async function matchAndLinkEvents(options = {}) {
                     VALUES ($1, $2, $3)
                     ON CONFLICT (event_id, scraped_event_id) DO NOTHING
                 `, [bestMatch.id, scraped.id, bestScore]);
+                
+                // Refresh main event with merged data from all linked sources
+                await refreshMainEvent(bestMatch.id);
             }
             matched++;
             results.push({
@@ -4409,6 +4471,15 @@ async function matchAndLinkEvents(options = {}) {
             // Create new main event
             if (!dryRun) {
                 const eventId = uuidv4();
+                
+                // Combine date with time for timestamp fields
+                const dateStr = scraped.date;
+                const startTimestamp = dateStr && scraped.start_time 
+                    ? `${dateStr} ${scraped.start_time}` 
+                    : (dateStr || null);
+                const endTimestamp = dateStr && scraped.end_time 
+                    ? `${dateStr} ${scraped.end_time}` 
+                    : null;
                 
                 await pool.query(`
                     INSERT INTO events (
@@ -4423,8 +4494,8 @@ async function matchAndLinkEvents(options = {}) {
                     scraped.source_event_id,
                     scraped.title,
                     scraped.date,
-                    scraped.start_time,
-                    scraped.end_time,
+                    startTimestamp,
+                    endTimestamp,
                     scraped.description,
                     scraped.flyer_front,
                     scraped.content_url,
