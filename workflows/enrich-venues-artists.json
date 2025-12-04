@@ -20,7 +20,7 @@
     },
     {
       "parameters": {
-        "url": "http://pptr.davidblaesing.com/db/enrich/stats",
+        "url": "https://pptr.davidblaesing.com/db/enrich/stats",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "options": {}
@@ -98,7 +98,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://pptr.davidblaesing.com/db/venues/enrich",
+        "url": "https://pptr.davidblaesing.com/db/venues/enrich",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
@@ -121,7 +121,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://pptr.davidblaesing.com/db/artists/enrich",
+        "url": "https://pptr.davidblaesing.com/db/artists/enrich",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
@@ -143,7 +143,7 @@
     },
     {
       "parameters": {
-        "url": "http://pptr.davidblaesing.com/db/enrich/stats",
+        "url": "https://pptr.davidblaesing.com/db/enrich/stats",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "options": {}

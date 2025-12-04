@@ -1,0 +1,97 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 0, 0, 0;
+  --background-rgb: 249, 250, 251;
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: rgb(var(--background-rgb));
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a1a1a1;
+}
+
+/* Leaflet map styles */
+.leaflet-container {
+  height: 100%;
+  width: 100%;
+  border-radius: 0.5rem;
+}
+
+.marker-cluster-small {
+  background-color: rgba(168, 85, 247, 0.4);
+}
+.marker-cluster-small div {
+  background-color: rgba(168, 85, 247, 0.7);
+}
+
+.marker-cluster-medium {
+  background-color: rgba(147, 51, 234, 0.4);
+}
+.marker-cluster-medium div {
+  background-color: rgba(147, 51, 234, 0.7);
+}
+
+.marker-cluster-large {
+  background-color: rgba(124, 58, 237, 0.4);
+}
+.marker-cluster-large div {
+  background-color: rgba(124, 58, 237, 0.7);
+}
+
+.marker-cluster {
+  background-clip: padding-box;
+  border-radius: 20px;
+}
+.marker-cluster div {
+  width: 30px;
+  height: 30px;
+  margin-left: 5px;
+  margin-top: 5px;
+  text-align: center;
+  border-radius: 15px;
+  font: 12px "Helvetica Neue", Arial, Helvetica, sans-serif;
+  color: white;
+  font-weight: bold;
+  line-height: 30px;
+}
+
+.published-marker {
+  filter: hue-rotate(280deg) saturate(1.5);
+}
+
+.scraped-marker {
+  filter: grayscale(0.5) opacity(0.7);
+}
+
+/* Event popup styles */
+.event-popup .leaflet-popup-content-wrapper {
+  border-radius: 8px;
+  padding: 0;
+}
+
+.event-popup .leaflet-popup-content {
+  margin: 0;
+  min-width: 250px;
+}
