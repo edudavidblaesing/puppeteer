@@ -25,7 +25,7 @@ import { format } from 'date-fns';
 import clsx from 'clsx';
 import EventTable from '@/components/EventTable';
 import EventModal from '@/components/EventModal';
-import { Event, Stats } from '@/types';
+import { Event, Stats, City } from '@/types';
 import {
   fetchEvents,
   fetchStats,
@@ -34,6 +34,7 @@ import {
   fetchEnrichStats,
   enrichVenues,
   enrichArtists,
+  fetchCities,
 } from '@/lib/api';
 
 // Dynamic import for map (client-side only)
@@ -46,13 +47,15 @@ const EventMap = dynamic(() => import('@/components/EventMap'), {
   ),
 });
 
-const CITIES = ['Berlin', 'Hamburg', 'London', 'Paris', 'Amsterdam', 'Barcelona'];
+// Fallback cities in case API fails
+const FALLBACK_CITIES = ['Berlin', 'Hamburg', 'London', 'Paris', 'Amsterdam', 'Barcelona'];
 
 export default function AdminDashboard() {
   const [view, setView] = useState<'table' | 'map' | 'split'>('split');
   const [events, setEvents] = useState<Event[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [enrichStats, setEnrichStats] = useState<any>(null);
+  const [cities, setCities] = useState<City[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
@@ -72,7 +75,7 @@ export default function AdminDashboard() {
   const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [eventsData, statsData, enrichData] = await Promise.all([
+      const [eventsData, statsData, enrichData, citiesData] = await Promise.all([
         fetchEvents({
           city: cityFilter || undefined,
           limit: pageSize,
@@ -80,12 +83,14 @@ export default function AdminDashboard() {
         }),
         fetchStats(),
         fetchEnrichStats(),
+        fetchCities().catch(() => []), // Fallback to empty array on error
       ]);
 
       setEvents(eventsData.data);
       setTotal(eventsData.total);
       setStats(statsData);
       setEnrichStats(enrichData);
+      setCities(citiesData);
     } catch (error) {
       console.error('Failed to load data:', error);
     } finally {
@@ -321,11 +326,17 @@ export default function AdminDashboard() {
               className="px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
             >
               <option value="">All Cities</option>
-              {CITIES.map((city) => (
-                <option key={city} value={city}>
-                  {city}
-                </option>
-              ))}
+              {cities.length > 0
+                ? cities.map((city) => (
+                    <option key={city.id} value={city.name}>
+                      {city.name} ({city.event_count || 0})
+                    </option>
+                  ))
+                : FALLBACK_CITIES.map((city) => (
+                    <option key={city} value={city}>
+                      {city}
+                    </option>
+                  ))}
             </select>
 
             {/* Status filter */}
@@ -380,7 +391,7 @@ export default function AdminDashboard() {
                 {isSyncing ? 'Syncing...' : 'Sync Events'}
               </button>
               <div className="absolute right-0 mt-1 w-48 bg-white rounded-lg shadow-lg border opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
-                {CITIES.slice(0, 4).map((city) => (
+                {(cities.length > 0 ? cities.slice(0, 4).map(c => c.name) : FALLBACK_CITIES.slice(0, 4)).map((city) => (
                   <button
                     key={city}
                     onClick={() => handleSync(city)}
@@ -442,8 +453,13 @@ export default function AdminDashboard() {
         >
           {/* Table View */}
           {(view === 'table' || view === 'split') && (
-            <div className={clsx(view === 'split' && 'lg:order-1')}>
-              <EventTable
+            <div className={clsx(
+              'flex flex-col',
+              view === 'table' ? 'h-[calc(100vh-220px)]' : 'h-[calc(100vh-220px)]',
+              view === 'split' && 'lg:order-1'
+            )}>
+              <div className="flex-1 min-h-0">
+                <EventTable
                 events={filteredEvents}
                 selectedIds={selectedIds}
                 onSelect={handleSelect}
@@ -451,12 +467,13 @@ export default function AdminDashboard() {
                 onEdit={handleEdit}
                 onDelete={handleDelete}
                 onPublish={handlePublish}
-                isLoading={isLoading}
-              />
+                  isLoading={isLoading}
+                />
+              </div>
 
               {/* Pagination */}
               {totalPages > 1 && (
-                <div className="mt-4 flex items-center justify-between">
+                <div className="mt-2 flex items-center justify-between flex-shrink-0">
                   <p className="text-sm text-gray-600">
                     Showing {(page - 1) * pageSize + 1} to{' '}
                     {Math.min(page * pageSize, total)} of {total} events
@@ -490,13 +507,14 @@ export default function AdminDashboard() {
             <div
               className={clsx(
                 'bg-white rounded-lg shadow overflow-hidden relative',
-                view === 'map' ? 'h-[calc(100vh-220px)]' : 'h-[600px]',
+                'h-[calc(100vh-220px)]',
                 view === 'split' && 'lg:order-2'
               )}
               style={{ zIndex: 1 }}
             >
               <EventMap
                 events={filteredEvents}
+                cities={cities}
                 selectedCity={cityFilter}
                 onCityChange={(city) => {
                   setCityFilter(city);

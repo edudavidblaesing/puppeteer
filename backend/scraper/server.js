@@ -1220,6 +1220,89 @@ app.get('/db/stats', async (req, res) => {
     }
 });
 
+// Get all cities with event counts
+app.get('/db/cities', async (req, res) => {
+    try {
+        // First try to get from cities table
+        const citiesResult = await pool.query(`
+            SELECT * FROM cities WHERE is_active = true ORDER BY event_count DESC
+        `);
+        
+        if (citiesResult.rows.length > 0) {
+            res.json({ data: citiesResult.rows });
+        } else {
+            // Fallback: aggregate from events table
+            const fallbackResult = await pool.query(`
+                SELECT 
+                    venue_city as name,
+                    venue_country as country,
+                    COUNT(*) as event_count,
+                    COUNT(DISTINCT venue_name) as venue_count,
+                    CASE venue_city
+                        WHEN 'Berlin' THEN 52.52
+                        WHEN 'Hamburg' THEN 53.5511
+                        WHEN 'London' THEN 51.5074
+                        WHEN 'Paris' THEN 48.8566
+                        WHEN 'Amsterdam' THEN 52.3676
+                        WHEN 'Barcelona' THEN 41.3851
+                        ELSE NULL
+                    END as latitude,
+                    CASE venue_city
+                        WHEN 'Berlin' THEN 13.405
+                        WHEN 'Hamburg' THEN 9.9937
+                        WHEN 'London' THEN -0.1278
+                        WHEN 'Paris' THEN 2.3522
+                        WHEN 'Amsterdam' THEN 4.9041
+                        WHEN 'Barcelona' THEN 2.1734
+                        ELSE NULL
+                    END as longitude
+                FROM events 
+                WHERE venue_city IS NOT NULL AND venue_city != ''
+                GROUP BY venue_city, venue_country
+                ORDER BY event_count DESC
+            `);
+            res.json({ data: fallbackResult.rows });
+        }
+    } catch (error) {
+        // If cities table doesn't exist, use fallback
+        try {
+            const fallbackResult = await pool.query(`
+                SELECT 
+                    venue_city as name,
+                    venue_country as country,
+                    COUNT(*) as event_count,
+                    COUNT(DISTINCT venue_name) as venue_count,
+                    CASE venue_city
+                        WHEN 'Berlin' THEN 52.52
+                        WHEN 'Hamburg' THEN 53.5511
+                        WHEN 'London' THEN 51.5074
+                        WHEN 'Paris' THEN 48.8566
+                        WHEN 'Amsterdam' THEN 52.3676
+                        WHEN 'Barcelona' THEN 41.3851
+                        ELSE NULL
+                    END as latitude,
+                    CASE venue_city
+                        WHEN 'Berlin' THEN 13.405
+                        WHEN 'Hamburg' THEN 9.9937
+                        WHEN 'London' THEN -0.1278
+                        WHEN 'Paris' THEN 2.3522
+                        WHEN 'Amsterdam' THEN 4.9041
+                        WHEN 'Barcelona' THEN 2.1734
+                        ELSE NULL
+                    END as longitude
+                FROM events 
+                WHERE venue_city IS NOT NULL AND venue_city != ''
+                GROUP BY venue_city, venue_country
+                ORDER BY event_count DESC
+            `);
+            res.json({ data: fallbackResult.rows });
+        } catch (fallbackError) {
+            console.error('Database error:', fallbackError);
+            res.status(500).json({ error: fallbackError.message });
+        }
+    }
+});
+
 // Fetch from RA API and save to database in one call
 app.post('/db/sync', async (req, res) => {
     try {

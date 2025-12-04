@@ -113,3 +113,10 @@ export async function enrichArtists(limit: number = 100) {
   if (!response.ok) throw new Error('Failed to enrich artists');
   return response.json();
 }
+
+export async function fetchCities() {
+  const response = await fetch(`${API_URL}/db/cities`, { headers });
+  if (!response.ok) throw new Error('Failed to fetch cities');
+  const result = await response.json();
+  return result.data || [];
+}

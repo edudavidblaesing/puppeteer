@@ -1,19 +1,12 @@
 'use client';
 
-import { useState } from 'react';
 import {
-  Calendar,
-  MapPin,
-  Users,
-  Building2,
   RefreshCw,
   Eye,
   EyeOff,
   Trash2,
   Edit,
   ExternalLink,
-  Check,
-  X,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import clsx from 'clsx';
@@ -43,9 +36,10 @@ export default function EventTable({
   const allSelected = events.length > 0 && events.every((e) => selectedIds.has(e.id));
 
   return (
-    <div className="overflow-x-auto bg-white rounded-lg shadow">
-      <table className="min-w-full divide-y divide-gray-200">
-        <thead className="bg-gray-50">
+    <div className="flex flex-col h-full bg-white rounded-lg shadow overflow-hidden">
+      <div className="overflow-auto flex-1">
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50 sticky top-0 z-10">
           <tr>
             <th className="px-4 py-3 text-left">
               <input
@@ -153,40 +147,24 @@ export default function EventTable({
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-900">
                   {event.date ? (
-                    <div className="flex items-center">
-                      <Calendar className="w-4 h-4 mr-1 text-gray-400" />
-                      {format(new Date(event.date), 'MMM d, yyyy')}
-                    </div>
+                    format(new Date(event.date), 'MMM d, yyyy')
                   ) : (
                     <span className="text-gray-400">-</span>
                   )}
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-900">
                   {event.venue_name ? (
-                    <div className="flex items-center">
-                      <Building2 className="w-4 h-4 mr-1 text-gray-400" />
-                      <span className="line-clamp-1">{event.venue_name}</span>
-                    </div>
+                    <span className="line-clamp-1">{event.venue_name}</span>
                   ) : (
                     <span className="text-gray-400">-</span>
                   )}
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-900">
-                  {event.venue_city ? (
-                    <div className="flex items-center">
-                      <MapPin className="w-4 h-4 mr-1 text-gray-400" />
-                      {event.venue_city}
-                    </div>
-                  ) : (
-                    <span className="text-gray-400">-</span>
-                  )}
+                  {event.venue_city || <span className="text-gray-400">-</span>}
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-900">
                   {event.artists ? (
-                    <div className="flex items-center">
-                      <Users className="w-4 h-4 mr-1 text-gray-400" />
-                      <span className="line-clamp-1 max-w-[150px]">{event.artists}</span>
-                    </div>
+                    <span className="line-clamp-1 max-w-[150px]">{event.artists}</span>
                   ) : (
                     <span className="text-gray-400">-</span>
                   )}
@@ -244,8 +222,9 @@ export default function EventTable({
               </tr>
             ))
           )}
-        </tbody>
-      </table>
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

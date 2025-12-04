@@ -56,3 +56,16 @@ export interface Stats {
   latest_event: string;
   events_by_city: { venue_city: string; count: string }[];
 }
+
+export interface City {
+  id?: number;
+  name: string;
+  country: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  timezone?: string | null;
+  ra_area_id?: number | null;
+  is_active?: boolean;
+  event_count: number;
+  venue_count: number;
+}
