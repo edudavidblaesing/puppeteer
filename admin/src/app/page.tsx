@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useRouter, usePathname } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import {
   Calendar,
@@ -70,12 +71,42 @@ import { MiniBarChart, MiniAreaChart, StatCard, RecentActivity } from '@/compone
 type ActiveTab = 'events' | 'artists' | 'venues' | 'cities' | 'scrape';
 type DataSource = 'main' | 'scraped';
 
-export default function AdminDashboard() {
+interface AdminDashboardProps {
+  initialTab?: ActiveTab;
+}
+
+export default function AdminDashboard({ initialTab }: AdminDashboardProps = {}) {
+  const router = useRouter();
+  const pathname = usePathname();
+  
+  // Determine active tab from pathname or initialTab prop
+  const getTabFromPathname = (path: string): ActiveTab => {
+    if (path === '/events') return 'events';
+    if (path === '/artists') return 'artists';
+    if (path === '/venues') return 'venues';
+    if (path === '/cities') return 'cities';
+    if (path === '/scrape') return 'scrape';
+    return 'events'; // default for root path
+  };
+  
+  // Redirect root path to /events
+  useEffect(() => {
+    if (pathname === '/') {
+      router.replace('/events');
+    }
+  }, [pathname, router]);
+  
   // Main state
-  const [activeTab, setActiveTab] = useState<ActiveTab>('events');
+  const [activeTab, setActiveTabState] = useState<ActiveTab>(initialTab || getTabFromPathname(pathname));
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [dataSource, setDataSource] = useState<DataSource>('main');
+  
+  // Handle tab changes with URL navigation
+  const setActiveTab = useCallback((tab: ActiveTab) => {
+    setActiveTabState(tab);
+    router.push(`/${tab}`);
+  }, [router]);
 
   // Events state
   const [events, setEvents] = useState<Event[]>([]);
@@ -867,43 +898,14 @@ export default function AdminDashboard() {
 
   return (
     <div className="h-screen flex flex-col bg-gray-100">
-      {/* Top Bar */}
+      {/* Secondary toolbar */}
       <header className="bg-white border-b flex-shrink-0 z-50">
-        <div className="flex items-center h-14 px-4">
-          {/* Logo */}
-          <div className="flex items-center">
-            <h1 className="text-lg font-bold text-gray-900">Events Admin</h1>
-          </div>
-
-          {/* Tab Navigation */}
-          <div className="flex-1 flex justify-center">
-            <div className="flex bg-gray-100 rounded-lg p-1">
-              {(['events', 'artists', 'venues', 'cities', 'scrape'] as ActiveTab[]).map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  className={clsx(
-                    'px-4 py-1.5 text-sm font-medium rounded-md transition-all capitalize flex items-center gap-1',
-                    activeTab === tab ? 'bg-white shadow text-gray-900' : 'text-gray-600 hover:text-gray-900'
-                  )}
-                >
-                  {tab === 'scrape' && <CloudDownload className="w-4 h-4" />}
-                  {tab}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Right Actions */}
-          <div className="flex items-center gap-2">
-            <button onClick={loadData} className="p-2 hover:bg-gray-100 rounded-lg" title="Refresh">
-              <RefreshCw className={clsx('w-4 h-4', isLoading && 'animate-spin')} />
-            </button>
-          </div>
-        </div>
-
-        {/* Secondary toolbar */}
-        <div className="flex items-center px-4 py-2 gap-3 border-t bg-gray-50">
+        <div className="flex items-center px-4 py-2 gap-3 bg-gray-50">
+          {/* Refresh button */}
+          <button onClick={loadData} className="p-2 hover:bg-gray-200 rounded-lg" title="Refresh">
+            <RefreshCw className={clsx('w-4 h-4', isLoading && 'animate-spin')} />
+          </button>
+          
           {/* Search */}
           <div className="relative flex-1 max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -982,13 +984,13 @@ export default function AdminDashboard() {
             </div>
           )}
 
-          {/* Dedupe button for venues and artists */}
-          {(activeTab === 'artists' || activeTab === 'venues') && dataSource === 'main' && (
+          {/* Dedupe button for venues only */}
+          {activeTab === 'venues' && dataSource === 'main' && (
             <button
-              onClick={() => handleDeduplicate(activeTab as 'venues' | 'artists')}
+              onClick={() => handleDeduplicate('venues')}
               disabled={isDeduplicating}
               className="px-3 py-1.5 text-xs bg-orange-100 text-orange-700 rounded-lg hover:bg-orange-200 disabled:opacity-50 flex items-center gap-1"
-              title={`Merge duplicate ${activeTab}`}
+              title="Merge duplicate venues"
             >
               {isDeduplicating ? (
                 <RefreshCw className="w-3 h-3 animate-spin" />
