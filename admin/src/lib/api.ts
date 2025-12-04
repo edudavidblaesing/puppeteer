@@ -138,13 +138,13 @@ export async function fetchArtists(params?: { search?: string; country?: string;
   if (params?.limit) searchParams.set('limit', params.limit.toString());
   if (params?.offset) searchParams.set('offset', params.offset.toString());
 
-  const response = await fetch(`${API_URL}/admin/artists?${searchParams}`, { headers });
+  const response = await fetch(`${API_URL}/db/artists?${searchParams}`, { headers });
   if (!response.ok) throw new Error('Failed to fetch artists');
   return response.json();
 }
 
 export async function createArtist(data: { name: string; country?: string; content_url?: string; image_url?: string }) {
-  const response = await fetch(`${API_URL}/admin/artists`, {
+  const response = await fetch(`${API_URL}/db/artists`, {
     method: 'POST',
     headers,
     body: JSON.stringify(data),
@@ -157,7 +157,7 @@ export async function createArtist(data: { name: string; country?: string; conte
 }
 
 export async function updateArtist(id: string, data: Partial<{ name: string; country: string; content_url: string; image_url: string }>) {
-  const response = await fetch(`${API_URL}/admin/artists/${id}`, {
+  const response = await fetch(`${API_URL}/db/artists/${id}`, {
     method: 'PATCH',
     headers,
     body: JSON.stringify(data),
@@ -170,7 +170,7 @@ export async function updateArtist(id: string, data: Partial<{ name: string; cou
 }
 
 export async function deleteArtist(id: string) {
-  const response = await fetch(`${API_URL}/admin/artists/${id}`, {
+  const response = await fetch(`${API_URL}/db/artists/${id}`, {
     method: 'DELETE',
     headers,
   });
@@ -189,13 +189,13 @@ export async function fetchAdminCities(params?: { search?: string; limit?: numbe
   if (params?.limit) searchParams.set('limit', params.limit.toString());
   if (params?.offset) searchParams.set('offset', params.offset.toString());
 
-  const response = await fetch(`${API_URL}/admin/cities?${searchParams}`, { headers });
+  const response = await fetch(`${API_URL}/db/cities?${searchParams}`, { headers });
   if (!response.ok) throw new Error('Failed to fetch cities');
   return response.json();
 }
 
 export async function createCity(data: { name: string; country?: string; latitude?: number; longitude?: number; timezone?: string }) {
-  const response = await fetch(`${API_URL}/admin/cities`, {
+  const response = await fetch(`${API_URL}/db/cities`, {
     method: 'POST',
     headers,
     body: JSON.stringify(data),
@@ -208,7 +208,7 @@ export async function createCity(data: { name: string; country?: string; latitud
 }
 
 export async function updateCity(id: string, data: Partial<{ name: string; country: string; latitude: number; longitude: number; timezone: string; is_active: boolean }>) {
-  const response = await fetch(`${API_URL}/admin/cities/${id}`, {
+  const response = await fetch(`${API_URL}/db/cities/${id}`, {
     method: 'PATCH',
     headers,
     body: JSON.stringify(data),
@@ -221,7 +221,7 @@ export async function updateCity(id: string, data: Partial<{ name: string; count
 }
 
 export async function deleteCity(id: string) {
-  const response = await fetch(`${API_URL}/admin/cities/${id}`, {
+  const response = await fetch(`${API_URL}/db/cities/${id}`, {
     method: 'DELETE',
     headers,
   });
@@ -241,13 +241,13 @@ export async function fetchAdminVenues(params?: { search?: string; city?: string
   if (params?.limit) searchParams.set('limit', params.limit.toString());
   if (params?.offset) searchParams.set('offset', params.offset.toString());
 
-  const response = await fetch(`${API_URL}/admin/venues?${searchParams}`, { headers });
+  const response = await fetch(`${API_URL}/db/venues?${searchParams}`, { headers });
   if (!response.ok) throw new Error('Failed to fetch venues');
   return response.json();
 }
 
 export async function createVenue(data: { name: string; address?: string; city?: string; country?: string; latitude?: number; longitude?: number; content_url?: string }) {
-  const response = await fetch(`${API_URL}/admin/venues`, {
+  const response = await fetch(`${API_URL}/db/venues`, {
     method: 'POST',
     headers,
     body: JSON.stringify(data),
@@ -260,7 +260,7 @@ export async function createVenue(data: { name: string; address?: string; city?:
 }
 
 export async function updateVenue(id: string, data: Partial<{ name: string; address: string; city: string; country: string; latitude: number; longitude: number; content_url: string }>) {
-  const response = await fetch(`${API_URL}/admin/venues/${id}`, {
+  const response = await fetch(`${API_URL}/db/venues/${id}`, {
     method: 'PATCH',
     headers,
     body: JSON.stringify(data),
@@ -273,7 +273,7 @@ export async function updateVenue(id: string, data: Partial<{ name: string; addr
 }
 
 export async function deleteVenue(id: string) {
-  const response = await fetch(`${API_URL}/admin/venues/${id}`, {
+  const response = await fetch(`${API_URL}/db/venues/${id}`, {
     method: 'DELETE',
     headers,
   });
@@ -287,34 +287,9 @@ export async function deleteVenue(id: string) {
 // ============== Admin Dashboard API ==============
 
 export async function fetchDashboard() {
-  const response = await fetch(`${API_URL}/admin/dashboard`, { headers });
+  const response = await fetch(`${API_URL}/db/dashboard`, { headers });
   if (!response.ok) throw new Error('Failed to fetch dashboard');
   return response.json();
 }
 
-// ============== Event Artists API ==============
 
-export async function addArtistToEvent(eventId: string, artistId: string) {
-  const response = await fetch(`${API_URL}/admin/events/${eventId}/artists`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ artist_id: artistId }),
-  });
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.error || 'Failed to add artist to event');
-  }
-  return response.json();
-}
-
-export async function removeArtistFromEvent(eventId: string, artistId: string) {
-  const response = await fetch(`${API_URL}/admin/events/${eventId}/artists/${artistId}`, {
-    method: 'DELETE',
-    headers,
-  });
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.error || 'Failed to remove artist from event');
-  }
-  return response.json();
-}
