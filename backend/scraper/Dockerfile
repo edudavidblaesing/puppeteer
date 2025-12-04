@@ -30,7 +30,7 @@ RUN chmod +x entrypoint.sh run-migrations.sh
 # Fix permissions for the 'node' user
 RUN chown -R node:node /usr/src/app
 
-EXPOSE 3001
+EXPOSE 3000
 EXPOSE 9222
 EXPOSE 9223
 

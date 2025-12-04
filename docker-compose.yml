@@ -6,10 +6,10 @@ services:
     build: ./backend/scraper
     container_name: event-scraper-service
     ports:
-      - "3007:3001"
+      - "3007:3000"
       - "9225:9223"
     environment:
-      - PORT=3001
+      - PORT=3000
       - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
       - PROXY_SERVER=${PROXY_SERVER:-}
