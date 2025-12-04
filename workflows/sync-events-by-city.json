@@ -44,12 +44,12 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://pptr.davidblaesing.com/scrape/city",
+        "url": "https://pptr.davidblaesing.com/scrape/events",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ city: $json.city, sources: $json.sources, limit: $json.limit }) }}",
+        "jsonBody": "={{ JSON.stringify({ city: $json.city, sources: $json.sources, limit: $json.limit, match: true }) }}",
         "options": {
           "timeout": 300000
         }

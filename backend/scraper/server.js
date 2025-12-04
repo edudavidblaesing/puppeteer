@@ -4431,6 +4431,169 @@ async function deduplicateArtists() {
     return { merged };
 }
 
+// ============== Sync Pipeline Endpoint ==============
+// Full sync pipeline: scrape → match → enrich → dedupe
+app.post('/sync/pipeline', async (req, res) => {
+    try {
+        const { cities = [], sources = ['ra', 'ticketmaster'], enrichAfter = true, dedupeAfter = true } = req.body;
+        
+        if (!cities || cities.length === 0) {
+            return res.status(400).json({ error: 'At least one city is required' });
+        }
+        
+        console.log(`[Sync Pipeline] Starting for ${cities.length} cities:`, cities);
+        
+        const results = {
+            scrape: {
+                cities_processed: 0,
+                total_fetched: 0,
+                total_inserted: 0,
+                total_updated: 0,
+                by_city: {},
+                errors: []
+            },
+            match: null,
+            enrich: null,
+            dedupe: null
+        };
+        
+        // Process each city with a pause between
+        for (let i = 0; i < cities.length; i++) {
+            const city = cities[i].toLowerCase();
+            console.log(`[Sync Pipeline] Processing city ${i + 1}/${cities.length}: ${city}`);
+            
+            try {
+                const cityResults = {};
+                
+                for (const source of sources) {
+                    try {
+                        let events = [];
+                        const startTime = Date.now();
+                        
+                        if (source === 'ra') {
+                            events = await scrapeResidentAdvisor(city, { limit: 100 });
+                        } else if (source === 'ticketmaster') {
+                            events = await scrapeTicketmaster(city, { limit: 100 });
+                        }
+                        
+                        const saveResult = await saveScrapedEvents(events);
+                        const duration = Date.now() - startTime;
+                        
+                        cityResults[source] = {
+                            fetched: events.length,
+                            ...saveResult
+                        };
+                        
+                        results.scrape.total_fetched += events.length;
+                        results.scrape.total_inserted += saveResult.inserted || 0;
+                        results.scrape.total_updated += saveResult.updated || 0;
+                        
+                        // Log to scrape history
+                        await logScrapeHistory({
+                            city,
+                            source_code: source,
+                            events_fetched: events.length,
+                            events_inserted: saveResult.inserted || 0,
+                            events_updated: saveResult.updated || 0,
+                            venues_created: saveResult.venues_created || 0,
+                            artists_created: saveResult.artists_created || 0,
+                            duration_ms: duration
+                        });
+                    } catch (sourceErr) {
+                        console.error(`[Sync Pipeline] Error scraping ${source} for ${city}:`, sourceErr.message);
+                        cityResults[source] = { error: sourceErr.message };
+                        
+                        // Log error to history
+                        await logScrapeHistory({
+                            city,
+                            source_code: source,
+                            error: sourceErr.message
+                        });
+                    }
+                }
+                
+                results.scrape.by_city[city] = cityResults;
+                results.scrape.cities_processed++;
+                
+                // Ensure city exists in database
+                await pool.query(`
+                    INSERT INTO cities (name, country)
+                    VALUES ($1, $2)
+                    ON CONFLICT (name) DO NOTHING
+                `, [city.charAt(0).toUpperCase() + city.slice(1), 'Unknown']);
+                
+            } catch (cityErr) {
+                console.error(`[Sync Pipeline] Error processing ${city}:`, cityErr.message);
+                results.scrape.errors.push({ city, error: cityErr.message });
+            }
+            
+            // Pause between cities to avoid rate limiting (2 seconds)
+            if (i < cities.length - 1) {
+                await new Promise(resolve => setTimeout(resolve, 2000));
+            }
+        }
+        
+        // Run matching to link scraped events to main events
+        console.log('[Sync Pipeline] Running matching...');
+        try {
+            results.match = await matchAndLinkEvents({ dryRun: false });
+        } catch (matchErr) {
+            console.error('[Sync Pipeline] Matching error:', matchErr.message);
+            results.match = { error: matchErr.message };
+        }
+        
+        // Enrich venues and artists if enabled
+        if (enrichAfter) {
+            console.log('[Sync Pipeline] Enriching venues and artists...');
+            try {
+                const [venueResult, artistResult] = await Promise.all([
+                    enrichMissingVenueData(100),
+                    enrichMissingArtistData(200)
+                ]);
+                results.enrich = {
+                    venues_enriched: venueResult.saved || 0,
+                    artists_enriched: artistResult.saved || 0
+                };
+            } catch (enrichErr) {
+                console.error('[Sync Pipeline] Enrichment error:', enrichErr.message);
+                results.enrich = { error: enrichErr.message };
+            }
+        }
+        
+        // Deduplicate if enabled
+        if (dedupeAfter) {
+            console.log('[Sync Pipeline] Deduplicating...');
+            try {
+                const [eventsDeduped, venuesDeduped, artistsDeduped] = await Promise.all([
+                    deduplicateUnifiedEvents(),
+                    deduplicateVenues(),
+                    deduplicateArtists()
+                ]);
+                results.dedupe = {
+                    events_merged: eventsDeduped.merged || 0,
+                    venues_merged: venuesDeduped.merged || 0,
+                    artists_merged: artistsDeduped.merged || 0
+                };
+            } catch (dedupeErr) {
+                console.error('[Sync Pipeline] Deduplication error:', dedupeErr.message);
+                results.dedupe = { error: dedupeErr.message };
+            }
+        }
+        
+        console.log('[Sync Pipeline] Complete!', results);
+        
+        res.json({
+            success: true,
+            timestamp: new Date().toISOString(),
+            ...results
+        });
+        
+    } catch (error) {
+        console.error('[Sync Pipeline] Fatal error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Deduplicate unified events manually
 app.post('/scrape/deduplicate', async (req, res) => {
     try {
@@ -5230,7 +5393,10 @@ app.get('/scrape/stats', async (req, res) => {
                 (SELECT COUNT(*) FROM artists) as total_main_artists,
                 (SELECT COUNT(*) FROM event_scraped_links) as total_event_links,
                 (SELECT COUNT(DISTINCT scraped_event_id) FROM event_scraped_links) as linked_scraped_events,
-                (SELECT COUNT(*) FROM scraped_events WHERE NOT EXISTS(SELECT 1 FROM event_scraped_links esl WHERE esl.scraped_event_id = scraped_events.id)) as unlinked_scraped_events
+                (SELECT COUNT(*) FROM scraped_events WHERE NOT EXISTS(SELECT 1 FROM event_scraped_links esl WHERE esl.scraped_event_id = scraped_events.id)) as unlinked_scraped_events,
+                (SELECT MAX(created_at) FROM scrape_history WHERE error IS NULL) as last_scraped_at,
+                (SELECT city FROM scrape_history WHERE error IS NULL ORDER BY created_at DESC LIMIT 1) as last_scraped_city,
+                (SELECT source_code FROM scrape_history WHERE error IS NULL ORDER BY created_at DESC LIMIT 1) as last_scraped_source
         `);
         
         res.json(stats.rows[0]);
@@ -5238,6 +5404,130 @@ app.get('/scrape/stats', async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
+
+// Get scrape history for charts
+app.get('/scrape/history', async (req, res) => {
+    try {
+        const { days = 30, groupBy = 'day' } = req.query;
+        
+        let query;
+        if (groupBy === 'hour') {
+            query = `
+                SELECT 
+                    DATE_TRUNC('hour', created_at) as timestamp,
+                    SUM(events_fetched) as events_fetched,
+                    SUM(events_inserted) as events_inserted,
+                    SUM(events_updated) as events_updated,
+                    SUM(venues_created) as venues_created,
+                    SUM(artists_created) as artists_created,
+                    COUNT(*) as scrape_runs,
+                    ARRAY_AGG(DISTINCT city) as cities,
+                    ARRAY_AGG(DISTINCT source_code) as sources
+                FROM scrape_history
+                WHERE created_at >= NOW() - INTERVAL '${parseInt(days)} days'
+                AND error IS NULL
+                GROUP BY DATE_TRUNC('hour', created_at)
+                ORDER BY timestamp DESC
+                LIMIT 168
+            `;
+        } else {
+            query = `
+                SELECT 
+                    DATE(created_at) as timestamp,
+                    SUM(events_fetched) as events_fetched,
+                    SUM(events_inserted) as events_inserted,
+                    SUM(events_updated) as events_updated,
+                    SUM(venues_created) as venues_created,
+                    SUM(artists_created) as artists_created,
+                    COUNT(*) as scrape_runs,
+                    ARRAY_AGG(DISTINCT city) as cities,
+                    ARRAY_AGG(DISTINCT source_code) as sources
+                FROM scrape_history
+                WHERE created_at >= NOW() - INTERVAL '${parseInt(days)} days'
+                AND error IS NULL
+                GROUP BY DATE(created_at)
+                ORDER BY timestamp DESC
+            `;
+        }
+        
+        const result = await pool.query(query);
+        
+        // Also get totals
+        const totalsResult = await pool.query(`
+            SELECT 
+                SUM(events_fetched) as total_events_fetched,
+                SUM(events_inserted) as total_events_inserted,
+                SUM(venues_created) as total_venues_created,
+                SUM(artists_created) as total_artists_created,
+                COUNT(*) as total_scrape_runs,
+                COUNT(DISTINCT city) as unique_cities,
+                MIN(created_at) as first_scrape,
+                MAX(created_at) as last_scrape
+            FROM scrape_history
+            WHERE error IS NULL
+        `);
+        
+        res.json({
+            history: result.rows,
+            totals: totalsResult.rows[0],
+            period: `${days} days`
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get recent scrape activity
+app.get('/scrape/recent', async (req, res) => {
+    try {
+        const { limit = 20 } = req.query;
+        
+        const result = await pool.query(`
+            SELECT 
+                id,
+                created_at,
+                city,
+                source_code,
+                events_fetched,
+                events_inserted,
+                events_updated,
+                venues_created,
+                artists_created,
+                duration_ms,
+                error
+            FROM scrape_history
+            ORDER BY created_at DESC
+            LIMIT $1
+        `, [parseInt(limit)]);
+        
+        res.json(result.rows);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Helper function to log scrape history
+async function logScrapeHistory(data) {
+    try {
+        await pool.query(`
+            INSERT INTO scrape_history (city, source_code, events_fetched, events_inserted, events_updated, venues_created, artists_created, duration_ms, error, metadata)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        `, [
+            data.city,
+            data.source_code,
+            data.events_fetched || 0,
+            data.events_inserted || 0,
+            data.events_updated || 0,
+            data.venues_created || 0,
+            data.artists_created || 0,
+            data.duration_ms || null,
+            data.error || null,
+            JSON.stringify(data.metadata || {})
+        ]);
+    } catch (err) {
+        console.error('Failed to log scrape history:', err.message);
+    }
+}
 
 // Get available cities for scraping with source support
 app.get('/scrape/cities', (req, res) => {

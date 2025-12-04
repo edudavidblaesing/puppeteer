@@ -511,8 +511,41 @@ export async function deduplicateData(type: 'all' | 'events' | 'venues' | 'artis
   return response.json();
 }
 
-// ============== n8n Workflow Trigger API ==============
+// ============== Scrape History API ==============
 
+export async function fetchScrapeHistory(params?: { days?: number; groupBy?: 'day' | 'hour' }) {
+  const searchParams = new URLSearchParams();
+  if (params?.days) searchParams.set('days', params.days.toString());
+  if (params?.groupBy) searchParams.set('groupBy', params.groupBy);
+
+  const response = await fetch(`${API_URL}/scrape/history?${searchParams}`, { headers });
+  if (!response.ok) throw new Error('Failed to fetch scrape history');
+  return response.json();
+}
+
+export async function fetchRecentScrapes(limit: number = 20) {
+  const response = await fetch(`${API_URL}/scrape/recent?limit=${limit}`, { headers });
+  if (!response.ok) throw new Error('Failed to fetch recent scrapes');
+  return response.json();
+}
+
+// ============== Sync Pipeline API ==============
+
+// Direct sync pipeline - scrapes, matches, enriches, and dedupes
+export async function syncEventsPipeline(params: { cities: string[]; sources: string[]; enrichAfter?: boolean; dedupeAfter?: boolean }) {
+  const response = await fetch(`${API_URL}/sync/pipeline`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(params),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to run sync pipeline');
+  }
+  return response.json();
+}
+
+// n8n Workflow Trigger (optional - for scheduled runs)
 const N8N_WEBHOOK_URL = 'https://n8n.davidblaesing.com/webhook/event-scraper';
 
 export async function triggerSyncWorkflow(params: { cities: string[]; sources: string[] }) {
@@ -523,9 +556,14 @@ export async function triggerSyncWorkflow(params: { cities: string[]; sources: s
     },
     body: JSON.stringify(params),
   });
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.error || 'Failed to trigger sync workflow');
+  // Handle non-JSON responses gracefully
+  const text = await response.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    if (!response.ok) {
+      throw new Error(text || 'Failed to trigger sync workflow');
+    }
+    return { success: true, message: text };
   }
-  return response.json();
 }

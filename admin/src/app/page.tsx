@@ -61,8 +61,11 @@ import {
   fetchScrapedVenues,
   fetchScrapedArtists,
   deduplicateData,
-  triggerSyncWorkflow,
+  syncEventsPipeline,
+  fetchScrapeHistory,
+  fetchRecentScrapes,
 } from '@/lib/api';
+import { MiniBarChart, MiniAreaChart, StatCard, RecentActivity } from '@/components/ScrapeCharts';
 
 type ActiveTab = 'events' | 'artists' | 'venues' | 'cities' | 'scrape';
 type DataSource = 'main' | 'scraped';
@@ -103,15 +106,21 @@ export default function AdminDashboard() {
   // Scrape state
   const [scrapeStats, setScrapeStats] = useState<any>(null);
   const [scrapedEvents, setScrapedEvents] = useState<any[]>([]);
-  const [scrapeCity, setScrapeCity] = useState('berlin');
+  const [scrapeCity, setScrapeCity] = useState('all'); // 'all' for all cities from DB
   const [scrapeSources, setScrapeSources] = useState<string[]>(['ra', 'ticketmaster']);
   const [isScraping, setIsScraping] = useState(false);
   const [isMatching, setIsMatching] = useState(false);
   const [scrapeResult, setScrapeResult] = useState<any>(null);
   
-  // n8n Workflow sync state
+  // Sync pipeline state
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<any>(null);
+  const [syncProgress, setSyncProgress] = useState<string>('');
+  
+  // Scrape history for charts
+  const [scrapeHistory, setScrapeHistory] = useState<any[]>([]);
+  const [recentScrapes, setRecentScrapes] = useState<any[]>([]);
+  const [historyTotals, setHistoryTotals] = useState<any>(null);
 
   // Filters
   const [cityFilter, setCityFilter] = useState<string>('');
@@ -232,12 +241,17 @@ export default function AdminDashboard() {
   // Load scrape data
   const loadScrapeData = useCallback(async () => {
     try {
-      const [statsData, eventsData] = await Promise.all([
+      const [statsData, eventsData, historyData, recentData] = await Promise.all([
         fetchScrapeStats().catch(() => null),
         fetchScrapedEvents({ limit: 50, linked: false }).catch(() => ({ data: [] })),
+        fetchScrapeHistory({ days: 30 }).catch(() => ({ history: [], totals: null })),
+        fetchRecentScrapes(15).catch(() => []),
       ]);
       setScrapeStats(statsData);
       setScrapedEvents(eventsData.data || []);
+      setScrapeHistory(historyData.history || []);
+      setHistoryTotals(historyData.totals || null);
+      setRecentScrapes(recentData || []);
     } catch (error) {
       console.error('Failed to load scrape data:', error);
     }
@@ -522,16 +536,39 @@ export default function AdminDashboard() {
     loadData();
   };
 
-  // n8n Workflow Sync - triggers full pipeline: scrape → enrich → dedupe
+  // Sync Pipeline - scrape → match → enrich → dedupe
   const handleSyncWorkflow = async () => {
     setIsSyncing(true);
     setSyncResult(null);
+    setSyncProgress('Starting sync pipeline...');
     try {
-      const result = await triggerSyncWorkflow({
-        cities: [scrapeCity],
+      // Get cities to sync
+      let citiesToSync: string[] = [];
+      if (scrapeCity === 'all') {
+        // Get all active cities from database
+        setSyncProgress('Fetching cities from database...');
+        const citiesData = await fetchCities();
+        citiesToSync = citiesData.map((c: any) => c.name.toLowerCase());
+        if (citiesToSync.length === 0) {
+          // Fallback to common cities
+          citiesToSync = ['berlin', 'hamburg', 'munich', 'cologne', 'frankfurt'];
+        }
+      } else {
+        citiesToSync = [scrapeCity];
+      }
+      
+      setSyncProgress(`Syncing ${citiesToSync.length} cities: ${citiesToSync.slice(0, 3).join(', ')}${citiesToSync.length > 3 ? '...' : ''}`);
+      
+      const result = await syncEventsPipeline({
+        cities: citiesToSync,
         sources: scrapeSources,
+        enrichAfter: true,
+        dedupeAfter: true,
       });
+      
       setSyncResult(result);
+      setSyncProgress('Reloading data...');
+      
       // Reload all data after sync completes
       await Promise.all([
         loadScrapeData(),
@@ -539,9 +576,11 @@ export default function AdminDashboard() {
         loadArtists(),
         loadVenues(),
       ]);
+      setSyncProgress('');
     } catch (error: any) {
-      console.error('Sync workflow failed:', error);
+      console.error('Sync pipeline failed:', error);
       setSyncResult({ error: error.message });
+      setSyncProgress('');
     } finally {
       setIsSyncing(false);
     }
@@ -995,34 +1034,99 @@ export default function AdminDashboard() {
         {/* Scrape Tab Content */}
         {activeTab === 'scrape' ? (
           <div className="flex-1 overflow-auto p-6">
-            <div className="max-w-6xl mx-auto space-y-6">
-              {/* Scrape Stats */}
-              {scrapeStats && (
-                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                  <div className="bg-white rounded-xl p-4 shadow-sm">
-                    <p className="text-2xl font-bold text-indigo-600">{scrapeStats.total_scraped_events || 0}</p>
-                    <p className="text-xs text-gray-500">Scraped Events</p>
+            <div className="max-w-7xl mx-auto space-y-6">
+              {/* Last Scraped Info */}
+              {scrapeStats?.last_scraped_at && (
+                <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl p-4 border border-indigo-100">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse" />
+                      <span className="text-sm text-gray-600">
+                        Last synced: <span className="font-medium text-gray-900">
+                          {new Date(scrapeStats.last_scraped_at).toLocaleString('en-US', { 
+                            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+                          })}
+                        </span>
+                        {scrapeStats.last_scraped_city && (
+                          <span className="text-gray-500"> • {scrapeStats.last_scraped_city}</span>
+                        )}
+                        {scrapeStats.last_scraped_source && (
+                          <span className={`ml-2 px-1.5 py-0.5 rounded text-xs font-medium ${
+                            scrapeStats.last_scraped_source === 'ra' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
+                          }`}>
+                            {scrapeStats.last_scraped_source.toUpperCase()}
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                    {historyTotals && (
+                      <span className="text-xs text-gray-500">
+                        {historyTotals.total_scrape_runs} total runs since {new Date(historyTotals.first_scrape).toLocaleDateString()}
+                      </span>
+                    )}
                   </div>
-                  <div className="bg-white rounded-xl p-4 shadow-sm">
-                    <p className="text-2xl font-bold text-blue-600">{scrapeStats.ra_events || 0}</p>
-                    <p className="text-xs text-gray-500">From RA</p>
-                  </div>
-                  <div className="bg-white rounded-xl p-4 shadow-sm">
-                    <p className="text-2xl font-bold text-cyan-600">{scrapeStats.ticketmaster_events || 0}</p>
-                    <p className="text-xs text-gray-500">From Ticketmaster</p>
-                  </div>
-                  <div className="bg-white rounded-xl p-4 shadow-sm">
-                    <p className="text-2xl font-bold text-green-600">{scrapeStats.total_main_events || 0}</p>
-                    <p className="text-xs text-gray-500">Main Events</p>
-                  </div>
-                  <div className="bg-white rounded-xl p-4 shadow-sm">
-                    <p className="text-2xl font-bold text-amber-600">{scrapeStats.unlinked_scraped_events || 0}</p>
-                    <p className="text-xs text-gray-500">Unlinked Events</p>
-                  </div>
-                  <div className="bg-white rounded-xl p-4 shadow-sm">
-                    <p className="text-2xl font-bold text-purple-600">{scrapeStats.published_events || 0}</p>
-                    <p className="text-xs text-gray-500">Published</p>
-                  </div>
+                </div>
+              )}
+
+              {/* Stats Overview with Charts */}
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                <StatCard
+                  title="Scraped Events"
+                  value={scrapeStats?.total_scraped_events || 0}
+                  color="#6366f1"
+                  chartData={scrapeHistory}
+                  chartKey="events_fetched"
+                />
+                <StatCard
+                  title="Main Events"
+                  value={scrapeStats?.total_main_events || 0}
+                  subValue={`${scrapeStats?.published_events || 0} published`}
+                  color="#22c55e"
+                  chartData={scrapeHistory}
+                  chartKey="events_inserted"
+                />
+                <StatCard
+                  title="Main Venues"
+                  value={scrapeStats?.total_main_venues || 0}
+                  subValue={`${scrapeStats?.total_scraped_venues || 0} scraped`}
+                  color="#f59e0b"
+                  chartData={scrapeHistory}
+                  chartKey="venues_created"
+                />
+                <StatCard
+                  title="Main Artists"
+                  value={scrapeStats?.total_main_artists || 0}
+                  subValue={`${scrapeStats?.total_scraped_artists || 0} scraped`}
+                  color="#ec4899"
+                  chartData={scrapeHistory}
+                  chartKey="artists_created"
+                />
+                <StatCard
+                  title="From RA"
+                  value={scrapeStats?.ra_events || 0}
+                  color="#8b5cf6"
+                />
+                <StatCard
+                  title="From Ticketmaster"
+                  value={scrapeStats?.ticketmaster_events || 0}
+                  color="#06b6d4"
+                />
+              </div>
+
+              {/* Activity Chart */}
+              {scrapeHistory.length > 0 && (
+                <div className="bg-white rounded-xl shadow-sm p-6">
+                  <h3 className="font-semibold text-lg mb-4">Scraping Activity (Last 30 Days)</h3>
+                  <MiniAreaChart
+                    data={scrapeHistory}
+                    lines={[
+                      { dataKey: 'events_fetched', color: '#6366f1', label: 'Events Fetched' },
+                      { dataKey: 'events_inserted', color: '#22c55e', label: 'New Events' },
+                      { dataKey: 'venues_created', color: '#f59e0b', label: 'New Venues' },
+                      { dataKey: 'artists_created', color: '#ec4899', label: 'New Artists' },
+                    ]}
+                    height={120}
+                  />
                 </div>
               )}
 
@@ -1030,7 +1134,7 @@ export default function AdminDashboard() {
               <div className="bg-white rounded-xl shadow-sm p-6">
                 <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">
                   <CloudDownload className="w-5 h-5 text-indigo-600" />
-                  Scrape Events
+                  Sync Events
                 </h3>
                 
                 <div className="grid md:grid-cols-3 gap-6">
@@ -1042,6 +1146,7 @@ export default function AdminDashboard() {
                       onChange={(e) => setScrapeCity(e.target.value)}
                       className="w-full px-3 py-2 border rounded-lg bg-white"
                     >
+                      <option value="all">🌍 All Cities (from database)</option>
                       <optgroup label="🇩🇪 Germany">
                         <option value="berlin">Berlin</option>
                         <option value="hamburg">Hamburg</option>
@@ -1136,7 +1241,7 @@ export default function AdminDashboard() {
                     </div>
                   </div>
 
-                  {/* Single Sync Button - triggers n8n workflow */}
+                  {/* Single Sync Button - triggers full pipeline */}
                   <div className="flex items-end">
                     <button
                       onClick={handleSyncWorkflow}
@@ -1146,12 +1251,12 @@ export default function AdminDashboard() {
                       {isSyncing ? (
                         <>
                           <RefreshCw className="w-5 h-5 animate-spin" />
-                          Running Pipeline...
+                          {syncProgress || 'Running Pipeline...'}
                         </>
                       ) : (
                         <>
                           <CloudDownload className="w-5 h-5" />
-                          Sync Events
+                          Sync {scrapeCity === 'all' ? 'All Cities' : scrapeCity.charAt(0).toUpperCase() + scrapeCity.slice(1)}
                         </>
                       )}
                     </button>
@@ -1163,6 +1268,11 @@ export default function AdminDashboard() {
                   <p className="text-xs text-gray-600">
                     <span className="font-medium">Pipeline:</span> Scrape Events → Match & Link → Enrich Venues/Artists → Deduplicate
                   </p>
+                  {scrapeCity === 'all' && (
+                    <p className="text-xs text-amber-600 mt-1">
+                      ⚠️ Syncing all cities may take several minutes. Cities are processed sequentially with a 2-second pause between each.
+                    </p>
+                  )}
                 </div>
 
                 {/* Sync Result */}
@@ -1230,7 +1340,7 @@ export default function AdminDashboard() {
                           <td className="py-2">
                             <span className={clsx(
                               'px-2 py-0.5 rounded text-xs font-medium',
-                              event.source_code === 'ra' ? 'bg-blue-100 text-blue-700' : 'bg-cyan-100 text-cyan-700'
+                              event.source_code === 'ra' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
                             )}>
                               {event.source_code?.toUpperCase()}
                             </span>
@@ -1255,6 +1365,17 @@ export default function AdminDashboard() {
                   )}
                 </div>
               </div>
+
+              {/* Recent Scrape Activity */}
+              {recentScrapes.length > 0 && (
+                <div className="bg-white rounded-xl shadow-sm p-6">
+                  <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">
+                    <RefreshCw className="w-5 h-5 text-gray-400" />
+                    Recent Activity
+                  </h3>
+                  <RecentActivity activities={recentScrapes} />
+                </div>
+              )}
             </div>
           </div>
         ) : (
