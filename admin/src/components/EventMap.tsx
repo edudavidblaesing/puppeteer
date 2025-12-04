@@ -385,27 +385,36 @@ export default function EventMap({
 
   // Handle city selection changes
   useEffect(() => {
-    if (!mapRef.current) return;
+    if (!mapRef.current || !mapRef.current.getContainer()) return;
     
-    isProgrammaticMove.current = true;
-    
-    if (selectedCity && cityConfig[selectedCity]) {
-      mapRef.current.setView(cityConfig[selectedCity].coords, CITY_ZOOM, { animate: true });
-    } else if (!selectedCity && Object.keys(cityConfig).length > 0) {
-      mapRef.current.setView(EUROPE_VIEW.coords, EUROPE_VIEW.zoom, { animate: true });
+    try {
+      isProgrammaticMove.current = true;
+      
+      if (selectedCity && cityConfig[selectedCity]) {
+        mapRef.current.setView(cityConfig[selectedCity].coords, CITY_ZOOM, { animate: true });
+      } else if (!selectedCity && Object.keys(cityConfig).length > 0) {
+        mapRef.current.setView(EUROPE_VIEW.coords, EUROPE_VIEW.zoom, { animate: true });
+      }
+    } catch (err) {
+      console.warn('Map setView error:', err);
+      isProgrammaticMove.current = false;
     }
   }, [selectedCity, cityConfig]);
 
   // Handle selected event
   useEffect(() => {
-    if (!selectedEventId || !mapRef.current) return;
+    if (!selectedEventId || !mapRef.current || !mapRef.current.getContainer()) return;
     
-    const event = events.find(e => e.id === selectedEventId);
-    if (event && event.venue_name) {
-      const venue = venueData[event.venue_name];
-      if (venue?.coords) {
-        mapRef.current.setView(venue.coords, 16, { animate: true });
+    try {
+      const event = events.find(e => e.id === selectedEventId);
+      if (event && event.venue_name) {
+        const venue = venueData[event.venue_name];
+        if (venue?.coords) {
+          mapRef.current.setView(venue.coords, 16, { animate: true });
+        }
       }
+    } catch (err) {
+      console.warn('Map setView error:', err);
     }
   }, [selectedEventId, events, venueData]);
 
@@ -431,10 +440,14 @@ export default function EventMap({
             key={name}
             onClick={() => {
               const coords = getCityCoords(name);
-              if (coords && mapRef.current) {
-                isProgrammaticMove.current = true;
-                mapRef.current.setView(coords, CITY_ZOOM, { animate: true });
-                if (onCityChange) onCityChange(name);
+              if (coords && mapRef.current && mapRef.current.getContainer()) {
+                try {
+                  isProgrammaticMove.current = true;
+                  mapRef.current.setView(coords, CITY_ZOOM, { animate: true });
+                  if (onCityChange) onCityChange(name);
+                } catch (err) {
+                  console.warn('Map setView error:', err);
+                }
               }
             }}
             className={clsx(
@@ -450,10 +463,14 @@ export default function EventMap({
         {availableCities.length > 1 && (
           <button
             onClick={() => {
-              if (mapRef.current) {
-                isProgrammaticMove.current = true;
-                mapRef.current.setView(EUROPE_VIEW.coords, EUROPE_VIEW.zoom, { animate: true });
-                if (onCityChange) onCityChange('');
+              if (mapRef.current && mapRef.current.getContainer()) {
+                try {
+                  isProgrammaticMove.current = true;
+                  mapRef.current.setView(EUROPE_VIEW.coords, EUROPE_VIEW.zoom, { animate: true });
+                  if (onCityChange) onCityChange('');
+                } catch (err) {
+                  console.warn('Map setView error:', err);
+                }
               }
             }}
             className={clsx(

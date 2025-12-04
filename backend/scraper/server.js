@@ -1253,6 +1253,24 @@ app.patch('/db/events/:id', async (req, res) => {
         const { id } = req.params;
         const updates = req.body;
         
+        console.log(`PATCH /db/events/${id}`, updates);
+        
+        // Ensure required columns exist
+        await pool.query(`
+            DO $$ 
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'events' AND column_name = 'is_published') THEN
+                    ALTER TABLE events ADD COLUMN is_published BOOLEAN DEFAULT false;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'events' AND column_name = 'latitude') THEN
+                    ALTER TABLE events ADD COLUMN latitude DECIMAL(10, 8);
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'events' AND column_name = 'longitude') THEN
+                    ALTER TABLE events ADD COLUMN longitude DECIMAL(11, 8);
+                END IF;
+            END $$;
+        `);
+        
         // Build dynamic update query
         const allowedFields = [
             'title', 'date', 'start_time', 'end_time', 'content_url',
@@ -1294,8 +1312,8 @@ app.patch('/db/events/:id', async (req, res) => {
         
         res.json({ success: true, event: result.rows[0] });
     } catch (error) {
-        console.error('Database error:', error);
-        res.status(500).json({ error: error.message });
+        console.error('Database error updating event:', error);
+        res.status(500).json({ error: error.message, detail: error.detail || null });
     }
 });
 
@@ -1306,6 +1324,19 @@ app.post('/db/events/publish', async (req, res) => {
         
         if (!Array.isArray(ids) || ids.length === 0) {
             return res.status(400).json({ error: 'ids must be a non-empty array' });
+        }
+        
+        // Check if is_published column exists
+        const columnsResult = await pool.query(`
+            SELECT column_name FROM information_schema.columns 
+            WHERE table_name = 'events' AND column_name = 'is_published'
+        `);
+        
+        if (columnsResult.rows.length === 0) {
+            // Column doesn't exist - run migration inline
+            await pool.query(`
+                ALTER TABLE events ADD COLUMN IF NOT EXISTS is_published BOOLEAN DEFAULT false
+            `);
         }
         
         const result = await pool.query(
@@ -1322,7 +1353,7 @@ app.post('/db/events/publish', async (req, res) => {
             ids: result.rows.map(r => r.id)
         });
     } catch (error) {
-        console.error('Database error:', error);
+        console.error('Database error publishing events:', error);
         res.status(500).json({ error: error.message });
     }
 });
