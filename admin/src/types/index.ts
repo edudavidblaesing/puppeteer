@@ -69,3 +69,17 @@ export interface City {
   event_count: number;
   venue_count: number;
 }
+
+export interface DashboardStats {
+  totals: {
+    events: number;
+    artists: number;
+    venues: number;
+    cities: number;
+    published_events: number;
+    unpublished_events: number;
+  };
+  upcoming_events: number;
+  events_this_week: number;
+  recent_events: Event[];
+}

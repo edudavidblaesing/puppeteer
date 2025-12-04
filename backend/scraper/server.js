@@ -2040,6 +2040,730 @@ app.get('/db/enrich/stats', async (req, res) => {
     }
 });
 
+// ============================================
+// ARTISTS CRUD API
+// ============================================
+
+// List artists with search and pagination
+app.get('/db/artists', async (req, res) => {
+    try {
+        const { search, limit = 50, offset = 0, sort = 'name', order = 'asc' } = req.query;
+        
+        let query = 'SELECT * FROM artists WHERE 1=1';
+        const params = [];
+        let paramIndex = 1;
+        
+        if (search) {
+            query += ` AND (name ILIKE $${paramIndex} OR country ILIKE $${paramIndex})`;
+            params.push(`%${search}%`);
+            paramIndex++;
+        }
+        
+        // Get total count
+        const countQuery = query.replace('SELECT *', 'SELECT COUNT(*)');
+        const countResult = await pool.query(countQuery, params);
+        const total = parseInt(countResult.rows[0].count);
+        
+        // Add sorting and pagination
+        const validSorts = ['name', 'country', 'created_at', 'updated_at'];
+        const sortCol = validSorts.includes(sort) ? sort : 'name';
+        const sortOrder = order.toLowerCase() === 'desc' ? 'DESC' : 'ASC';
+        
+        query += ` ORDER BY ${sortCol} ${sortOrder} LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
+        params.push(parseInt(limit), parseInt(offset));
+        
+        const result = await pool.query(query, params);
+        
+        res.json({
+            data: result.rows,
+            total,
+            limit: parseInt(limit),
+            offset: parseInt(offset)
+        });
+    } catch (error) {
+        console.error('Error fetching artists:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get single artist
+app.get('/db/artists/:id', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM artists WHERE id = $1', [req.params.id]);
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Artist not found' });
+        }
+        
+        // Get events featuring this artist
+        const eventsResult = await pool.query(`
+            SELECT id, title, date, venue_name, venue_city 
+            FROM events 
+            WHERE artists ILIKE $1
+            ORDER BY date DESC
+            LIMIT 20
+        `, [`%${result.rows[0].name}%`]);
+        
+        res.json({
+            ...result.rows[0],
+            events: eventsResult.rows
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Create artist
+app.post('/db/artists', async (req, res) => {
+    try {
+        const { id, name, country, content_url, image_url, source_code = 'manual' } = req.body;
+        
+        if (!name) {
+            return res.status(400).json({ error: 'Name is required' });
+        }
+        
+        const artistId = id || `manual-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        
+        const result = await pool.query(`
+            INSERT INTO artists (id, name, country, content_url, image_url, source_code)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            ON CONFLICT (id) DO UPDATE SET
+                name = EXCLUDED.name,
+                country = EXCLUDED.country,
+                content_url = EXCLUDED.content_url,
+                image_url = EXCLUDED.image_url,
+                updated_at = CURRENT_TIMESTAMP
+            RETURNING *
+        `, [artistId, name, country || null, content_url || null, image_url || null, source_code]);
+        
+        res.json({ success: true, artist: result.rows[0] });
+    } catch (error) {
+        console.error('Error creating artist:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Update artist
+app.patch('/db/artists/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const updates = req.body;
+        
+        const allowedFields = ['name', 'country', 'content_url', 'image_url'];
+        const setClauses = [];
+        const values = [];
+        let paramIndex = 1;
+        
+        for (const [key, value] of Object.entries(updates)) {
+            if (allowedFields.includes(key)) {
+                setClauses.push(`${key} = $${paramIndex++}`);
+                values.push(value);
+            }
+        }
+        
+        if (setClauses.length === 0) {
+            return res.status(400).json({ error: 'No valid fields to update' });
+        }
+        
+        setClauses.push('updated_at = CURRENT_TIMESTAMP');
+        values.push(id);
+        
+        const result = await pool.query(`
+            UPDATE artists SET ${setClauses.join(', ')} WHERE id = $${paramIndex} RETURNING *
+        `, values);
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Artist not found' });
+        }
+        
+        res.json({ success: true, artist: result.rows[0] });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Delete artist
+app.delete('/db/artists/:id', async (req, res) => {
+    try {
+        const result = await pool.query('DELETE FROM artists WHERE id = $1 RETURNING id', [req.params.id]);
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Artist not found' });
+        }
+        res.json({ success: true, deleted: req.params.id });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Bulk delete artists
+app.post('/db/artists/bulk-delete', async (req, res) => {
+    try {
+        const { ids } = req.body;
+        if (!Array.isArray(ids) || ids.length === 0) {
+            return res.status(400).json({ error: 'ids must be a non-empty array' });
+        }
+        
+        const result = await pool.query(
+            'DELETE FROM artists WHERE id = ANY($1::text[]) RETURNING id',
+            [ids]
+        );
+        
+        res.json({ success: true, deleted: result.rows.length });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ============================================
+// CITIES CRUD API
+// ============================================
+
+// List cities with stats
+app.get('/db/cities', async (req, res) => {
+    try {
+        // First try to get from cities table
+        const citiesResult = await pool.query(`
+            SELECT * FROM cities WHERE is_active = true ORDER BY event_count DESC
+        `);
+        
+        if (citiesResult.rows.length > 0) {
+            res.json({ data: citiesResult.rows });
+        } else {
+            // Fallback: aggregate from events table
+            const fallbackResult = await pool.query(`
+                SELECT 
+                    venue_city as name,
+                    venue_country as country,
+                    COUNT(*) as event_count,
+                    COUNT(DISTINCT venue_name) as venue_count,
+                    CASE venue_city
+                        WHEN 'Berlin' THEN 52.52
+                        WHEN 'Hamburg' THEN 53.5511
+                        WHEN 'London' THEN 51.5074
+                        WHEN 'Paris' THEN 48.8566
+                        WHEN 'Amsterdam' THEN 52.3676
+                        WHEN 'Barcelona' THEN 41.3851
+                        ELSE NULL
+                    END as latitude,
+                    CASE venue_city
+                        WHEN 'Berlin' THEN 13.405
+                        WHEN 'Hamburg' THEN 9.9937
+                        WHEN 'London' THEN -0.1278
+                        WHEN 'Paris' THEN 2.3522
+                        WHEN 'Amsterdam' THEN 4.9041
+                        WHEN 'Barcelona' THEN 2.1734
+                        ELSE NULL
+                    END as longitude
+                FROM events 
+                WHERE venue_city IS NOT NULL AND venue_city != ''
+                GROUP BY venue_city, venue_country
+                ORDER BY event_count DESC
+            `);
+            res.json({ data: fallbackResult.rows });
+        }
+    } catch (error) {
+        // If cities table doesn't exist, use fallback
+        try {
+            const fallbackResult = await pool.query(`
+                SELECT 
+                    venue_city as name,
+                    venue_country as country,
+                    COUNT(*) as event_count,
+                    COUNT(DISTINCT venue_name) as venue_count
+                FROM events 
+                WHERE venue_city IS NOT NULL AND venue_city != ''
+                GROUP BY venue_city, venue_country
+                ORDER BY event_count DESC
+            `);
+            res.json({ data: fallbackResult.rows });
+        } catch (err) {
+            res.status(500).json({ error: err.message });
+        }
+    }
+});
+
+// Get single city
+app.get('/db/cities/:id', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM cities WHERE id = $1', [req.params.id]);
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'City not found' });
+        }
+        
+        // Get venues in this city
+        const venuesResult = await pool.query(`
+            SELECT DISTINCT venue_name, venue_address, COUNT(*) as event_count
+            FROM events
+            WHERE venue_city = $1
+            GROUP BY venue_name, venue_address
+            ORDER BY event_count DESC
+        `, [result.rows[0].name]);
+        
+        res.json({
+            ...result.rows[0],
+            venues: venuesResult.rows
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Create city
+app.post('/db/cities', async (req, res) => {
+    try {
+        // Ensure cities table exists
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS cities (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100) UNIQUE NOT NULL,
+                country VARCHAR(100),
+                latitude DECIMAL(10, 8),
+                longitude DECIMAL(11, 8),
+                timezone VARCHAR(50),
+                ra_area_id INTEGER,
+                is_active BOOLEAN DEFAULT true,
+                event_count INTEGER DEFAULT 0,
+                venue_count INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        
+        const { name, country, latitude, longitude, timezone, ra_area_id, is_active = true } = req.body;
+        
+        if (!name) {
+            return res.status(400).json({ error: 'Name is required' });
+        }
+        
+        const result = await pool.query(`
+            INSERT INTO cities (name, country, latitude, longitude, timezone, ra_area_id, is_active)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            ON CONFLICT (name) DO UPDATE SET
+                country = EXCLUDED.country,
+                latitude = EXCLUDED.latitude,
+                longitude = EXCLUDED.longitude,
+                timezone = EXCLUDED.timezone,
+                ra_area_id = EXCLUDED.ra_area_id,
+                is_active = EXCLUDED.is_active,
+                updated_at = CURRENT_TIMESTAMP
+            RETURNING *
+        `, [name, country || null, latitude || null, longitude || null, timezone || null, ra_area_id || null, is_active]);
+        
+        res.json({ success: true, city: result.rows[0] });
+    } catch (error) {
+        console.error('Error creating city:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Update city
+app.patch('/db/cities/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const updates = req.body;
+        
+        const allowedFields = ['name', 'country', 'latitude', 'longitude', 'timezone', 'ra_area_id', 'is_active'];
+        const setClauses = [];
+        const values = [];
+        let paramIndex = 1;
+        
+        for (const [key, value] of Object.entries(updates)) {
+            if (allowedFields.includes(key)) {
+                setClauses.push(`${key} = $${paramIndex++}`);
+                values.push(value);
+            }
+        }
+        
+        if (setClauses.length === 0) {
+            return res.status(400).json({ error: 'No valid fields to update' });
+        }
+        
+        setClauses.push('updated_at = CURRENT_TIMESTAMP');
+        values.push(id);
+        
+        const result = await pool.query(`
+            UPDATE cities SET ${setClauses.join(', ')} WHERE id = $${paramIndex} RETURNING *
+        `, values);
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'City not found' });
+        }
+        
+        res.json({ success: true, city: result.rows[0] });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Delete city
+app.delete('/db/cities/:id', async (req, res) => {
+    try {
+        const result = await pool.query('DELETE FROM cities WHERE id = $1 RETURNING id', [req.params.id]);
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'City not found' });
+        }
+        res.json({ success: true, deleted: req.params.id });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Refresh city stats
+app.post('/db/cities/refresh-stats', async (req, res) => {
+    try {
+        await pool.query(`
+            UPDATE cities SET 
+                event_count = (SELECT COUNT(*) FROM events WHERE venue_city = cities.name),
+                venue_count = (SELECT COUNT(DISTINCT venue_name) FROM events WHERE venue_city = cities.name),
+                updated_at = CURRENT_TIMESTAMP
+        `);
+        
+        res.json({ success: true, message: 'City stats refreshed' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ============================================
+// VENUES CRUD API
+// ============================================
+
+// List venues with search and pagination
+app.get('/db/venues', async (req, res) => {
+    try {
+        const { search, city, limit = 50, offset = 0, sort = 'name', order = 'asc' } = req.query;
+        
+        let query = 'SELECT * FROM venues WHERE 1=1';
+        const params = [];
+        let paramIndex = 1;
+        
+        if (search) {
+            query += ` AND (name ILIKE $${paramIndex} OR address ILIKE $${paramIndex})`;
+            params.push(`%${search}%`);
+            paramIndex++;
+        }
+        
+        if (city) {
+            query += ` AND city ILIKE $${paramIndex}`;
+            params.push(`%${city}%`);
+            paramIndex++;
+        }
+        
+        // Get total count
+        const countQuery = query.replace('SELECT *', 'SELECT COUNT(*)');
+        const countResult = await pool.query(countQuery, params);
+        const total = parseInt(countResult.rows[0].count);
+        
+        // Add sorting and pagination
+        const validSorts = ['name', 'city', 'country', 'created_at', 'updated_at'];
+        const sortCol = validSorts.includes(sort) ? sort : 'name';
+        const sortOrder = order.toLowerCase() === 'desc' ? 'DESC' : 'ASC';
+        
+        query += ` ORDER BY ${sortCol} ${sortOrder} LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
+        params.push(parseInt(limit), parseInt(offset));
+        
+        const result = await pool.query(query, params);
+        
+        res.json({
+            data: result.rows,
+            total,
+            limit: parseInt(limit),
+            offset: parseInt(offset)
+        });
+    } catch (error) {
+        console.error('Error fetching venues:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get single venue with events
+app.get('/db/venues/:id', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM venues WHERE id = $1', [req.params.id]);
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Venue not found' });
+        }
+        
+        // Get events at this venue
+        const eventsResult = await pool.query(`
+            SELECT id, title, date, artists 
+            FROM events 
+            WHERE venue_id = $1 OR venue_name = $2
+            ORDER BY date DESC
+            LIMIT 50
+        `, [req.params.id, result.rows[0].name]);
+        
+        res.json({
+            ...result.rows[0],
+            events: eventsResult.rows
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Create venue
+app.post('/db/venues', async (req, res) => {
+    try {
+        const { id, name, address, city, country, blurb, content_url, latitude, longitude, source_code = 'manual' } = req.body;
+        
+        if (!name) {
+            return res.status(400).json({ error: 'Name is required' });
+        }
+        
+        const venueId = id || `manual-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        
+        const result = await pool.query(`
+            INSERT INTO venues (id, name, address, city, country, blurb, content_url, latitude, longitude, source_code)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            ON CONFLICT (id) DO UPDATE SET
+                name = EXCLUDED.name,
+                address = EXCLUDED.address,
+                city = EXCLUDED.city,
+                country = EXCLUDED.country,
+                blurb = EXCLUDED.blurb,
+                content_url = EXCLUDED.content_url,
+                latitude = EXCLUDED.latitude,
+                longitude = EXCLUDED.longitude,
+                updated_at = CURRENT_TIMESTAMP
+            RETURNING *
+        `, [venueId, name, address || null, city || null, country || null, blurb || null, content_url || null, latitude || null, longitude || null, source_code]);
+        
+        res.json({ success: true, venue: result.rows[0] });
+    } catch (error) {
+        console.error('Error creating venue:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Update venue
+app.patch('/db/venues/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const updates = req.body;
+        
+        const allowedFields = ['name', 'address', 'city', 'country', 'blurb', 'content_url', 'latitude', 'longitude'];
+        const setClauses = [];
+        const values = [];
+        let paramIndex = 1;
+        
+        for (const [key, value] of Object.entries(updates)) {
+            if (allowedFields.includes(key)) {
+                setClauses.push(`${key} = $${paramIndex++}`);
+                values.push(value);
+            }
+        }
+        
+        if (setClauses.length === 0) {
+            return res.status(400).json({ error: 'No valid fields to update' });
+        }
+        
+        setClauses.push('updated_at = CURRENT_TIMESTAMP');
+        values.push(id);
+        
+        const result = await pool.query(`
+            UPDATE venues SET ${setClauses.join(', ')} WHERE id = $${paramIndex} RETURNING *
+        `, values);
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Venue not found' });
+        }
+        
+        res.json({ success: true, venue: result.rows[0] });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Delete venue
+app.delete('/db/venues/:id', async (req, res) => {
+    try {
+        const result = await pool.query('DELETE FROM venues WHERE id = $1 RETURNING id', [req.params.id]);
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Venue not found' });
+        }
+        res.json({ success: true, deleted: req.params.id });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Bulk delete venues
+app.post('/db/venues/bulk-delete', async (req, res) => {
+    try {
+        const { ids } = req.body;
+        if (!Array.isArray(ids) || ids.length === 0) {
+            return res.status(400).json({ error: 'ids must be a non-empty array' });
+        }
+        
+        const result = await pool.query(
+            'DELETE FROM venues WHERE id = ANY($1::text[]) RETURNING id',
+            [ids]
+        );
+        
+        res.json({ success: true, deleted: result.rows.length });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Geocode venue address
+app.post('/db/venues/:id/geocode', async (req, res) => {
+    try {
+        const venue = await pool.query('SELECT * FROM venues WHERE id = $1', [req.params.id]);
+        if (venue.rows.length === 0) {
+            return res.status(404).json({ error: 'Venue not found' });
+        }
+        
+        const v = venue.rows[0];
+        const coords = await geocodeAddress(v.address, v.city, v.country);
+        
+        if (coords) {
+            const result = await pool.query(`
+                UPDATE venues SET latitude = $1, longitude = $2, updated_at = CURRENT_TIMESTAMP
+                WHERE id = $3 RETURNING *
+            `, [coords.latitude, coords.longitude, req.params.id]);
+            
+            res.json({ success: true, venue: result.rows[0] });
+        } else {
+            res.status(400).json({ error: 'Could not geocode address' });
+        }
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ============================================
+// ENHANCED EVENTS API
+// ============================================
+
+// Bulk operations for events
+app.post('/db/events/bulk-delete', async (req, res) => {
+    try {
+        const { ids } = req.body;
+        if (!Array.isArray(ids) || ids.length === 0) {
+            return res.status(400).json({ error: 'ids must be a non-empty array' });
+        }
+        
+        const result = await pool.query(
+            'DELETE FROM events WHERE id = ANY($1::text[]) RETURNING id',
+            [ids]
+        );
+        
+        res.json({ success: true, deleted: result.rows.length });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get event statistics
+app.get('/db/events/statistics', async (req, res) => {
+    try {
+        const stats = await pool.query(`
+            SELECT 
+                COUNT(*) as total_events,
+                COUNT(CASE WHEN is_published = true THEN 1 END) as published_events,
+                COUNT(CASE WHEN date >= CURRENT_DATE THEN 1 END) as upcoming_events,
+                COUNT(CASE WHEN date < CURRENT_DATE THEN 1 END) as past_events,
+                COUNT(CASE WHEN latitude IS NOT NULL THEN 1 END) as geocoded_events,
+                COUNT(DISTINCT venue_name) as unique_venues,
+                COUNT(DISTINCT venue_city) as unique_cities,
+                MIN(date) as earliest_date,
+                MAX(date) as latest_date
+            FROM events
+        `);
+        
+        const byCity = await pool.query(`
+            SELECT venue_city as city, COUNT(*) as count,
+                   COUNT(CASE WHEN is_published = true THEN 1 END) as published
+            FROM events
+            WHERE venue_city IS NOT NULL
+            GROUP BY venue_city
+            ORDER BY count DESC
+            LIMIT 10
+        `);
+        
+        const byMonth = await pool.query(`
+            SELECT 
+                date_trunc('month', date) as month,
+                COUNT(*) as count
+            FROM events
+            WHERE date IS NOT NULL AND date >= CURRENT_DATE - INTERVAL '6 months'
+            GROUP BY date_trunc('month', date)
+            ORDER BY month
+        `);
+        
+        const recentActivity = await pool.query(`
+            SELECT id, title, venue_name, venue_city, created_at, updated_at
+            FROM events
+            ORDER BY updated_at DESC
+            LIMIT 10
+        `);
+        
+        res.json({
+            ...stats.rows[0],
+            by_city: byCity.rows,
+            by_month: byMonth.rows,
+            recent_activity: recentActivity.rows
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Dashboard overview stats
+app.get('/db/dashboard', async (req, res) => {
+    try {
+        const [events, venues, artists, cities] = await Promise.all([
+            pool.query(`
+                SELECT 
+                    COUNT(*) as total,
+                    COUNT(CASE WHEN is_published = true THEN 1 END) as published,
+                    COUNT(CASE WHEN date >= CURRENT_DATE THEN 1 END) as upcoming,
+                    COUNT(CASE WHEN created_at >= CURRENT_DATE - INTERVAL '7 days' THEN 1 END) as new_this_week
+                FROM events
+            `),
+            pool.query(`
+                SELECT 
+                    COUNT(*) as total,
+                    COUNT(CASE WHEN latitude IS NOT NULL THEN 1 END) as geocoded
+                FROM venues
+            `),
+            pool.query('SELECT COUNT(*) as total FROM artists'),
+            pool.query(`
+                SELECT COUNT(DISTINCT venue_city) as total FROM events WHERE venue_city IS NOT NULL
+            `)
+        ]);
+        
+        const recentEvents = await pool.query(`
+            SELECT id, title, venue_name, venue_city, date, is_published, created_at
+            FROM events
+            ORDER BY created_at DESC
+            LIMIT 5
+        `);
+        
+        const upcomingEvents = await pool.query(`
+            SELECT id, title, venue_name, venue_city, date, is_published
+            FROM events
+            WHERE date >= CURRENT_DATE
+            ORDER BY date ASC
+            LIMIT 5
+        `);
+        
+        res.json({
+            stats: {
+                events: events.rows[0],
+                venues: venues.rows[0],
+                artists: artists.rows[0],
+                cities: cities.rows[0]
+            },
+            recent_events: recentEvents.rows,
+            upcoming_events: upcomingEvents.rows
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 process.on('unhandledRejection', (reason, p) => {
     console.error('Unhandled Rejection at:', p, 'reason:', reason);
     // Application specific logging, throwing an error, or other logic here

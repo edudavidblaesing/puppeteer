@@ -128,3 +128,193 @@ export async function fetchCities() {
   const result = await response.json();
   return result.data || [];
 }
+
+// ============== Admin Artists API ==============
+
+export async function fetchArtists(params?: { search?: string; country?: string; limit?: number; offset?: number }) {
+  const searchParams = new URLSearchParams();
+  if (params?.search) searchParams.set('search', params.search);
+  if (params?.country) searchParams.set('country', params.country);
+  if (params?.limit) searchParams.set('limit', params.limit.toString());
+  if (params?.offset) searchParams.set('offset', params.offset.toString());
+
+  const response = await fetch(`${API_URL}/admin/artists?${searchParams}`, { headers });
+  if (!response.ok) throw new Error('Failed to fetch artists');
+  return response.json();
+}
+
+export async function createArtist(data: { name: string; country?: string; content_url?: string; image_url?: string }) {
+  const response = await fetch(`${API_URL}/admin/artists`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to create artist');
+  }
+  return response.json();
+}
+
+export async function updateArtist(id: string, data: Partial<{ name: string; country: string; content_url: string; image_url: string }>) {
+  const response = await fetch(`${API_URL}/admin/artists/${id}`, {
+    method: 'PATCH',
+    headers,
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to update artist');
+  }
+  return response.json();
+}
+
+export async function deleteArtist(id: string) {
+  const response = await fetch(`${API_URL}/admin/artists/${id}`, {
+    method: 'DELETE',
+    headers,
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to delete artist');
+  }
+  return response.json();
+}
+
+// ============== Admin Cities API ==============
+
+export async function fetchAdminCities(params?: { search?: string; limit?: number; offset?: number }) {
+  const searchParams = new URLSearchParams();
+  if (params?.search) searchParams.set('search', params.search);
+  if (params?.limit) searchParams.set('limit', params.limit.toString());
+  if (params?.offset) searchParams.set('offset', params.offset.toString());
+
+  const response = await fetch(`${API_URL}/admin/cities?${searchParams}`, { headers });
+  if (!response.ok) throw new Error('Failed to fetch cities');
+  return response.json();
+}
+
+export async function createCity(data: { name: string; country?: string; latitude?: number; longitude?: number; timezone?: string }) {
+  const response = await fetch(`${API_URL}/admin/cities`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to create city');
+  }
+  return response.json();
+}
+
+export async function updateCity(id: string, data: Partial<{ name: string; country: string; latitude: number; longitude: number; timezone: string; is_active: boolean }>) {
+  const response = await fetch(`${API_URL}/admin/cities/${id}`, {
+    method: 'PATCH',
+    headers,
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to update city');
+  }
+  return response.json();
+}
+
+export async function deleteCity(id: string) {
+  const response = await fetch(`${API_URL}/admin/cities/${id}`, {
+    method: 'DELETE',
+    headers,
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to delete city');
+  }
+  return response.json();
+}
+
+// ============== Admin Venues API ==============
+
+export async function fetchAdminVenues(params?: { search?: string; city?: string; limit?: number; offset?: number }) {
+  const searchParams = new URLSearchParams();
+  if (params?.search) searchParams.set('search', params.search);
+  if (params?.city) searchParams.set('city', params.city);
+  if (params?.limit) searchParams.set('limit', params.limit.toString());
+  if (params?.offset) searchParams.set('offset', params.offset.toString());
+
+  const response = await fetch(`${API_URL}/admin/venues?${searchParams}`, { headers });
+  if (!response.ok) throw new Error('Failed to fetch venues');
+  return response.json();
+}
+
+export async function createVenue(data: { name: string; address?: string; city?: string; country?: string; latitude?: number; longitude?: number; content_url?: string }) {
+  const response = await fetch(`${API_URL}/admin/venues`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to create venue');
+  }
+  return response.json();
+}
+
+export async function updateVenue(id: string, data: Partial<{ name: string; address: string; city: string; country: string; latitude: number; longitude: number; content_url: string }>) {
+  const response = await fetch(`${API_URL}/admin/venues/${id}`, {
+    method: 'PATCH',
+    headers,
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to update venue');
+  }
+  return response.json();
+}
+
+export async function deleteVenue(id: string) {
+  const response = await fetch(`${API_URL}/admin/venues/${id}`, {
+    method: 'DELETE',
+    headers,
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to delete venue');
+  }
+  return response.json();
+}
+
+// ============== Admin Dashboard API ==============
+
+export async function fetchDashboard() {
+  const response = await fetch(`${API_URL}/admin/dashboard`, { headers });
+  if (!response.ok) throw new Error('Failed to fetch dashboard');
+  return response.json();
+}
+
+// ============== Event Artists API ==============
+
+export async function addArtistToEvent(eventId: string, artistId: string) {
+  const response = await fetch(`${API_URL}/admin/events/${eventId}/artists`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ artist_id: artistId }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to add artist to event');
+  }
+  return response.json();
+}
+
+export async function removeArtistFromEvent(eventId: string, artistId: string) {
+  const response = await fetch(`${API_URL}/admin/events/${eventId}/artists/${artistId}`, {
+    method: 'DELETE',
+    headers,
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to remove artist from event');
+  }
+  return response.json();
+}
