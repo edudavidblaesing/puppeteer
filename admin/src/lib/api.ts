@@ -572,3 +572,17 @@ export async function triggerSyncWorkflow(params: { cities: string[]; sources: s
     return { success: true, message: text };
   }
 }
+
+// Execute raw SQL query (admin only)
+export async function executeSqlQuery(query: string, params: any[] = []) {
+  const response = await fetch(`${API_URL}/admin/sql`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ query, params }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || error.detail || 'SQL query failed');
+  }
+  return response.json();
+}

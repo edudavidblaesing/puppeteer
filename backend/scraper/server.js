@@ -366,6 +366,36 @@ app.post('/auth/change-password', verifyToken, async (req, res) => {
     }
 });
 
+// ============== SQL Query Endpoint (Admin Only) ==============
+// Execute raw SQL queries for debugging and fixes
+app.post('/admin/sql', verifyToken, async (req, res) => {
+    try {
+        const { query, params = [] } = req.body;
+        
+        if (!query) {
+            return res.status(400).json({ error: 'Query is required' });
+        }
+        
+        console.log(`[Admin SQL] Executing query: ${query.substring(0, 200)}...`);
+        
+        const result = await pool.query(query, params);
+        
+        res.json({
+            success: true,
+            rowCount: result.rowCount,
+            rows: result.rows,
+            fields: result.fields?.map(f => ({ name: f.name, dataTypeID: f.dataTypeID }))
+        });
+    } catch (error) {
+        console.error('[Admin SQL] Error:', error.message);
+        res.status(500).json({ 
+            error: error.message,
+            detail: error.detail,
+            hint: error.hint
+        });
+    }
+});
+
 // Geocoding using OpenStreetMap Nominatim (free, rate-limited to 1 req/sec)
 const geocodeCache = new Map();
 const GEOCODE_DELAY = 1100; // ms between requests to respect rate limit
@@ -4280,42 +4310,42 @@ async function refreshUnifiedArtist(unifiedId) {
     ]);
 }
 
-// Match scraped events to unified events or create new ones
+// Match scraped events to main events or create new ones
+// Uses main 'events' table with 'event_scraped_links' for source tracking
 async function matchAndLinkEvents(options = {}) {
     const { dryRun = false, minConfidence = 0.6 } = options;
+    const { v4: uuidv4 } = require('uuid');
     
-    // Get unlinked scraped events
+    // Get unlinked scraped events (not in event_scraped_links)
     const unlinkedResult = await pool.query(`
         SELECT se.* FROM scraped_events se
         WHERE NOT EXISTS (
-            SELECT 1 FROM event_source_links esl WHERE esl.scraped_event_id = se.id
+            SELECT 1 FROM event_scraped_links esl WHERE esl.scraped_event_id = se.id
         )
-        ORDER BY se.date, se.venue_city
+        ORDER BY se.date DESC, se.venue_city
         LIMIT 500
     `);
     
     const unlinked = unlinkedResult.rows;
-    let matched = 0, created = 0, merged = 0;
+    let matched = 0, created = 0;
     const results = [];
     
+    console.log(`[Match] Processing ${unlinked.length} unlinked scraped events`);
+    
     for (const scraped of unlinked) {
-        // Try to find matching unified event - use broader matching criteria
+        // Try to find matching main event
         const potentialMatches = await pool.query(`
-            SELECT ue.*, 
-                   (SELECT array_agg(se.source_code) FROM event_source_links esl 
+            SELECT e.*, 
+                   (SELECT array_agg(se.source_code) FROM event_scraped_links esl 
                     JOIN scraped_events se ON se.id = esl.scraped_event_id 
-                    WHERE esl.unified_event_id = ue.id) as existing_sources,
-                   (SELECT array_agg(se.title) FROM event_source_links esl 
-                    JOIN scraped_events se ON se.id = esl.scraped_event_id 
-                    WHERE esl.unified_event_id = ue.id) as source_titles
-            FROM unified_events ue
-            WHERE ue.date = $1
+                    WHERE esl.event_id = e.id) as existing_sources
+            FROM events e
+            WHERE e.date::date = $1::date
             AND (
-                LOWER(ue.venue_city) = LOWER($2) 
-                OR LOWER(ue.venue_name) ILIKE $3
-                OR LOWER($4) ILIKE '%' || LOWER(SUBSTRING(ue.venue_name, 1, 10)) || '%'
+                LOWER(e.venue_city) = LOWER($2) 
+                OR LOWER(e.venue_name) ILIKE $3
             )
-        `, [scraped.date, scraped.venue_city, `%${scraped.venue_name?.substring(0, 15) || ''}%`, scraped.venue_name || '']);
+        `, [scraped.date, scraped.venue_city || '', `%${(scraped.venue_name || '').substring(0, 15)}%`]);
         
         let bestMatch = null;
         let bestScore = 0;
@@ -4324,20 +4354,9 @@ async function matchAndLinkEvents(options = {}) {
             // Skip if already linked from same source
             if (potential.existing_sources?.includes(scraped.source_code)) continue;
             
-            // Calculate match score - check against unified title AND all source titles
-            let titleScore = stringSimilarity(scraped.title || '', potential.title || '');
-            
-            // Also check against source titles for better matching
-            if (potential.source_titles) {
-                for (const srcTitle of potential.source_titles) {
-                    const srcScore = stringSimilarity(scraped.title || '', srcTitle || '');
-                    if (srcScore > titleScore) titleScore = srcScore;
-                }
-            }
-            
+            // Calculate match score
+            const titleScore = stringSimilarity(scraped.title || '', potential.title || '');
             const venueScore = stringSimilarity(scraped.venue_name || '', potential.venue_name || '');
-            
-            // Weighted average - title is more important
             const score = (titleScore * 0.7) + (venueScore * 0.3);
             
             if (score > bestScore && score >= minConfidence) {
@@ -4346,17 +4365,17 @@ async function matchAndLinkEvents(options = {}) {
             }
         }
         
-        // If no unified match, check other scraped events (already linked) for potential duplicate
+        // If no match, check other scraped events that are already linked
         if (!bestMatch) {
             const similarScraped = await pool.query(`
-                SELECT se.*, esl.unified_event_id
+                SELECT se.*, esl.event_id
                 FROM scraped_events se
-                JOIN event_source_links esl ON esl.scraped_event_id = se.id
+                JOIN event_scraped_links esl ON esl.scraped_event_id = se.id
                 WHERE se.date = $1
                 AND se.id != $2
                 AND (LOWER(se.venue_city) = LOWER($3) OR LOWER(se.venue_name) ILIKE $4)
                 LIMIT 50
-            `, [scraped.date, scraped.id, scraped.venue_city, `%${scraped.venue_name?.substring(0, 15) || ''}%`]);
+            `, [scraped.date, scraped.id, scraped.venue_city || '', `%${(scraped.venue_name || '').substring(0, 15)}%`]);
             
             for (const other of similarScraped.rows) {
                 const titleScore = stringSimilarity(scraped.title || '', other.title || '');
@@ -4364,46 +4383,44 @@ async function matchAndLinkEvents(options = {}) {
                 const score = (titleScore * 0.7) + (venueScore * 0.3);
                 
                 if (score >= minConfidence && score > bestScore) {
-                    // Found a matching scraped event - link to same unified event
                     bestScore = score;
-                    bestMatch = { id: other.unified_event_id, title: other.title };
+                    bestMatch = { id: other.event_id, title: other.title };
                 }
             }
         }
         
         if (bestMatch) {
-            // Link to existing unified event with priority
-            const priority = getSourcePriority(scraped.source_code);
+            // Link to existing main event
             if (!dryRun) {
                 await pool.query(`
-                    INSERT INTO event_source_links (unified_event_id, scraped_event_id, match_confidence, priority)
-                    VALUES ($1, $2, $3, $4)
-                    ON CONFLICT DO NOTHING
-                `, [bestMatch.id, scraped.id, bestScore, priority]);
+                    INSERT INTO event_scraped_links (event_id, scraped_event_id, match_confidence)
+                    VALUES ($1, $2, $3)
+                    ON CONFLICT (event_id, scraped_event_id) DO NOTHING
+                `, [bestMatch.id, scraped.id, bestScore]);
             }
             matched++;
             results.push({
                 action: 'matched',
                 scraped: { id: scraped.id, title: scraped.title, source: scraped.source_code },
-                unified: { id: bestMatch.id, title: bestMatch.title },
+                main: { id: bestMatch.id, title: bestMatch.title },
                 confidence: bestScore
             });
-            
-            // Refresh the unified event with merged data
-            if (!dryRun) {
-                await refreshUnifiedEvent(bestMatch.id);
-            }
         } else {
-            // Create new unified event
+            // Create new main event
             if (!dryRun) {
-                const priority = getSourcePriority(scraped.source_code);
-                const newEvent = await pool.query(`
-                    INSERT INTO unified_events (
-                        title, date, start_time, end_time, description, flyer_front,
-                        ticket_url, price_info, venue_name, venue_address, venue_city, venue_country
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-                    RETURNING id
+                const eventId = uuidv4();
+                
+                await pool.query(`
+                    INSERT INTO events (
+                        id, source_code, source_id, title, date, start_time, end_time, 
+                        description, flyer_front, content_url, venue_name, venue_address, 
+                        venue_city, venue_country, is_published, publish_status
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, false, 'pending')
+                    ON CONFLICT (id) DO NOTHING
                 `, [
+                    eventId,
+                    scraped.source_code,
+                    scraped.source_event_id,
                     scraped.title,
                     scraped.date,
                     scraped.start_time,
@@ -4411,51 +4428,49 @@ async function matchAndLinkEvents(options = {}) {
                     scraped.description,
                     scraped.flyer_front,
                     scraped.content_url,
-                    scraped.price_info,
                     scraped.venue_name,
                     scraped.venue_address,
                     scraped.venue_city,
                     scraped.venue_country
                 ]);
                 
-                // Link to the new unified event with priority
+                // Link to the new main event
                 await pool.query(`
-                    INSERT INTO event_source_links (unified_event_id, scraped_event_id, match_confidence, is_primary, priority)
-                    VALUES ($1, $2, 1.0, true, $3)
-                `, [newEvent.rows[0].id, scraped.id, priority]);
+                    INSERT INTO event_scraped_links (event_id, scraped_event_id, match_confidence)
+                    VALUES ($1, $2, 1.0)
+                    ON CONFLICT (event_id, scraped_event_id) DO NOTHING
+                `, [eventId, scraped.id]);
+                
+                created++;
+                results.push({
+                    action: 'created',
+                    scraped: { id: scraped.id, title: scraped.title, source: scraped.source_code },
+                    main: { id: eventId, title: scraped.title }
+                });
             }
-            created++;
-            results.push({
-                action: 'created',
-                scraped: { id: scraped.id, title: scraped.title, source: scraped.source_code }
-            });
         }
     }
     
-    // After matching, deduplicate unified events that look similar
-    if (!dryRun) {
-        const dedupeResult = await deduplicateUnifiedEvents();
-        merged = dedupeResult.merged;
-    }
+    console.log(`[Match] Processed ${unlinked.length}: ${created} created, ${matched} matched`);
     
-    return { processed: unlinked.length, matched, created, merged, results: results.slice(0, 20) };
+    return { processed: unlinked.length, matched, created, results: results.slice(0, 20) };
 }
 
-// Deduplicate unified events that have the same date/venue and similar titles
-async function deduplicateUnifiedEvents() {
+// Deduplicate main events that have the same date/venue and similar titles
+async function deduplicateMainEvents() {
     let merged = 0;
     
     // Find potential duplicates
     const duplicates = await pool.query(`
-        SELECT ue1.id as id1, ue2.id as id2, ue1.title as title1, ue2.title as title2,
-               ue1.venue_name, ue1.date
-        FROM unified_events ue1
-        JOIN unified_events ue2 ON ue1.date = ue2.date 
-            AND LOWER(ue1.venue_city) = LOWER(ue2.venue_city)
-            AND ue1.id < ue2.id
+        SELECT e1.id as id1, e2.id as id2, e1.title as title1, e2.title as title2,
+               e1.venue_name, e1.date
+        FROM events e1
+        JOIN events e2 ON e1.date::date = e2.date::date 
+            AND LOWER(e1.venue_city) = LOWER(e2.venue_city)
+            AND e1.id < e2.id
         WHERE (
-            LOWER(ue1.venue_name) = LOWER(ue2.venue_name)
-            OR similarity(LOWER(ue1.venue_name), LOWER(ue2.venue_name)) > 0.6
+            LOWER(e1.venue_name) = LOWER(e2.venue_name)
+            OR similarity(LOWER(e1.venue_name), LOWER(e2.venue_name)) > 0.6
         )
         LIMIT 100
     `);
@@ -4464,26 +4479,33 @@ async function deduplicateUnifiedEvents() {
         const titleSim = stringSimilarity(dup.title1 || '', dup.title2 || '');
         
         if (titleSim >= 0.6) {
-            // Merge: move all links from id2 to id1, delete id2
-            console.log(`Merging duplicate events: "${dup.title1}" and "${dup.title2}" (similarity: ${titleSim.toFixed(2)})`);
+            console.log(`[Dedupe] Merging duplicate events: "${dup.title1}" and "${dup.title2}"`);
             
-            // Update links to point to id1
+            // Move all scraped links from id2 to id1
             await pool.query(`
-                UPDATE event_source_links 
-                SET unified_event_id = $1 
-                WHERE unified_event_id = $2
+                UPDATE event_scraped_links 
+                SET event_id = $1 
+                WHERE event_id = $2
+                ON CONFLICT (event_id, scraped_event_id) DO NOTHING
             `, [dup.id1, dup.id2]);
             
-            // Delete the duplicate unified event
-            await pool.query(`DELETE FROM unified_events WHERE id = $1`, [dup.id2]);
+            // Delete orphaned links
+            await pool.query(`DELETE FROM event_scraped_links WHERE event_id = $1`, [dup.id2]);
             
-            // Refresh the surviving unified event
-            await refreshUnifiedEvent(dup.id1);
+            // Delete the duplicate event
+            await pool.query(`DELETE FROM events WHERE id = $1`, [dup.id2]);
+            
             merged++;
         }
     }
     
     return { merged };
+}
+
+// Legacy: Deduplicate unified events (for backwards compatibility)
+async function deduplicateUnifiedEvents() {
+    // Just return empty - we use deduplicateMainEvents now
+    return { merged: 0 };
 }
 
 // Match scraped venues to unified venues

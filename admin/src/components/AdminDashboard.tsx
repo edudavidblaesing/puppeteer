@@ -65,6 +65,7 @@ import {
   syncEventsPipeline,
   fetchScrapeHistory,
   fetchRecentScrapes,
+  executeSqlQuery,
 } from '@/lib/api';
 import { MiniBarChart, MiniAreaChart, StatCard, RecentActivity } from '@/components/ScrapeCharts';
 
@@ -150,6 +151,13 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
   const [scrapeHistory, setScrapeHistory] = useState<any[]>([]);
   const [recentScrapes, setRecentScrapes] = useState<any[]>([]);
   const [historyTotals, setHistoryTotals] = useState<any>(null);
+  
+  // SQL Console state
+  const [showSqlConsole, setShowSqlConsole] = useState(false);
+  const [sqlQuery, setSqlQuery] = useState('SELECT COUNT(*) FROM events;');
+  const [sqlResult, setSqlResult] = useState<any>(null);
+  const [sqlError, setSqlError] = useState<string>('');
+  const [isExecutingSql, setIsExecutingSql] = useState(false);
 
   // Filters
   const [cityFilter, setCityFilter] = useState<string>('');
@@ -1314,6 +1322,108 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                     <RecentActivity activities={recentScrapes} />
                   </div>
                 )}
+
+                {/* SQL Console */}
+                <div className="bg-white rounded-xl shadow-sm p-6">
+                  <button
+                    onClick={() => setShowSqlConsole(!showSqlConsole)}
+                    className="w-full flex items-center justify-between text-left"
+                  >
+                    <h3 className="font-semibold text-lg flex items-center gap-2">
+                      <Database className="w-5 h-5 text-gray-500" />
+                      SQL Console
+                    </h3>
+                    <span className="text-gray-400">{showSqlConsole ? '▼' : '▶'}</span>
+                  </button>
+                  
+                  {showSqlConsole && (
+                    <div className="mt-4 space-y-3">
+                      <textarea
+                        value={sqlQuery}
+                        onChange={(e) => setSqlQuery(e.target.value)}
+                        placeholder="SELECT * FROM events LIMIT 10;"
+                        className="w-full h-32 p-3 text-sm font-mono border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          onClick={async () => {
+                            setIsExecutingSql(true);
+                            setSqlError('');
+                            setSqlResult(null);
+                            try {
+                              const result = await executeSqlQuery(sqlQuery);
+                              setSqlResult(result);
+                            } catch (error: any) {
+                              setSqlError(error.message);
+                            } finally {
+                              setIsExecutingSql(false);
+                            }
+                          }}
+                          disabled={isExecutingSql || !sqlQuery.trim()}
+                          className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2 text-sm"
+                        >
+                          {isExecutingSql ? (
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Database className="w-4 h-4" />
+                          )}
+                          Execute
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSqlQuery('');
+                            setSqlResult(null);
+                            setSqlError('');
+                          }}
+                          className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm"
+                        >
+                          Clear
+                        </button>
+                      </div>
+                      
+                      {sqlError && (
+                        <div className="p-3 bg-red-50 text-red-700 rounded-lg text-sm">
+                          {sqlError}
+                        </div>
+                      )}
+                      
+                      {sqlResult && (
+                        <div className="space-y-2">
+                          <div className="text-xs text-gray-500">
+                            {sqlResult.rowCount} row{sqlResult.rowCount !== 1 ? 's' : ''} returned
+                          </div>
+                          <div className="max-h-64 overflow-auto border rounded-lg">
+                            <table className="w-full text-xs">
+                              <thead className="bg-gray-50 sticky top-0">
+                                <tr>
+                                  {sqlResult.fields?.map((f: any) => (
+                                    <th key={f.name} className="px-2 py-1 text-left font-medium text-gray-700 border-b">
+                                      {f.name}
+                                    </th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {sqlResult.rows?.slice(0, 100).map((row: any, i: number) => (
+                                  <tr key={i} className="hover:bg-gray-50">
+                                    {sqlResult.fields?.map((f: any) => (
+                                      <td key={f.name} className="px-2 py-1 border-b truncate max-w-xs" title={String(row[f.name])}>
+                                        {row[f.name] === null ? <span className="text-gray-400 italic">null</span> : String(row[f.name]).substring(0, 100)}
+                                      </td>
+                                    ))}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                          {sqlResult.rows?.length > 100 && (
+                            <div className="text-xs text-gray-500">Showing first 100 rows</div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
