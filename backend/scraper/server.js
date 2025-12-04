@@ -61,6 +61,8 @@ app.use('/db', requireApiKey);
 // Initialize default admin user if none exists
 async function initializeDefaultAdmin() {
     try {
+        console.log('[Auth] Initializing admin users...');
+        
         // Check if admin_users table exists
         const tableExists = await pool.query(`
             SELECT EXISTS (
@@ -71,6 +73,7 @@ async function initializeDefaultAdmin() {
         
         if (!tableExists.rows[0].exists) {
             // Create admin_users table
+            console.log('[Auth] Creating admin_users table...');
             await pool.query(`
                 CREATE TABLE admin_users (
                     id SERIAL PRIMARY KEY,
@@ -80,14 +83,18 @@ async function initializeDefaultAdmin() {
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
             `);
-            console.log('Created admin_users table');
+            console.log('[Auth] Created admin_users table');
+        } else {
+            console.log('[Auth] admin_users table already exists');
         }
         
         // Check if any admin users exist
         const userCount = await pool.query('SELECT COUNT(*) FROM admin_users');
+        console.log(`[Auth] Found ${userCount.rows[0].count} admin users`);
         
         if (parseInt(userCount.rows[0].count) === 0) {
             // Create default admin user
+            console.log('[Auth] Creating default admin user...');
             const defaultPassword = 'TheKey4u';
             const passwordHash = await bcrypt.hash(defaultPassword, 10);
             
@@ -95,10 +102,12 @@ async function initializeDefaultAdmin() {
                 'INSERT INTO admin_users (username, password_hash) VALUES ($1, $2)',
                 ['admin', passwordHash]
             );
-            console.log('Created default admin user (username: admin)');
+            console.log('[Auth] Created default admin user (username: admin, password: TheKey4u)');
         }
+        
+        console.log('[Auth] Admin initialization complete');
     } catch (error) {
-        console.error('Error initializing default admin:', error.message);
+        console.error('[Auth] Error initializing default admin:', error.message, error.stack);
     }
 }
 
@@ -126,17 +135,23 @@ function verifyToken(req, res, next) {
 // Login endpoint
 app.post('/auth/login', async (req, res) => {
     try {
+        console.log('[Auth] Login attempt received');
         const { username, password } = req.body;
         
         if (!username || !password) {
+            console.log('[Auth] Missing username or password');
             return res.status(400).json({ error: 'Username and password are required' });
         }
+        
+        console.log(`[Auth] Looking up user: ${username}`);
         
         // Find user
         const result = await pool.query(
             'SELECT id, username, password_hash FROM admin_users WHERE username = $1',
             [username]
         );
+        
+        console.log(`[Auth] Found ${result.rows.length} users`);
         
         if (result.rows.length === 0) {
             return res.status(401).json({ error: 'Invalid credentials' });
@@ -145,11 +160,15 @@ app.post('/auth/login', async (req, res) => {
         const user = result.rows[0];
         
         // Verify password
+        console.log('[Auth] Verifying password...');
         const validPassword = await bcrypt.compare(password, user.password_hash);
         
         if (!validPassword) {
+            console.log('[Auth] Invalid password');
             return res.status(401).json({ error: 'Invalid credentials' });
         }
+        
+        console.log('[Auth] Password valid, generating token...');
         
         // Generate JWT token
         const token = jwt.sign(
@@ -158,14 +177,16 @@ app.post('/auth/login', async (req, res) => {
             { expiresIn: '24h' }
         );
         
+        console.log('[Auth] Login successful');
+        
         res.json({
             success: true,
             token,
             user: { id: user.id, username: user.username }
         });
     } catch (error) {
-        console.error('Login error:', error);
-        res.status(500).json({ error: 'Login failed' });
+        console.error('[Auth] Login error:', error.message, error.stack);
+        res.status(500).json({ error: 'Login failed: ' + error.message });
     }
 });
 
