@@ -6,9 +6,129 @@ const bodyParser = require('body-parser');
 const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const fs = require('fs');
+const path = require('path');
 
 // JWT Secret
 const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
+
+// Database configuration
+const DB_CONFIG = {
+    host: process.env.PGHOST || 'localhost',
+    port: process.env.PGPORT || 5432,
+    user: process.env.PGUSER || 'eventuser',
+    password: process.env.PGPASSWORD || 'eventpassword',
+    database: process.env.PGDATABASE || 'socialevents'
+};
+
+// Global pool - will be initialized after database setup
+let pool = null;
+
+// ============================================
+// DATABASE INITIALIZATION
+// ============================================
+
+async function initializeDatabase() {
+    console.log('[DB Init] Starting database initialization...');
+    
+    // First, connect to postgres to check/create the database
+    const adminPool = new Pool({
+        host: DB_CONFIG.host,
+        port: DB_CONFIG.port,
+        user: DB_CONFIG.user,
+        password: DB_CONFIG.password,
+        database: 'postgres' // Connect to default postgres database
+    });
+    
+    try {
+        // Check if our database exists
+        const dbCheck = await adminPool.query(
+            "SELECT 1 FROM pg_database WHERE datname = $1",
+            [DB_CONFIG.database]
+        );
+        
+        if (dbCheck.rows.length === 0) {
+            console.log(`[DB Init] Database '${DB_CONFIG.database}' does not exist. Creating...`);
+            await adminPool.query(`CREATE DATABASE ${DB_CONFIG.database}`);
+            console.log(`[DB Init] Database '${DB_CONFIG.database}' created successfully`);
+        } else {
+            console.log(`[DB Init] Database '${DB_CONFIG.database}' exists`);
+        }
+    } catch (error) {
+        console.error('[DB Init] Error checking/creating database:', error.message);
+        throw error;
+    } finally {
+        await adminPool.end();
+    }
+    
+    // Now connect to our actual database
+    pool = new Pool({
+        host: DB_CONFIG.host,
+        port: DB_CONFIG.port,
+        user: DB_CONFIG.user,
+        password: DB_CONFIG.password,
+        database: DB_CONFIG.database
+    });
+    
+    // Run migrations
+    await runMigrations();
+    
+    console.log('[DB Init] Database initialization complete');
+}
+
+async function runMigrations() {
+    console.log('[DB Init] Running migrations...');
+    
+    // Create migrations tracking table
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS schema_migrations (
+            version VARCHAR(255) PRIMARY KEY,
+            applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    `);
+    
+    // Get list of applied migrations
+    const applied = await pool.query('SELECT version FROM schema_migrations');
+    const appliedVersions = new Set(applied.rows.map(r => r.version));
+    
+    // Get migration files
+    const migrationsDir = path.join(__dirname, 'migrations');
+    
+    if (!fs.existsSync(migrationsDir)) {
+        console.log('[DB Init] No migrations directory found, skipping migrations');
+        return;
+    }
+    
+    const files = fs.readdirSync(migrationsDir)
+        .filter(f => f.endsWith('.sql'))
+        .sort();
+    
+    for (const file of files) {
+        const version = file.replace('.sql', '');
+        
+        if (appliedVersions.has(version)) {
+            console.log(`[DB Init] Migration ${version} already applied, skipping`);
+            continue;
+        }
+        
+        console.log(`[DB Init] Applying migration: ${version}`);
+        
+        try {
+            const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
+            await pool.query(sql);
+            await pool.query(
+                'INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT DO NOTHING',
+                [version]
+            );
+            console.log(`[DB Init] Migration ${version} applied successfully`);
+        } catch (error) {
+            console.error(`[DB Init] Migration ${version} failed:`, error.message);
+            // Continue with other migrations - some may depend on tables that already exist
+        }
+    }
+    
+    console.log('[DB Init] Migrations complete');
+}
 
 // Configure stealth plugin with all evasions
 const stealth = StealthPlugin();
@@ -110,9 +230,6 @@ async function initializeDefaultAdmin() {
         console.error('[Auth] Error initializing default admin:', error.message, error.stack);
     }
 }
-
-// Call init on startup
-initializeDefaultAdmin();
 
 // JWT token verification middleware
 function verifyToken(req, res, next) {
@@ -246,20 +363,6 @@ app.post('/auth/change-password', verifyToken, async (req, res) => {
     } catch (error) {
         console.error('Change password error:', error);
         res.status(500).json({ error: 'Failed to change password' });
-    }
-});
-
-// Database connection
-const pool = new Pool({
-    connectionString: process.env.DATABASE_URL || 'postgresql://rauser:rapassword@localhost:5433/raevents'
-});
-
-// Test database connection
-pool.query('SELECT NOW()', (err, res) => {
-    if (err) {
-        console.error('Database connection error:', err.message);
-    } else {
-        console.log('Database connected at:', res.rows[0].now);
     }
 });
 
@@ -5837,7 +5940,7 @@ process.on('uncaughtException', (err) => {
 });
 
 // Initialize required extensions on startup
-async function initDatabase() {
+async function initDatabaseExtensions() {
     try {
         await pool.query('CREATE EXTENSION IF NOT EXISTS pg_trgm');
         console.log('Database extensions initialized (pg_trgm)');
@@ -5846,19 +5949,37 @@ async function initDatabase() {
     }
 }
 
-app.listen(PORT, async () => {
-    console.log(`Puppeteer service running on port ${PORT}`);
-    console.log(`Proxy list loaded: ${PROXY_LIST.length} proxies`);
-    
-    // Initialize database extensions
-    await initDatabase();
-    
+// Main startup function
+async function startServer() {
     try {
-        console.log('Launching browser with first proxy...');
-        currentProxy = getNextProxy();
-        await initBrowser();
-        console.log(`Browser launched with proxy: ${currentProxy}`);
-    } catch (err) {
-        console.error('Failed to launch browser on startup:', err);
+        // Initialize database (create if not exists, run migrations)
+        await initializeDatabase();
+        
+        // Initialize database extensions
+        await initDatabaseExtensions();
+        
+        // Initialize default admin user
+        await initializeDefaultAdmin();
+        
+        // Start the HTTP server
+        app.listen(PORT, async () => {
+            console.log(`Puppeteer service running on port ${PORT}`);
+            console.log(`Proxy list loaded: ${PROXY_LIST.length} proxies`);
+            
+            try {
+                console.log('Launching browser with first proxy...');
+                currentProxy = getNextProxy();
+                await initBrowser();
+                console.log(`Browser launched with proxy: ${currentProxy}`);
+            } catch (err) {
+                console.error('Failed to launch browser on startup:', err);
+            }
+        });
+    } catch (error) {
+        console.error('Failed to start server:', error);
+        process.exit(1);
     }
-});
+}
+
+// Start the server
+startServer();
