@@ -1341,6 +1341,17 @@ app.delete('/db/events/:id', async (req, res) => {
     }
 });
 
+// Delete ALL events
+app.delete('/db/events', async (req, res) => {
+    try {
+        const result = await pool.query('DELETE FROM events RETURNING id');
+        res.json({ success: true, deleted: result.rowCount });
+    } catch (error) {
+        console.error('Database error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Update event (PATCH)
 app.patch('/db/events/:id', async (req, res) => {
     try {
@@ -2439,6 +2450,17 @@ app.delete('/db/artists/:id', async (req, res) => {
     }
 });
 
+// Delete ALL artists
+app.delete('/db/artists', async (req, res) => {
+    try {
+        const result = await pool.query('DELETE FROM artists RETURNING id');
+        res.json({ success: true, deleted: result.rowCount });
+    } catch (error) {
+        console.error('Database error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Bulk delete artists
 app.post('/db/artists/bulk-delete', async (req, res) => {
     try {
@@ -2808,6 +2830,17 @@ app.delete('/db/venues/:id', async (req, res) => {
         }
         res.json({ success: true, deleted: req.params.id });
     } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Delete ALL venues
+app.delete('/db/venues', async (req, res) => {
+    try {
+        const result = await pool.query('DELETE FROM venues RETURNING id');
+        res.json({ success: true, deleted: result.rowCount });
+    } catch (error) {
+        console.error('Database error:', error);
         res.status(500).json({ error: error.message });
     }
 });
