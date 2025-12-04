@@ -510,3 +510,22 @@ export async function deduplicateData(type: 'all' | 'events' | 'venues' | 'artis
   }
   return response.json();
 }
+
+// ============== n8n Workflow Trigger API ==============
+
+const N8N_WEBHOOK_URL = 'https://n8n.davidblaesing.com/webhook/event-scraper';
+
+export async function triggerSyncWorkflow(params: { cities: string[]; sources: string[] }) {
+  const response = await fetch(N8N_WEBHOOK_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(params),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to trigger sync workflow');
+  }
+  return response.json();
+}

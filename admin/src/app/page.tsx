@@ -61,6 +61,7 @@ import {
   fetchScrapedVenues,
   fetchScrapedArtists,
   deduplicateData,
+  triggerSyncWorkflow,
 } from '@/lib/api';
 
 type ActiveTab = 'events' | 'artists' | 'venues' | 'cities' | 'scrape';
@@ -107,6 +108,10 @@ export default function AdminDashboard() {
   const [isScraping, setIsScraping] = useState(false);
   const [isMatching, setIsMatching] = useState(false);
   const [scrapeResult, setScrapeResult] = useState<any>(null);
+  
+  // n8n Workflow sync state
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<any>(null);
 
   // Filters
   const [cityFilter, setCityFilter] = useState<string>('');
@@ -517,8 +522,32 @@ export default function AdminDashboard() {
     loadData();
   };
 
-  // Sync events
-  // Multi-source scraping
+  // n8n Workflow Sync - triggers full pipeline: scrape → enrich → dedupe
+  const handleSyncWorkflow = async () => {
+    setIsSyncing(true);
+    setSyncResult(null);
+    try {
+      const result = await triggerSyncWorkflow({
+        cities: [scrapeCity],
+        sources: scrapeSources,
+      });
+      setSyncResult(result);
+      // Reload all data after sync completes
+      await Promise.all([
+        loadScrapeData(),
+        loadEvents(),
+        loadArtists(),
+        loadVenues(),
+      ]);
+    } catch (error: any) {
+      console.error('Sync workflow failed:', error);
+      setSyncResult({ error: error.message });
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // Legacy: Multi-source scraping (keeping for backwards compatibility)
   const handleScrape = async () => {
     setIsScraping(true);
     setScrapeResult(null);
@@ -1107,76 +1136,69 @@ export default function AdminDashboard() {
                     </div>
                   </div>
 
-                  {/* Actions */}
-                  <div className="flex items-end gap-3">
+                  {/* Single Sync Button - triggers n8n workflow */}
+                  <div className="flex items-end">
                     <button
-                      onClick={handleScrape}
-                      disabled={isScraping || scrapeSources.length === 0}
-                      className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                      onClick={handleSyncWorkflow}
+                      disabled={isSyncing || scrapeSources.length === 0}
+                      className="w-full px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 flex items-center justify-center gap-2 font-medium shadow-md"
                     >
-                      {isScraping ? (
-                        <RefreshCw className="w-4 h-4 animate-spin" />
+                      {isSyncing ? (
+                        <>
+                          <RefreshCw className="w-5 h-5 animate-spin" />
+                          Running Pipeline...
+                        </>
                       ) : (
-                        <CloudDownload className="w-4 h-4" />
+                        <>
+                          <CloudDownload className="w-5 h-5" />
+                          Sync Events
+                        </>
                       )}
-                      {isScraping ? 'Scraping...' : 'Scrape'}
-                    </button>
-                    <button
-                      onClick={handleRunMatching}
-                      disabled={isMatching}
-                      className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 flex items-center gap-2"
-                    >
-                      {isMatching ? (
-                        <RefreshCw className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Link2 className="w-4 h-4" />
-                      )}
-                      Match
-                    </button>
-                    <button
-                      onClick={() => handleDeduplicate('all')}
-                      disabled={isDeduplicating}
-                      className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 flex items-center gap-2"
-                    >
-                      {isDeduplicating ? (
-                        <RefreshCw className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Layers className="w-4 h-4" />
-                      )}
-                      Dedupe All
                     </button>
                   </div>
                 </div>
 
-                {/* Scrape Result */}
-                {scrapeResult && (
+                {/* Pipeline Info */}
+                <div className="mt-4 px-4 py-3 bg-gray-50 rounded-lg border border-gray-200">
+                  <p className="text-xs text-gray-600">
+                    <span className="font-medium">Pipeline:</span> Scrape Events → Match & Link → Enrich Venues/Artists → Deduplicate
+                  </p>
+                </div>
+
+                {/* Sync Result */}
+                {syncResult && (
                   <div className={clsx(
                     'mt-4 p-4 rounded-lg',
-                    scrapeResult.error ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'
+                    syncResult.error ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'
                   )}>
-                    {scrapeResult.error ? (
-                      <p>Error: {scrapeResult.error}</p>
+                    {syncResult.error ? (
+                      <p>Error: {syncResult.error}</p>
                     ) : (
                       <div className="space-y-2">
-                        <p className="font-medium">Scrape completed for {scrapeResult.city}</p>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                          {Object.entries(scrapeResult.sources || {}).map(([source, data]: [string, any]) => (
-                            <div key={source} className="bg-white/50 rounded p-2">
-                              <p className="font-medium capitalize">{source}</p>
-                              {data.error ? (
-                                <p className="text-red-600 text-xs">{data.error}</p>
-                              ) : (
-                                <p className="text-xs">
-                                  {data.fetched} fetched, {data.inserted} new, {data.updated} updated
-                                </p>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                        {scrapeResult.matching && (
-                          <p className="text-sm mt-2">
-                            Matching: {scrapeResult.matching.matched} matched, {scrapeResult.matching.created} created
-                          </p>
+                        <p className="font-medium">✓ Sync pipeline completed</p>
+                        {syncResult.scrape && (
+                          <div className="text-sm">
+                            <p className="font-medium">Scrape:</p>
+                            <p className="text-xs">
+                              {syncResult.scrape.fetched || 0} fetched, {syncResult.scrape.inserted || 0} new
+                            </p>
+                          </div>
+                        )}
+                        {syncResult.enrich && (
+                          <div className="text-sm">
+                            <p className="font-medium">Enrich:</p>
+                            <p className="text-xs">
+                              {syncResult.enrich.venues_enriched || 0} venues, {syncResult.enrich.artists_enriched || 0} artists enriched
+                            </p>
+                          </div>
+                        )}
+                        {syncResult.dedupe && (
+                          <div className="text-sm">
+                            <p className="font-medium">Dedupe:</p>
+                            <p className="text-xs">
+                              {syncResult.dedupe.events_merged || 0} events, {syncResult.dedupe.venues_merged || 0} venues, {syncResult.dedupe.artists_merged || 0} artists merged
+                            </p>
+                          </div>
                         )}
                       </div>
                     )}

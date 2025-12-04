@@ -1,160 +1,347 @@
 {
-    "name": "Social Events Scraper - Berlin & Hamburg",
-    "nodes": [
-        {
-            "parameters": {
-                "httpMethod": "POST",
-                "path": "ra-city-scraper",
-                "responseMode": "responseNode",
-                "options": {}
-            },
-            "id": "webhook-trigger",
-            "name": "Webhook Trigger",
-            "type": "n8n-nodes-base.webhook",
-            "typeVersion": 2,
-            "position": [
-                -400,
-                300
-            ]
-        },
-        {
-            "parameters": {},
-            "id": "manual-trigger",
-            "name": "Manual Trigger",
-            "type": "n8n-nodes-base.manualTrigger",
-            "typeVersion": 1,
-            "position": [
-                -400,
-                100
-            ]
-        },
-        {
-            "parameters": {
-                "jsCode": "// Define cities to sync\nconst cities = ['Berlin', 'Hamburg'];\n\nreturn cities.map(city => ({\n  json: {\n    city: city,\n    limit: 100\n  }\n}));"
-            },
-            "id": "set-cities",
-            "name": "Set Cities",
-            "type": "n8n-nodes-base.code",
-            "typeVersion": 2,
-            "position": [
-                -200,
-                200
-            ]
-        },
-        {
-            "parameters": {
-                "method": "POST",
-                "url": "https://pptr.davidblaesing.com/db/sync",
-                "authentication": "genericCredentialType",
-                "genericAuthType": "httpHeaderAuth",
-                "sendBody": true,
-                "specifyBody": "json",
-                "jsonBody": "={{ JSON.stringify({ city: $json.city, limit: $json.limit }) }}",
-                "options": {}
-            },
-            "id": "sync-to-database",
-            "name": "Sync to Database",
-            "type": "n8n-nodes-base.httpRequest",
-            "typeVersion": 4.2,
-            "position": [
-                0,
-                200
-            ],
-            "credentials": {
-                "httpHeaderAuth": {
-                    "id": "scraper-api-key",
-                    "name": "Scraper API Key"
-                }
-            }
-        },
-        {
-            "parameters": {
-                "jsCode": "// Aggregate results from all cities\nconst results = $input.all().map(item => item.json);\n\nconst summary = {\n  success: true,\n  cities: results.length,\n  totalFetched: results.reduce((sum, r) => sum + (r.fetched || 0), 0),\n  totalInserted: results.reduce((sum, r) => sum + (r.inserted || 0), 0),\n  totalUpdated: results.reduce((sum, r) => sum + (r.updated || 0), 0),\n  details: results\n};\n\nreturn [{ json: summary }];"
-            },
-            "id": "aggregate-results",
-            "name": "Aggregate Results",
-            "type": "n8n-nodes-base.code",
-            "typeVersion": 2,
-            "position": [
-                200,
-                200
-            ]
-        },
-        {
-            "parameters": {
-                "respondWith": "json",
-                "responseBody": "={{ JSON.stringify($json) }}",
-                "options": {}
-            },
-            "id": "respond-with-data",
-            "name": "Respond with Data",
-            "type": "n8n-nodes-base.respondToWebhook",
-            "typeVersion": 1,
-            "position": [
-                400,
-                200
-            ]
-        }
-    ],
-    "connections": {
-        "Webhook Trigger": {
-            "main": [
-                [
-                    {
-                        "node": "Set Cities",
-                        "type": "main",
-                        "index": 0
-                    }
-                ]
-            ]
-        },
-        "Manual Trigger": {
-            "main": [
-                [
-                    {
-                        "node": "Set Cities",
-                        "type": "main",
-                        "index": 0
-                    }
-                ]
-            ]
-        },
-        "Set Cities": {
-            "main": [
-                [
-                    {
-                        "node": "Sync to Database",
-                        "type": "main",
-                        "index": 0
-                    }
-                ]
-            ]
-        },
-        "Sync to Database": {
-            "main": [
-                [
-                    {
-                        "node": "Aggregate Results",
-                        "type": "main",
-                        "index": 0
-                    }
-                ]
-            ]
-        },
-        "Aggregate Results": {
-            "main": [
-                [
-                    {
-                        "node": "Respond with Data",
-                        "type": "main",
-                        "index": 0
-                    }
-                ]
-            ]
-        }
+  "name": "Sync Events Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "event-scraper",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-400, 300]
     },
-    "settings": {
-        "callerPolicy": "workflowsFromSameOwner",
-        "availableInMCP": false
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 24
+            }
+          ]
+        }
+      },
+      "id": "daily-trigger",
+      "name": "Daily Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-400, 100]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get input from webhook or use defaults for scheduled run\nconst input = $input.first()?.json || {};\n\n// Default cities for scheduled runs\nconst defaultCities = ['Berlin', 'Hamburg'];\nconst defaultSources = ['ra', 'ticketmaster'];\n\nconst cities = input.cities || defaultCities;\nconst sources = input.sources || defaultSources;\nconst limit = input.limit || 100;\n\n// Create items for each city\nreturn cities.map(city => ({\n  json: {\n    city: city,\n    sources: sources,\n    limit: limit\n  }\n}));"
+      },
+      "id": "prepare-cities",
+      "name": "Prepare Cities",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-200, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://pptr.davidblaesing.com/scrape/city",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ city: $json.city, sources: $json.sources, limit: $json.limit }) }}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "scrape-city",
+      "name": "Scrape City",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [0, 200],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "scraper-api-key",
+          "name": "Scraper API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate scrape results\nconst results = $input.all().map(item => item.json);\n\nconst summary = {\n  cities_scraped: results.length,\n  total_fetched: 0,\n  total_inserted: 0,\n  total_updated: 0,\n  by_source: {},\n  details: []\n};\n\nfor (const result of results) {\n  const city = result.city || 'unknown';\n  const sources = result.sources || {};\n  \n  summary.details.push({ city, sources });\n  \n  for (const [source, data] of Object.entries(sources)) {\n    if (!summary.by_source[source]) {\n      summary.by_source[source] = { fetched: 0, inserted: 0, updated: 0 };\n    }\n    summary.by_source[source].fetched += data.fetched || 0;\n    summary.by_source[source].inserted += data.inserted || 0;\n    summary.by_source[source].updated += data.updated || 0;\n    summary.total_fetched += data.fetched || 0;\n    summary.total_inserted += data.inserted || 0;\n    summary.total_updated += data.updated || 0;\n  }\n}\n\nreturn [{ json: summary }];"
+      },
+      "id": "aggregate-scrape",
+      "name": "Aggregate Scrape Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://pptr.davidblaesing.com/db/venues/enrich",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{ \"limit\": 100 }",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "enrich-venues",
+      "name": "Enrich Venues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 200],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "scraper-api-key",
+          "name": "Scraper API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://pptr.davidblaesing.com/db/artists/enrich",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{ \"limit\": 200 }",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "enrich-artists",
+      "name": "Enrich Artists",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, 200],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "scraper-api-key",
+          "name": "Scraper API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://pptr.davidblaesing.com/scrape/deduplicate",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{ \"type\": \"all\" }",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "dedupe-all",
+      "name": "Deduplicate All",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 200],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "scraper-api-key",
+          "name": "Scraper API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://pptr.davidblaesing.com/scrape/match",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{ \"minConfidence\": 0.6 }",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "match-all",
+      "name": "Match to Main",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1100, 200],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "scraper-api-key",
+          "name": "Scraper API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://pptr.davidblaesing.com/scrape/stats",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "get-stats",
+      "name": "Get Final Stats",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1320, 200],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "scraper-api-key",
+          "name": "Scraper API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const scrapeData = $('Aggregate Scrape Results').first().json;\nconst enrichVenues = $('Enrich Venues').first().json;\nconst enrichArtists = $('Enrich Artists').first().json;\nconst dedupeResult = $('Deduplicate All').first().json;\nconst matchResult = $('Match to Main').first().json;\nconst stats = $('Get Final Stats').first().json;\n\nreturn [{\n  json: {\n    success: true,\n    timestamp: new Date().toISOString(),\n    pipeline: 'sync-events',\n    scrape: {\n      cities: scrapeData.cities_scraped,\n      fetched: scrapeData.total_fetched,\n      inserted: scrapeData.total_inserted,\n      updated: scrapeData.total_updated,\n      by_source: scrapeData.by_source\n    },\n    enrich: {\n      venues_enriched: enrichVenues.saved || 0,\n      artists_enriched: enrichArtists.saved || 0\n    },\n    dedupe: {\n      events_merged: dedupeResult.results?.events?.merged || 0,\n      venues_merged: dedupeResult.results?.venues?.merged || 0,\n      artists_merged: dedupeResult.results?.artists?.merged || 0\n    },\n    match: {\n      events_matched: matchResult.events?.matched || 0,\n      events_created: matchResult.events?.created || 0\n    },\n    final_stats: stats,\n    status: 'completed'\n  }\n}];"
+      },
+      "id": "build-response",
+      "name": "Build Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1540, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "respond-webhook",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1760, 200]
     }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Prepare Cities",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daily Trigger": {
+      "main": [
+        [
+          {
+            "node": "Prepare Cities",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Cities": {
+      "main": [
+        [
+          {
+            "node": "Scrape City",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scrape City": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Scrape Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Scrape Results": {
+      "main": [
+        [
+          {
+            "node": "Enrich Venues",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enrich Venues": {
+      "main": [
+        [
+          {
+            "node": "Enrich Artists",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enrich Artists": {
+      "main": [
+        [
+          {
+            "node": "Deduplicate All",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deduplicate All": {
+      "main": [
+        [
+          {
+            "node": "Match to Main",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Match to Main": {
+      "main": [
+        [
+          {
+            "node": "Get Final Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Final Stats": {
+      "main": [
+        [
+          {
+            "node": "Build Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Response": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
 }

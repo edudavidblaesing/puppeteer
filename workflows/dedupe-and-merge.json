@@ -1,0 +1,169 @@
+{
+  "name": "Dedupe and Merge All",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "dedupe-merge",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [120, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://pptr.davidblaesing.com/scrape/deduplicate",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{ \"type\": \"all\" }",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "dedupe-all",
+      "name": "Deduplicate All",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [340, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "scraper-api-key",
+          "name": "Scraper API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://pptr.davidblaesing.com/scrape/match",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{ \"minConfidence\": 0.6 }",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "match-all",
+      "name": "Match Scraped to Main",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [560, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "scraper-api-key",
+          "name": "Scraper API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://pptr.davidblaesing.com/scrape/stats",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "get-final-stats",
+      "name": "Get Final Stats",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [780, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "scraper-api-key",
+          "name": "Scraper API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const dedupeResult = $('Deduplicate All').first().json;\nconst matchResult = $('Match Scraped to Main').first().json;\nconst stats = $('Get Final Stats').first().json;\n\nreturn [{\n  json: {\n    success: true,\n    timestamp: new Date().toISOString(),\n    dedupe: {\n      events_merged: dedupeResult.results?.events?.merged || 0,\n      venues_merged: dedupeResult.results?.venues?.merged || 0,\n      artists_merged: dedupeResult.results?.artists?.merged || 0\n    },\n    match: {\n      events_matched: matchResult.events?.matched || 0,\n      events_created: matchResult.events?.created || 0,\n      venues_matched: matchResult.venues?.matched || 0,\n      venues_created: matchResult.venues?.created || 0\n    },\n    stats: stats,\n    status: 'completed'\n  }\n}];"
+      },
+      "id": "build-summary",
+      "name": "Build Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1000, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "respond-webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1220, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Deduplicate All",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deduplicate All": {
+      "main": [
+        [
+          {
+            "node": "Match Scraped to Main",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Match Scraped to Main": {
+      "main": [
+        [
+          {
+            "node": "Get Final Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Final Stats": {
+      "main": [
+        [
+          {
+            "node": "Build Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Summary": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
