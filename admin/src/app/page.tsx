@@ -132,14 +132,14 @@ export default function AdminDashboard() {
           limit: pageSize,
           offset: (page - 1) * pageSize,
         }),
-        fetchStats(),
+        fetchStats().catch(() => ({ total_events: 0, venues: 0, cities: 0 })),
         fetchCities().catch(() => []),
       ]);
 
-      setEvents(eventsData.data);
-      setTotal(eventsData.total);
+      setEvents(eventsData.data || []);
+      setTotal(eventsData.total || 0);
       setStats(statsData);
-      setCities(citiesData);
+      setCities(citiesData || []);
     } catch (error) {
       console.error('Failed to load events:', error);
     }
@@ -200,15 +200,15 @@ export default function AdminDashboard() {
     try {
       const data = await fetchAdminCities({
         search: searchQuery || undefined,
-        limit: pageSize,
-        offset: (page - 1) * pageSize,
+        limit: 500,
+        offset: 0,
       });
       setAdminCities(data.data || []);
       setCitiesTotal(data.total || 0);
     } catch (error) {
       console.error('Failed to load cities:', error);
     }
-  }, [searchQuery, page, pageSize]);
+  }, [searchQuery]);
 
   // Load scrape data
   const loadScrapeData = useCallback(async () => {
@@ -786,16 +786,9 @@ export default function AdminDashboard() {
       {/* Top Bar */}
       <header className="bg-white border-b flex-shrink-0 z-50">
         <div className="flex items-center h-14 px-4">
-          {/* Logo & Stats */}
-          <div className="flex items-center gap-6">
+          {/* Logo */}
+          <div className="flex items-center">
             <h1 className="text-lg font-bold text-gray-900">Events Admin</h1>
-            {stats && (
-              <div className="hidden lg:flex items-center gap-4 text-sm text-gray-500">
-                <span><Calendar className="w-4 h-4 inline mr-1" />{stats.total_events}</span>
-                <span><Building2 className="w-4 h-4 inline mr-1" />{stats.venues}</span>
-                <span><MapPin className="w-4 h-4 inline mr-1" />{stats.cities}</span>
-              </div>
-            )}
           </div>
 
           {/* Tab Navigation */}
