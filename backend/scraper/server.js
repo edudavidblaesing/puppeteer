@@ -1622,6 +1622,65 @@ app.post('/db/events/publish', async (req, res) => {
     }
 });
 
+// Set publish status for events (new: pending/approved/rejected)
+app.post('/db/events/publish-status', async (req, res) => {
+    try {
+        const { ids, status } = req.body;
+        
+        if (!Array.isArray(ids) || ids.length === 0) {
+            return res.status(400).json({ error: 'ids must be a non-empty array' });
+        }
+        
+        const validStatuses = ['pending', 'approved', 'rejected'];
+        if (!validStatuses.includes(status)) {
+            return res.status(400).json({ error: `status must be one of: ${validStatuses.join(', ')}` });
+        }
+        
+        // Ensure publish_status column exists
+        await pool.query(`
+            ALTER TABLE unified_events ADD COLUMN IF NOT EXISTS publish_status VARCHAR(20) DEFAULT 'pending'
+        `);
+        
+        // Update unified_events
+        const result = await pool.query(
+            `UPDATE unified_events 
+             SET publish_status = $1, 
+                 is_published = $2,
+                 updated_at = CURRENT_TIMESTAMP 
+             WHERE id = ANY($3::text[])
+             RETURNING id`,
+            [status, status === 'approved', ids]
+        );
+        
+        // Also update events table if it exists
+        try {
+            await pool.query(`
+                ALTER TABLE events ADD COLUMN IF NOT EXISTS publish_status VARCHAR(20) DEFAULT 'pending'
+            `);
+            await pool.query(
+                `UPDATE events 
+                 SET publish_status = $1, 
+                     is_published = $2,
+                     updated_at = CURRENT_TIMESTAMP 
+                 WHERE id = ANY($3::text[])`,
+                [status, status === 'approved', ids]
+            );
+        } catch (e) {
+            // events table might not exist, that's ok
+        }
+        
+        res.json({ 
+            success: true, 
+            updated: result.rows.length,
+            status,
+            ids: result.rows.map(r => r.id)
+        });
+    } catch (error) {
+        console.error('Database error setting publish status:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Database stats
 app.get('/db/stats', async (req, res) => {
     try {

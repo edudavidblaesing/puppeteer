@@ -1,3 +1,9 @@
+// Publish status: pending (needs review), approved (published), rejected (hidden)
+export type PublishStatus = 'pending' | 'approved' | 'rejected';
+
+// Event timing category for display
+export type EventTiming = 'upcoming' | 'ongoing' | 'recent' | 'expired';
+
 export interface Event {
   id: string;
   source_code: string;
@@ -16,7 +22,8 @@ export interface Event {
   venue_country: string | null;
   artists: string | null;
   listing_date: string | null;
-  is_published: boolean;
+  publish_status: PublishStatus;
+  is_published: boolean; // kept for backwards compatibility
   latitude: number | null;
   longitude: number | null;
   created_at: string;
@@ -82,4 +89,76 @@ export interface DashboardStats {
   upcoming_events: number;
   events_this_week: number;
   recent_events: Event[];
+}
+
+// Helper function to determine event timing category
+export function getEventTiming(event: Event): EventTiming {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const eventDate = new Date(event.date);
+  const eventDateOnly = new Date(eventDate.getFullYear(), eventDate.getMonth(), eventDate.getDate());
+  
+  // Parse start and end times if available
+  const startTime = event.start_time ? event.start_time.split(':').map(Number) : [0, 0];
+  const endTime = event.end_time ? event.end_time.split(':').map(Number) : [23, 59];
+  
+  const eventStart = new Date(eventDateOnly);
+  eventStart.setHours(startTime[0], startTime[1]);
+  
+  const eventEnd = new Date(eventDateOnly);
+  eventEnd.setHours(endTime[0], endTime[1]);
+  // If end time is before start time, event ends next day
+  if (endTime[0] < startTime[0]) {
+    eventEnd.setDate(eventEnd.getDate() + 1);
+  }
+  
+  const threeDaysAgo = new Date(today);
+  threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+  
+  if (now >= eventStart && now <= eventEnd) {
+    return 'ongoing';
+  } else if (eventDateOnly > today) {
+    return 'upcoming';
+  } else if (eventDateOnly >= threeDaysAgo) {
+    return 'recent'; // expired within last 3 days
+  } else {
+    return 'expired';
+  }
+}
+
+// Sort events: approved first, then by timing (upcoming -> ongoing -> recent -> expired)
+export function sortEventsSmart(events: Event[]): Event[] {
+  const timingOrder: Record<EventTiming, number> = {
+    'ongoing': 0,
+    'upcoming': 1,
+    'recent': 2,
+    'expired': 3
+  };
+  
+  const statusOrder: Record<PublishStatus, number> = {
+    'pending': 0,  // Needs review first
+    'approved': 1,
+    'rejected': 2
+  };
+  
+  return [...events].sort((a, b) => {
+    // First sort by publish status
+    const statusA = statusOrder[a.publish_status || 'pending'];
+    const statusB = statusOrder[b.publish_status || 'pending'];
+    if (statusA !== statusB) return statusA - statusB;
+    
+    // Then by timing
+    const timingA = timingOrder[getEventTiming(a)];
+    const timingB = timingOrder[getEventTiming(b)];
+    if (timingA !== timingB) return timingA - timingB;
+    
+    // Finally by date (ascending for upcoming, descending for past)
+    const dateA = new Date(a.date).getTime();
+    const dateB = new Date(b.date).getTime();
+    if (timingA <= 1) { // upcoming or ongoing
+      return dateA - dateB; // soonest first
+    } else {
+      return dateB - dateA; // most recent first
+    }
+  });
 }

@@ -69,18 +69,23 @@ export async function deleteEvent(id: string) {
   return response.json();
 }
 
-export async function publishEvents(ids: string[], publish: boolean) {
-  const response = await fetch(`${API_URL}/db/events/publish`, {
+export async function setPublishStatus(ids: string[], status: 'pending' | 'approved' | 'rejected') {
+  const response = await fetch(`${API_URL}/db/events/publish-status`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ ids, publish }),
+    body: JSON.stringify({ ids, status }),
   });
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    console.error('Publish events error:', response.status, errorData);
+    console.error('Set publish status error:', response.status, errorData);
     throw new Error(errorData.error || `Failed to update publish status (${response.status})`);
   }
   return response.json();
+}
+
+// Legacy function for backwards compatibility
+export async function publishEvents(ids: string[], publish: boolean) {
+  return setPublishStatus(ids, publish ? 'approved' : 'pending');
 }
 
 export async function syncEvents(city: string, limit: number = 100) {
