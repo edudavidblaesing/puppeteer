@@ -246,7 +246,26 @@ export default function AdminDashboard() {
   // Edit handlers
   const handleEdit = (item: any) => {
     setEditingItem(item);
-    setEditForm({ ...item });
+    
+    // Format date and time fields for events
+    if (activeTab === 'events') {
+      const formData = { ...item };
+      // Format date for input type="date" (YYYY-MM-DD)
+      if (formData.date) {
+        const d = new Date(formData.date);
+        if (!isNaN(d.getTime())) {
+          formData.date = d.toISOString().split('T')[0];
+        }
+      }
+      // Format start_time for input type="time" (HH:MM)
+      if (formData.start_time && typeof formData.start_time === 'string') {
+        // Handle formats like "23:00:00" or "23:00"
+        formData.start_time = formData.start_time.substring(0, 5);
+      }
+      setEditForm(formData);
+    } else {
+      setEditForm({ ...item });
+    }
     setShowEditPanel(true);
   };
 
