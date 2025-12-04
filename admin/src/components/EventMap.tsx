@@ -5,6 +5,11 @@ import L from 'leaflet';
 import 'leaflet.markercluster';
 import { Event } from '@/types';
 
+// Extend Leaflet types for MarkerClusterGroup
+declare module 'leaflet' {
+  function markerClusterGroup(options?: any): any;
+}
+
 // Berlin coordinates for demo
 const CITY_COORDS: Record<string, [number, number]> = {
   Berlin: [52.52, 13.405],
@@ -48,7 +53,7 @@ interface EventMapProps {
 export default function EventMap({ events, onEventClick, selectedEventId }: EventMapProps) {
   const mapRef = useRef<L.Map | null>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
-  const markersRef = useRef<L.MarkerClusterGroup | null>(null);
+  const markersRef = useRef<any>(null);
 
   // Group events by venue and get coordinates
   const eventLocations = useMemo(() => {
