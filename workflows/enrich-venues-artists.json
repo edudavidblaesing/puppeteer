@@ -21,13 +21,21 @@
     {
       "parameters": {
         "url": "http://pptr.davidblaesing.com/db/enrich/stats",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
         "options": {}
       },
       "id": "get-stats",
       "name": "Check Enrichment Stats",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [340, 300]
+      "position": [340, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "scraper-api-key",
+          "name": "Scraper API Key"
+        }
+      }
     },
     {
       "parameters": {
@@ -91,6 +99,8 @@
       "parameters": {
         "method": "POST",
         "url": "http://pptr.davidblaesing.com/db/venues/enrich",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "{ \"limit\": 50 }",
@@ -100,12 +110,20 @@
       "name": "Enrich Venues",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [780, 80]
+      "position": [780, 80],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "scraper-api-key",
+          "name": "Scraper API Key"
+        }
+      }
     },
     {
       "parameters": {
         "method": "POST",
         "url": "http://pptr.davidblaesing.com/db/artists/enrich",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "{ \"limit\": 100 }",
@@ -115,18 +133,32 @@
       "name": "Enrich Artists",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [780, 320]
+      "position": [780, 320],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "scraper-api-key",
+          "name": "Scraper API Key"
+        }
+      }
     },
     {
       "parameters": {
         "url": "http://pptr.davidblaesing.com/db/enrich/stats",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
         "options": {}
       },
       "id": "get-final-stats",
       "name": "Get Final Stats",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1000, 200]
+      "position": [1000, 200],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "scraper-api-key",
+          "name": "Scraper API Key"
+        }
+      }
     },
     {
       "parameters": {

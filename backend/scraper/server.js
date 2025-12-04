@@ -12,6 +12,21 @@ puppeteer.use(stealth);
 const app = express();
 app.use(bodyParser.json());
 
+// API Key authentication middleware
+const API_KEY = process.env.API_KEY || 'default-dev-key-change-in-production';
+
+function requireApiKey(req, res, next) {
+    const providedKey = req.headers['x-api-key'] || req.headers['authorization']?.replace('Bearer ', '');
+    
+    if (!providedKey || providedKey !== API_KEY) {
+        return res.status(401).json({ error: 'Unauthorized: Invalid or missing API key' });
+    }
+    next();
+}
+
+// Apply API key auth to all /db/* routes
+app.use('/db', requireApiKey);
+
 // Database connection
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL || 'postgresql://rauser:rapassword@localhost:5433/raevents'

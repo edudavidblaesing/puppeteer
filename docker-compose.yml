@@ -13,6 +13,7 @@ services:
       - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
       - PROXY_SERVER=${PROXY_SERVER:-}
+      - API_KEY=${API_KEY:-your-secure-api-key-here}
       - DATABASE_URL=postgresql://eventuser:eventpass@postgres:5432/socialevents
       # For migration script
       - PGHOST=postgres

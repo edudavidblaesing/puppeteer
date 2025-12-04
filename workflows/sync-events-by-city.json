@@ -45,6 +45,8 @@
             "parameters": {
                 "method": "POST",
                 "url": "https://pptr.davidblaesing.com/db/sync",
+                "authentication": "genericCredentialType",
+                "genericAuthType": "httpHeaderAuth",
                 "sendBody": true,
                 "specifyBody": "json",
                 "jsonBody": "={{ JSON.stringify({ city: $json.city, limit: $json.limit }) }}",
@@ -57,7 +59,13 @@
             "position": [
                 0,
                 200
-            ]
+            ],
+            "credentials": {
+                "httpHeaderAuth": {
+                    "id": "scraper-api-key",
+                    "name": "Scraper API Key"
+                }
+            }
         },
         {
             "parameters": {
