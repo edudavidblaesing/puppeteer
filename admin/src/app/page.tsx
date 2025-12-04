@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import dynamic from 'next/dynamic';
 import {
   Calendar,
   MapPin,
@@ -24,6 +25,9 @@ import {
   CloudDownload,
   Layers,
 } from 'lucide-react';
+
+// Dynamic import for EventMap (Leaflet requires client-side only)
+const EventMap = dynamic(() => import('@/components/EventMap'), { ssr: false });
 import { format } from 'date-fns';
 import clsx from 'clsx';
 import { Event, Stats, City, Venue, Artist } from '@/types';
@@ -91,6 +95,10 @@ export default function AdminDashboard() {
   const [adminCities, setAdminCities] = useState<City[]>([]);
   const [citiesTotal, setCitiesTotal] = useState(0);
 
+  // Scraped events state (for main/scraped toggle in events tab)
+  const [scrapedEventsData, setScrapedEventsData] = useState<any[]>([]);
+  const [scrapedEventsTotal, setScrapedEventsTotal] = useState(0);
+
   // Scrape state
   const [scrapeStats, setScrapeStats] = useState<any>(null);
   const [scrapedEvents, setScrapedEvents] = useState<any[]>([]);
@@ -126,7 +134,7 @@ export default function AdminDashboard() {
   // Load events data
   const loadEvents = useCallback(async () => {
     try {
-      const [eventsData, statsData, citiesData] = await Promise.all([
+      const [eventsData, statsData, citiesData, scrapedData] = await Promise.all([
         fetchEvents({
           city: cityFilter || undefined,
           limit: pageSize,
@@ -134,12 +142,18 @@ export default function AdminDashboard() {
         }),
         fetchStats().catch(() => ({ total_events: 0, venues: 0, cities: 0 })),
         fetchCities().catch(() => []),
+        fetchScrapedEvents({
+          limit: pageSize,
+          offset: (page - 1) * pageSize,
+        }).catch(() => ({ data: [], total: 0 })),
       ]);
 
       setEvents(eventsData.data || []);
       setTotal(eventsData.total || 0);
       setStats(statsData);
       setCities(citiesData || []);
+      setScrapedEventsData(scrapedData.data || []);
+      setScrapedEventsTotal(scrapedData.total || 0);
     } catch (error) {
       console.error('Failed to load events:', error);
     }
@@ -306,6 +320,7 @@ export default function AdminDashboard() {
   // Get current total based on tab and data source
   const currentTotal = useMemo(() => {
     if (activeTab === 'events') {
+      if (dataSource === 'scraped') return scrapedEventsTotal;
       return total;
     }
     if (activeTab === 'artists') {
@@ -318,7 +333,7 @@ export default function AdminDashboard() {
     }
     if (activeTab === 'cities') return citiesTotal;
     return 0;
-  }, [activeTab, dataSource, total, artistsTotal, venuesTotal, citiesTotal, scrapedArtistsTotal, scrapedVenuesTotal]);
+  }, [activeTab, dataSource, total, scrapedEventsTotal, artistsTotal, venuesTotal, citiesTotal, scrapedArtistsTotal, scrapedVenuesTotal]);
 
   const totalPages = Math.ceil(currentTotal / pageSize);
 
@@ -589,6 +604,7 @@ export default function AdminDashboard() {
   const renderListItem = (item: any) => {
     if (activeTab === 'events') {
       const isMain = dataSource === 'main';
+      const isScraped = dataSource === 'scraped';
       return (
         <div
           key={item.id}
@@ -598,12 +614,14 @@ export default function AdminDashboard() {
             editingItem?.id === item.id && 'bg-indigo-50 border-l-2 border-l-indigo-500'
           )}
         >
-          <input
-            type="checkbox"
-            checked={selectedIds.has(item.id)}
-            onChange={(e) => { e.stopPropagation(); handleSelect(item.id); }}
-            className="rounded text-indigo-600"
-          />
+          {isMain && (
+            <input
+              type="checkbox"
+              checked={selectedIds.has(item.id)}
+              onChange={(e) => { e.stopPropagation(); handleSelect(item.id); }}
+              className="rounded text-indigo-600"
+            />
+          )}
           <div className="w-10 h-10 rounded bg-gray-200 flex items-center justify-center flex-shrink-0 overflow-hidden">
             {item.flyer_front ? (
               <img src={item.flyer_front} alt="" className="w-full h-full object-cover" />
@@ -614,6 +632,14 @@ export default function AdminDashboard() {
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <p className="font-medium text-sm truncate">{item.title}</p>
+              {isScraped && item.source_code && (
+                <span className={clsx(
+                  'text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 font-medium',
+                  item.source_code === 'ra' ? 'bg-blue-100 text-blue-700' : 'bg-cyan-100 text-cyan-700'
+                )}>
+                  {item.source_code.toUpperCase()}
+                </span>
+              )}
               {isMain && item.source_references?.length > 0 && (
                 <span className="text-[10px] bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded flex-shrink-0">
                   {item.source_references.map((s: any) => s.source_code?.toUpperCase()).join(' + ')}
@@ -624,15 +650,17 @@ export default function AdminDashboard() {
           </div>
           <div className="text-right flex-shrink-0">
             <p className="text-xs font-medium">{item.date ? format(new Date(item.date), 'MMM d') : '—'}</p>
-            <button
-              onClick={(e) => { e.stopPropagation(); handleTogglePublish(item); }}
-              className={clsx(
-                'text-xs px-2 py-0.5 rounded mt-1',
-                item.is_published ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
-              )}
-            >
-              {item.is_published ? 'Live' : 'Draft'}
-            </button>
+            {isMain && (
+              <button
+                onClick={(e) => { e.stopPropagation(); handleTogglePublish(item); }}
+                className={clsx(
+                  'text-xs px-2 py-0.5 rounded mt-1',
+                  item.is_published ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
+                )}
+              >
+                {item.is_published ? 'Live' : 'Draft'}
+              </button>
+            )}
           </div>
         </div>
       );
@@ -710,28 +738,13 @@ export default function AdminDashboard() {
             <p className="text-xs text-gray-500 truncate">{item.city || '—'}{item.country && `, ${item.country}`}</p>
           </div>
           <div className="flex items-center gap-2">
-            {isScraped && item.source_code && (
+            {item.source_code && (
               <span className={clsx(
-                'text-xs px-2 py-0.5 rounded',
+                'text-xs px-2 py-0.5 rounded font-medium',
                 item.source_code === 'ra' ? 'bg-blue-100 text-blue-700' : 'bg-cyan-100 text-cyan-700'
               )}>
                 {item.source_code.toUpperCase()}
               </span>
-            )}
-            {isScraped && item.is_linked && (
-              <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded flex items-center gap-0.5">
-                <Link2 className="w-3 h-3" />
-              </span>
-            )}
-            {isMain && item.source_references?.length > 0 && (
-              <span className="text-xs bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded">
-                {item.source_references.length} src
-              </span>
-            )}
-            {item.latitude && item.longitude ? (
-              <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">📍</span>
-            ) : (
-              <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded">No coords</span>
             )}
           </div>
         </div>
@@ -768,7 +781,10 @@ export default function AdminDashboard() {
 
   // Get items for current tab based on data source
   const currentItems = useMemo(() => {
-    if (activeTab === 'events') return filteredEvents;
+    if (activeTab === 'events') {
+      if (dataSource === 'scraped') return scrapedEventsData;
+      return filteredEvents;
+    }
     if (activeTab === 'artists') {
       if (dataSource === 'scraped') return scrapedArtists;
       return artists;
@@ -779,7 +795,7 @@ export default function AdminDashboard() {
     }
     if (activeTab === 'cities') return adminCities;
     return [];
-  }, [activeTab, dataSource, filteredEvents, artists, venues, adminCities, scrapedArtists, scrapedVenues]);
+  }, [activeTab, dataSource, filteredEvents, scrapedEventsData, artists, venues, adminCities, scrapedArtists, scrapedVenues]);
 
   return (
     <div className="h-screen flex flex-col bg-gray-100">
@@ -861,8 +877,8 @@ export default function AdminDashboard() {
             </select>
           )}
 
-          {/* Data source toggle (for artists, venues only - to view raw scraped data) */}
-          {(activeTab === 'artists' || activeTab === 'venues') && (
+          {/* Data source toggle (for events, artists, venues - to view raw scraped data) */}
+          {(activeTab === 'events' || activeTab === 'artists' || activeTab === 'venues') && (
             <div className="flex items-center bg-gray-100 rounded-lg p-0.5">
               <button
                 onClick={() => setDataSource('main')}
@@ -885,6 +901,9 @@ export default function AdminDashboard() {
               >
                 <Layers className="w-3 h-3" />
                 Scraped
+                {activeTab === 'events' && scrapedEventsTotal > 0 && (
+                  <span className="ml-1 bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded text-[10px]">{scrapedEventsTotal}</span>
+                )}
                 {activeTab === 'artists' && scrapedArtistsTotal > 0 && (
                   <span className="ml-1 bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded text-[10px]">{scrapedArtistsTotal}</span>
                 )}
@@ -964,8 +983,8 @@ export default function AdminDashboard() {
                     <p className="text-xs text-gray-500">From Ticketmaster</p>
                   </div>
                   <div className="bg-white rounded-xl p-4 shadow-sm">
-                    <p className="text-2xl font-bold text-green-600">{scrapeStats.total_unified_events || 0}</p>
-                    <p className="text-xs text-gray-500">Unified Events</p>
+                    <p className="text-2xl font-bold text-green-600">{scrapeStats.total_main_events || 0}</p>
+                    <p className="text-xs text-gray-500">Main Events</p>
                   </div>
                   <div className="bg-white rounded-xl p-4 shadow-sm">
                     <p className="text-2xl font-bold text-amber-600">{scrapeStats.unlinked_scraped_events || 0}</p>
@@ -1778,6 +1797,16 @@ export default function AdminDashboard() {
                   )}
                 </button>
               </div>
+            </div>
+          ) : activeTab === 'events' && dataSource === 'main' ? (
+            <div className="flex-1 bg-white border-l overflow-hidden">
+              <EventMap
+                events={filteredEvents}
+                cities={cities}
+                onEventClick={(event) => handleEdit(event)}
+                onCityChange={(city) => setCityFilter(city)}
+                selectedCity={cityFilter}
+              />
             </div>
           ) : (
             <div className="flex-1 bg-gray-50 flex items-center justify-center">

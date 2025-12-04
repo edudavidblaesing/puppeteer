@@ -1282,11 +1282,9 @@ app.get('/db/events/:id', async (req, res) => {
         
         const event = result.rows[0];
         
-        // Try to get source references from event_scraped_links (new schema)
-        // or fall back to event_source_links via unified_events (old schema)
+        // Get source references from event_scraped_links
         try {
-            // First try new direct link table
-            const sourceRefsNew = await pool.query(`
+            const sourceRefs = await pool.query(`
                 SELECT se.id, se.source_code, se.source_event_id, se.title, se.date, 
                        se.start_time, se.content_url, se.flyer_front, se.venue_name, 
                        se.price_info, esl.match_confidence as confidence, esl.is_primary
@@ -1295,27 +1293,9 @@ app.get('/db/events/:id', async (req, res) => {
                 WHERE esl.event_id = $1
             `, [req.params.id]);
             
-            if (sourceRefsNew.rows.length > 0) {
-                event.source_references = sourceRefsNew.rows;
-            }
+            event.source_references = sourceRefs.rows;
         } catch (e) {
-            // Table might not exist yet, try old schema via unified_events
-            try {
-                const sourceRefsOld = await pool.query(`
-                    SELECT se.id, se.source_code, se.source_event_id, se.title, se.date,
-                           se.start_time, se.content_url, se.flyer_front, se.venue_name,
-                           se.price_info, esl.match_confidence as confidence, esl.is_primary
-                    FROM unified_events ue
-                    JOIN event_source_links esl ON esl.unified_event_id = ue.id
-                    JOIN scraped_events se ON se.id = esl.scraped_event_id
-                    WHERE ue.original_event_id = $1
-                `, [req.params.id]);
-                
-                event.source_references = sourceRefsOld.rows;
-            } catch (e2) {
-                // No source references available
-                event.source_references = [];
-            }
+            event.source_references = [];
         }
         
         res.json(event);
@@ -5244,13 +5224,13 @@ app.get('/scrape/stats', async (req, res) => {
                 (SELECT COUNT(*) FROM scraped_events WHERE source_code = 'ticketmaster') as ticketmaster_events,
                 (SELECT COUNT(*) FROM scraped_venues) as total_scraped_venues,
                 (SELECT COUNT(*) FROM scraped_artists) as total_scraped_artists,
-                (SELECT COUNT(*) FROM unified_events) as total_unified_events,
-                (SELECT COUNT(*) FROM unified_events WHERE is_published = true) as published_events,
-                (SELECT COUNT(*) FROM unified_venues) as total_unified_venues,
-                (SELECT COUNT(*) FROM unified_artists) as total_unified_artists,
-                (SELECT COUNT(*) FROM event_source_links) as total_event_links,
-                (SELECT COUNT(DISTINCT scraped_event_id) FROM event_source_links) as linked_scraped_events,
-                (SELECT COUNT(*) FROM scraped_events WHERE NOT EXISTS(SELECT 1 FROM event_source_links esl WHERE esl.scraped_event_id = scraped_events.id)) as unlinked_scraped_events
+                (SELECT COUNT(*) FROM events) as total_main_events,
+                (SELECT COUNT(*) FROM events WHERE is_published = true) as published_events,
+                (SELECT COUNT(*) FROM venues) as total_main_venues,
+                (SELECT COUNT(*) FROM artists) as total_main_artists,
+                (SELECT COUNT(*) FROM event_scraped_links) as total_event_links,
+                (SELECT COUNT(DISTINCT scraped_event_id) FROM event_scraped_links) as linked_scraped_events,
+                (SELECT COUNT(*) FROM scraped_events WHERE NOT EXISTS(SELECT 1 FROM event_scraped_links esl WHERE esl.scraped_event_id = scraped_events.id)) as unlinked_scraped_events
         `);
         
         res.json(stats.rows[0]);
