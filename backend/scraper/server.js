@@ -4287,14 +4287,152 @@ app.post('/scrape/match', async (req, res) => {
     }
 });
 
+// Deduplicate venues in the main venues table
+async function deduplicateVenues() {
+    let merged = 0;
+    
+    // Find potential duplicates by name similarity in the same city
+    const duplicates = await pool.query(`
+        SELECT v1.id as id1, v2.id as id2, v1.name as name1, v2.name as name2,
+               v1.city, v1.address as addr1, v2.address as addr2,
+               v1.latitude as lat1, v1.longitude as lon1,
+               v2.latitude as lat2, v2.longitude as lon2
+        FROM venues v1
+        JOIN venues v2 ON LOWER(v1.city) = LOWER(v2.city) AND v1.id < v2.id
+        WHERE similarity(LOWER(v1.name), LOWER(v2.name)) > 0.7
+           OR LOWER(REPLACE(v1.name, ' ', '')) = LOWER(REPLACE(v2.name, ' ', ''))
+        LIMIT 100
+    `);
+    
+    for (const dup of duplicates.rows) {
+        const nameSim = stringSimilarity(dup.name1 || '', dup.name2 || '');
+        
+        if (nameSim >= 0.7) {
+            console.log(`Merging duplicate venues: "${dup.name1}" and "${dup.name2}" in ${dup.city} (similarity: ${nameSim.toFixed(2)})`);
+            
+            // Determine which one to keep (prefer the one with more data)
+            const score1 = (dup.lat1 ? 1 : 0) + (dup.addr1 ? 1 : 0);
+            const score2 = (dup.lat2 ? 1 : 0) + (dup.addr2 ? 1 : 0);
+            const [keepId, deleteId] = score1 >= score2 ? [dup.id1, dup.id2] : [dup.id2, dup.id1];
+            
+            // Update events to point to the kept venue
+            await pool.query(`
+                UPDATE events SET venue_id = $1 WHERE venue_id = $2
+            `, [keepId, deleteId]);
+            
+            // Update venue_source_links if they exist
+            try {
+                await pool.query(`
+                    UPDATE venue_source_links SET unified_venue_id = $1 WHERE unified_venue_id = $2
+                `, [keepId, deleteId]);
+            } catch (e) { /* table might not exist */ }
+            
+            // Merge any missing data from deleted venue to kept venue
+            const [keptVenue, deletedVenue] = await Promise.all([
+                pool.query('SELECT * FROM venues WHERE id = $1', [keepId]),
+                pool.query('SELECT * FROM venues WHERE id = $1', [deleteId])
+            ]);
+            
+            if (keptVenue.rows[0] && deletedVenue.rows[0]) {
+                const kept = keptVenue.rows[0];
+                const deleted = deletedVenue.rows[0];
+                const updates = [];
+                const params = [];
+                let paramIdx = 1;
+                
+                // Fill in missing fields from the duplicate
+                if (!kept.address && deleted.address) {
+                    updates.push(`address = $${paramIdx++}`);
+                    params.push(deleted.address);
+                }
+                if (!kept.latitude && deleted.latitude) {
+                    updates.push(`latitude = $${paramIdx++}`);
+                    params.push(deleted.latitude);
+                }
+                if (!kept.longitude && deleted.longitude) {
+                    updates.push(`longitude = $${paramIdx++}`);
+                    params.push(deleted.longitude);
+                }
+                if (!kept.content_url && deleted.content_url) {
+                    updates.push(`content_url = $${paramIdx++}`);
+                    params.push(deleted.content_url);
+                }
+                
+                if (updates.length > 0) {
+                    params.push(keepId);
+                    await pool.query(`UPDATE venues SET ${updates.join(', ')} WHERE id = $${paramIdx}`, params);
+                }
+            }
+            
+            // Delete the duplicate venue
+            await pool.query('DELETE FROM venues WHERE id = $1', [deleteId]);
+            merged++;
+        }
+    }
+    
+    return { merged };
+}
+
+// Deduplicate artists in the main artists table
+async function deduplicateArtists() {
+    let merged = 0;
+    
+    // Find potential duplicates by name similarity
+    const duplicates = await pool.query(`
+        SELECT a1.id as id1, a2.id as id2, a1.name as name1, a2.name as name2
+        FROM artists a1
+        JOIN artists a2 ON a1.id < a2.id
+        WHERE similarity(LOWER(a1.name), LOWER(a2.name)) > 0.85
+           OR LOWER(REPLACE(a1.name, ' ', '')) = LOWER(REPLACE(a2.name, ' ', ''))
+        LIMIT 100
+    `);
+    
+    for (const dup of duplicates.rows) {
+        const nameSim = stringSimilarity(dup.name1 || '', dup.name2 || '');
+        
+        if (nameSim >= 0.85) {
+            console.log(`Merging duplicate artists: "${dup.name1}" and "${dup.name2}" (similarity: ${nameSim.toFixed(2)})`);
+            
+            // Keep the first one (id1)
+            const keepId = dup.id1;
+            const deleteId = dup.id2;
+            
+            // Update artist_source_links if they exist
+            try {
+                await pool.query(`
+                    UPDATE artist_source_links SET unified_artist_id = $1 WHERE unified_artist_id = $2
+                `, [keepId, deleteId]);
+            } catch (e) { /* table might not exist */ }
+            
+            // Delete the duplicate artist
+            await pool.query('DELETE FROM artists WHERE id = $1', [deleteId]);
+            merged++;
+        }
+    }
+    
+    return { merged };
+}
+
 // Deduplicate unified events manually
 app.post('/scrape/deduplicate', async (req, res) => {
     try {
-        const result = await deduplicateUnifiedEvents();
+        const { type = 'all' } = req.body;
+        const results = {};
+        
+        if (type === 'all' || type === 'events') {
+            results.events = await deduplicateUnifiedEvents();
+        }
+        if (type === 'all' || type === 'venues') {
+            results.venues = await deduplicateVenues();
+        }
+        if (type === 'all' || type === 'artists') {
+            results.artists = await deduplicateArtists();
+        }
+        
         res.json({
             success: true,
-            merged: result.merged,
-            message: `Merged ${result.merged} duplicate events`
+            results,
+            message: `Deduplicated: ${results.events?.merged || 0} events, ${results.venues?.merged || 0} venues, ${results.artists?.merged || 0} artists`
         });
     } catch (error) {
         console.error('Deduplication error:', error);

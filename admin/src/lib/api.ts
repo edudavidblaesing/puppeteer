@@ -485,14 +485,15 @@ export async function updateUnifiedVenue(id: string, data: Record<string, any>) 
   return response.json();
 }
 
-export async function deduplicateEvents() {
+export async function deduplicateData(type: 'all' | 'events' | 'venues' | 'artists' = 'all') {
   const response = await fetch(`${API_URL}/scrape/deduplicate`, {
     method: 'POST',
     headers,
+    body: JSON.stringify({ type }),
   });
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.error || 'Failed to deduplicate events');
+    throw new Error(error.error || 'Failed to deduplicate data');
   }
   return response.json();
 }

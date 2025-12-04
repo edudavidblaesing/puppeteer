@@ -62,7 +62,7 @@ import {
   fetchScrapedEvents,
   fetchScrapedVenues,
   fetchScrapedArtists,
-  deduplicateEvents,
+  deduplicateData,
 } from '@/lib/api';
 
 // Dynamic import for map (client-side only)
@@ -530,15 +530,24 @@ export default function AdminDashboard() {
     }
   };
 
-  // Deduplicate unified events
+  // Deduplicate data (events, venues, artists)
   const [isDeduplicating, setIsDeduplicating] = useState(false);
-  const handleDeduplicate = async () => {
+  const handleDeduplicate = async (type: 'all' | 'events' | 'venues' | 'artists' = 'all') => {
     setIsDeduplicating(true);
     try {
-      const result = await deduplicateEvents();
-      alert(`Merged ${result.merged} duplicate events`);
-      await loadScrapeData();
-      await loadEvents();
+      const result = await deduplicateData(type);
+      alert(result.message);
+      // Refresh data based on what was deduplicated
+      if (type === 'all' || type === 'events') {
+        await loadScrapeData();
+        await loadEvents();
+      }
+      if (type === 'all' || type === 'venues') {
+        await loadVenues();
+      }
+      if (type === 'all' || type === 'artists') {
+        await loadArtists();
+      }
     } catch (error: any) {
       console.error('Deduplication failed:', error);
       alert(error.message || 'Failed to deduplicate');
@@ -913,6 +922,23 @@ export default function AdminDashboard() {
             </div>
           )}
 
+          {/* Dedupe button for venues and artists */}
+          {(activeTab === 'artists' || activeTab === 'venues') && dataSource === 'main' && (
+            <button
+              onClick={() => handleDeduplicate(activeTab as 'venues' | 'artists')}
+              disabled={isDeduplicating}
+              className="px-3 py-1.5 text-xs bg-orange-100 text-orange-700 rounded-lg hover:bg-orange-200 disabled:opacity-50 flex items-center gap-1"
+              title={`Merge duplicate ${activeTab}`}
+            >
+              {isDeduplicating ? (
+                <RefreshCw className="w-3 h-3 animate-spin" />
+              ) : (
+                <Layers className="w-3 h-3" />
+              )}
+              Dedupe
+            </button>
+          )}
+
           <div className="flex-1" />
 
           {/* Bulk actions */}
@@ -1161,7 +1187,7 @@ export default function AdminDashboard() {
                       Match
                     </button>
                     <button
-                      onClick={handleDeduplicate}
+                      onClick={() => handleDeduplicate('all')}
                       disabled={isDeduplicating}
                       className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 flex items-center gap-2"
                     >
@@ -1170,7 +1196,7 @@ export default function AdminDashboard() {
                       ) : (
                         <Layers className="w-4 h-4" />
                       )}
-                      Dedupe
+                      Dedupe All
                     </button>
                   </div>
                 </div>
