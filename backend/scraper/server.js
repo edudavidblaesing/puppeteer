@@ -4528,6 +4528,42 @@ app.get('/scraped/events', async (req, res) => {
     }
 });
 
+// Delete ALL scraped events
+app.delete('/scraped/events', async (req, res) => {
+    try {
+        // First delete links, then scraped events
+        await pool.query('DELETE FROM event_scraped_links');
+        await pool.query('DELETE FROM event_source_links');
+        const result = await pool.query('DELETE FROM scraped_events RETURNING id');
+        res.json({ success: true, deleted: result.rowCount });
+    } catch (error) {
+        console.error('Database error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Delete ALL scraped artists
+app.delete('/scraped/artists', async (req, res) => {
+    try {
+        const result = await pool.query('DELETE FROM scraped_artists RETURNING id');
+        res.json({ success: true, deleted: result.rowCount });
+    } catch (error) {
+        console.error('Database error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Delete ALL scraped venues
+app.delete('/scraped/venues', async (req, res) => {
+    try {
+        const result = await pool.query('DELETE FROM scraped_venues RETURNING id');
+        res.json({ success: true, deleted: result.rowCount });
+    } catch (error) {
+        console.error('Database error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Get unified events (with source references)
 app.get('/unified/events', async (req, res) => {
     try {
