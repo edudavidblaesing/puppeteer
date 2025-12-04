@@ -71,6 +71,7 @@ export default function EventMap({
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const venueLayerRef = useRef<L.LayerGroup | null>(null);
   const cityLayerRef = useRef<L.LayerGroup | null>(null);
+  const isProgrammaticMove = useRef(false);
   const [currentZoom, setCurrentZoom] = useState(EUROPE_VIEW.zoom);
 
   // Build city config from dynamic cities
@@ -108,11 +109,18 @@ export default function EventMap({
       if (!venues[venueName]) {
         let coords: [number, number] | null = null;
         
-        // Try to find coordinates from known venues
-        for (const [name, venueCoords] of Object.entries(VENUE_COORDS)) {
-          if (venueName.toLowerCase().includes(name.toLowerCase())) {
-            coords = venueCoords;
-            break;
+        // First priority: Use actual coordinates from database if available
+        if (event.latitude && event.longitude) {
+          coords = [event.latitude, event.longitude];
+        }
+        
+        // Second priority: Try to find coordinates from known venues
+        if (!coords) {
+          for (const [name, venueCoords] of Object.entries(VENUE_COORDS)) {
+            if (venueName.toLowerCase().includes(name.toLowerCase())) {
+              coords = venueCoords;
+              break;
+            }
           }
         }
         
@@ -131,6 +139,9 @@ export default function EventMap({
           coords,
           publishedCount: 0,
         };
+      } else if (!venues[venueName].coords && event.latitude && event.longitude) {
+        // Update venue coords if we find an event with coordinates
+        venues[venueName].coords = [event.latitude, event.longitude];
       }
       
       venues[venueName].events.push(event);
@@ -175,10 +186,22 @@ export default function EventMap({
       setCurrentZoom(map.getZoom());
     });
 
-    // Detect city on pan/zoom
+    // Detect city on pan/zoom - clear city filter when zoomed out
     map.on('moveend', () => {
+      // Skip if this was a programmatic move
+      if (isProgrammaticMove.current) {
+        isProgrammaticMove.current = false;
+        return;
+      }
+      
       const zoom = map.getZoom();
       const center = map.getCenter();
+
+      // When user manually zooms out, clear city selection to show all cities
+      if (zoom < 9 && selectedCity && onCityChange) {
+        onCityChange('');
+        return;
+      }
 
       if (zoom >= 10 && onCityChange) {
         let closestCity = '';
@@ -255,30 +278,70 @@ export default function EventMap({
 
         const marker = L.marker(data.coords, { icon });
 
-        // Popup with venue events
-        const popupContent = `
-          <div class="p-3 min-w-[250px] max-w-[300px]">
-            <h3 class="font-bold text-sm mb-2">${venueName}</h3>
-            <p class="text-xs text-gray-500 mb-2">${eventCount} event${eventCount !== 1 ? 's' : ''} • ${publishedCount} published</p>
-            <div class="max-h-[200px] overflow-y-auto space-y-2">
-              ${data.events.slice(0, 5).map(event => `
-                <div class="p-2 bg-gray-50 rounded text-xs">
-                  <div class="font-medium line-clamp-1">${event.title}</div>
-                  <div class="text-gray-500">${event.date ? new Date(event.date).toLocaleDateString() : 'No date'}</div>
-                </div>
-              `).join('')}
-              ${eventCount > 5 ? `<p class="text-xs text-gray-500 text-center">+${eventCount - 5} more events</p>` : ''}
+        // For single event, click opens edit directly
+        if (data.events.length === 1) {
+          marker.on('click', () => {
+            if (onEventClick) {
+              onEventClick(data.events[0]);
+            }
+          });
+          
+          // Simple tooltip for single event
+          marker.bindTooltip(`
+            <div class="px-2 py-1">
+              <div class="font-medium text-sm">${data.events[0].title}</div>
+              <div class="text-xs text-gray-500">${data.events[0].date ? new Date(data.events[0].date).toLocaleDateString() : ''}</div>
             </div>
-          </div>
-        `;
+          `, { direction: 'top', offset: [0, -20] });
+        } else {
+          // Multiple events: show popup with clickable event list
+          const popupContent = document.createElement('div');
+          popupContent.className = 'p-3 min-w-[250px] max-w-[300px]';
+          popupContent.innerHTML = `
+            <h3 class="font-bold text-sm mb-2">${venueName}</h3>
+            <p class="text-xs text-gray-500 mb-2">${eventCount} events • ${publishedCount} published</p>
+            <div class="max-h-[200px] overflow-y-auto space-y-1">
+              ${data.events.map((event, idx) => `
+                <button 
+                  data-event-idx="${idx}" 
+                  class="w-full p-2 bg-gray-50 hover:bg-indigo-50 rounded text-xs text-left transition-colors cursor-pointer border border-transparent hover:border-indigo-200"
+                >
+                  <div class="font-medium line-clamp-1">${event.title}</div>
+                  <div class="text-gray-500 flex justify-between">
+                    <span>${event.date ? new Date(event.date).toLocaleDateString() : 'No date'}</span>
+                    <span class="text-indigo-600">Edit →</span>
+                  </div>
+                </button>
+              `).join('')}
+            </div>
+          `;
+          
+          // Store events reference on the element for click handler
+          (popupContent as any)._venueEvents = data.events;
 
-        marker.bindPopup(popupContent, { maxWidth: 320 });
+          marker.bindPopup(popupContent, { maxWidth: 320 });
 
-        marker.on('click', () => {
-          if (onEventClick && data.events.length === 1) {
-            onEventClick(data.events[0]);
-          }
-        });
+          marker.on('popupopen', () => {
+            const popup = marker.getPopup();
+            if (popup) {
+              const container = popup.getElement();
+              if (container) {
+                const buttons = container.querySelectorAll('button[data-event-idx]');
+                buttons.forEach((btn) => {
+                  btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const idx = parseInt((btn as HTMLElement).dataset.eventIdx || '0');
+                    const event = data.events[idx];
+                    if (event && onEventClick) {
+                      marker.closePopup();
+                      onEventClick(event);
+                    }
+                  });
+                });
+              }
+            }
+          });
+        }
 
         venueLayerRef.current?.addLayer(marker);
       });
@@ -324,9 +387,11 @@ export default function EventMap({
   useEffect(() => {
     if (!mapRef.current) return;
     
+    isProgrammaticMove.current = true;
+    
     if (selectedCity && cityConfig[selectedCity]) {
       mapRef.current.setView(cityConfig[selectedCity].coords, CITY_ZOOM, { animate: true });
-    } else if (!selectedCity && Object.keys(cityConfig).length > 1) {
+    } else if (!selectedCity && Object.keys(cityConfig).length > 0) {
       mapRef.current.setView(EUROPE_VIEW.coords, EUROPE_VIEW.zoom, { animate: true });
     }
   }, [selectedCity, cityConfig]);
@@ -367,6 +432,7 @@ export default function EventMap({
             onClick={() => {
               const coords = getCityCoords(name);
               if (coords && mapRef.current) {
+                isProgrammaticMove.current = true;
                 mapRef.current.setView(coords, CITY_ZOOM, { animate: true });
                 if (onCityChange) onCityChange(name);
               }
@@ -385,6 +451,7 @@ export default function EventMap({
           <button
             onClick={() => {
               if (mapRef.current) {
+                isProgrammaticMove.current = true;
                 mapRef.current.setView(EUROPE_VIEW.coords, EUROPE_VIEW.zoom, { animate: true });
                 if (onCityChange) onCityChange('');
               }

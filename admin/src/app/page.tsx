@@ -30,6 +30,8 @@ import {
   fetchEvents,
   fetchStats,
   deleteEvent,
+  updateEvent,
+  publishEvents,
   syncEvents,
   fetchEnrichStats,
   enrichVenues,
@@ -140,12 +142,19 @@ export default function AdminDashboard() {
 
   // Bulk actions
   const handleBulkPublish = async (publish: boolean) => {
-    // In production, call API to update publish status
-    const updatedEvents = events.map((e) =>
-      selectedIds.has(e.id) ? { ...e, is_published: publish } : e
-    );
-    setEvents(updatedEvents);
-    setSelectedIds(new Set());
+    try {
+      const ids = Array.from(selectedIds);
+      await publishEvents(ids, publish);
+      // Update local state
+      const updatedEvents = events.map((e) =>
+        selectedIds.has(e.id) ? { ...e, is_published: publish } : e
+      );
+      setEvents(updatedEvents);
+      setSelectedIds(new Set());
+    } catch (error) {
+      console.error('Failed to update publish status:', error);
+      alert('Failed to update publish status');
+    }
   };
 
   const handleBulkDelete = async () => {
@@ -180,17 +189,30 @@ export default function AdminDashboard() {
   };
 
   const handlePublish = async (id: string, publish: boolean) => {
-    // In production, call API
-    const updatedEvents = events.map((e) =>
-      e.id === id ? { ...e, is_published: publish } : e
-    );
-    setEvents(updatedEvents);
+    try {
+      await publishEvents([id], publish);
+      // Update local state
+      const updatedEvents = events.map((e) =>
+        e.id === id ? { ...e, is_published: publish } : e
+      );
+      setEvents(updatedEvents);
+    } catch (error) {
+      console.error('Failed to update publish status:', error);
+      alert('Failed to update publish status');
+    }
   };
 
   const handleSave = async (id: string, data: Partial<Event>) => {
-    // In production, call API to update event
-    const updatedEvents = events.map((e) => (e.id === id ? { ...e, ...data } : e));
-    setEvents(updatedEvents);
+    try {
+      await updateEvent(id, data);
+      // Update local state
+      const updatedEvents = events.map((e) => (e.id === id ? { ...e, ...data } : e));
+      setEvents(updatedEvents);
+    } catch (error) {
+      console.error('Failed to save event:', error);
+      alert('Failed to save event');
+      throw error; // Re-throw so modal knows save failed
+    }
   };
 
   // Sync from source

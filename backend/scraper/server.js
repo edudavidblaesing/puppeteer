@@ -63,6 +63,65 @@ pool.query('SELECT NOW()', (err, res) => {
     }
 });
 
+// Geocoding using OpenStreetMap Nominatim (free, rate-limited to 1 req/sec)
+const geocodeCache = new Map();
+const GEOCODE_DELAY = 1100; // ms between requests to respect rate limit
+let lastGeocodeTime = 0;
+
+async function geocodeAddress(address, city, country) {
+    if (!address && !city) return null;
+    
+    const fullAddress = [address, city, country].filter(Boolean).join(', ');
+    
+    // Check cache first
+    if (geocodeCache.has(fullAddress)) {
+        return geocodeCache.get(fullAddress);
+    }
+    
+    // Rate limiting
+    const now = Date.now();
+    const timeSinceLastRequest = now - lastGeocodeTime;
+    if (timeSinceLastRequest < GEOCODE_DELAY) {
+        await new Promise(resolve => setTimeout(resolve, GEOCODE_DELAY - timeSinceLastRequest));
+    }
+    lastGeocodeTime = Date.now();
+    
+    try {
+        const query = encodeURIComponent(fullAddress);
+        const response = await fetch(
+            `https://nominatim.openstreetmap.org/search?format=json&q=${query}&limit=1`,
+            {
+                headers: {
+                    'User-Agent': 'SocialEventsAdmin/1.0 (contact@example.com)'
+                }
+            }
+        );
+        
+        if (!response.ok) {
+            console.warn(`Geocoding failed for "${fullAddress}": ${response.status}`);
+            return null;
+        }
+        
+        const data = await response.json();
+        
+        if (data && data.length > 0) {
+            const result = {
+                latitude: parseFloat(data[0].lat),
+                longitude: parseFloat(data[0].lon)
+            };
+            geocodeCache.set(fullAddress, result);
+            console.log(`Geocoded "${fullAddress}" -> ${result.latitude}, ${result.longitude}`);
+            return result;
+        }
+        
+        geocodeCache.set(fullAddress, null);
+        return null;
+    } catch (error) {
+        console.error(`Geocoding error for "${fullAddress}":`, error.message);
+        return null;
+    }
+}
+
 // Proxy rotation configuration
 const PROXY_LIST = [
     '77.105.137.42:8080',
@@ -1188,6 +1247,86 @@ app.delete('/db/events/:id', async (req, res) => {
     }
 });
 
+// Update event (PATCH)
+app.patch('/db/events/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const updates = req.body;
+        
+        // Build dynamic update query
+        const allowedFields = [
+            'title', 'date', 'start_time', 'end_time', 'content_url',
+            'flyer_front', 'description', 'venue_id', 'venue_name',
+            'venue_address', 'venue_city', 'venue_country', 'artists',
+            'is_published', 'latitude', 'longitude'
+        ];
+        
+        const setClauses = [];
+        const values = [];
+        let paramIndex = 1;
+        
+        for (const [key, value] of Object.entries(updates)) {
+            if (allowedFields.includes(key)) {
+                setClauses.push(`${key} = $${paramIndex++}`);
+                values.push(value);
+            }
+        }
+        
+        if (setClauses.length === 0) {
+            return res.status(400).json({ error: 'No valid fields to update' });
+        }
+        
+        setClauses.push('updated_at = CURRENT_TIMESTAMP');
+        values.push(id);
+        
+        const query = `
+            UPDATE events 
+            SET ${setClauses.join(', ')}
+            WHERE id = $${paramIndex}
+            RETURNING *
+        `;
+        
+        const result = await pool.query(query, values);
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Event not found' });
+        }
+        
+        res.json({ success: true, event: result.rows[0] });
+    } catch (error) {
+        console.error('Database error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Bulk publish/unpublish events
+app.post('/db/events/publish', async (req, res) => {
+    try {
+        const { ids, publish } = req.body;
+        
+        if (!Array.isArray(ids) || ids.length === 0) {
+            return res.status(400).json({ error: 'ids must be a non-empty array' });
+        }
+        
+        const result = await pool.query(
+            `UPDATE events 
+             SET is_published = $1, updated_at = CURRENT_TIMESTAMP 
+             WHERE id = ANY($2::text[])
+             RETURNING id`,
+            [publish, ids]
+        );
+        
+        res.json({ 
+            success: true, 
+            updated: result.rows.length,
+            ids: result.rows.map(r => r.id)
+        });
+    } catch (error) {
+        console.error('Database error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Database stats
 app.get('/db/stats', async (req, res) => {
     try {
@@ -1386,18 +1525,35 @@ app.post('/db/sync', async (req, res) => {
         
         const listings = data.data.eventListings.data || [];
         let inserted = 0, updated = 0;
+        let geocoded = 0;
         
         for (const listing of listings) {
             const e = listing.event;
             if (!e) continue;
             
             try {
+                // Try to geocode the venue address if we have it
+                let lat = null, lng = null;
+                const venueAddress = e.venue?.address;
+                const venueCity = e.venue?.area?.name;
+                const venueCountry = e.venue?.area?.country?.name;
+                
+                if (venueAddress || venueCity) {
+                    const coords = await geocodeAddress(venueAddress, venueCity, venueCountry);
+                    if (coords) {
+                        lat = coords.latitude;
+                        lng = coords.longitude;
+                        geocoded++;
+                    }
+                }
+                
                 const result = await pool.query(`
                     INSERT INTO events (
                         id, title, date, start_time, end_time, content_url,
                         flyer_front, description, venue_id, venue_name,
-                        venue_address, venue_city, venue_country, artists, listing_date
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                        venue_address, venue_city, venue_country, artists, listing_date,
+                        latitude, longitude
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
                     ON CONFLICT (id) DO UPDATE SET
                         title = EXCLUDED.title,
                         date = EXCLUDED.date,
@@ -1413,6 +1569,8 @@ app.post('/db/sync', async (req, res) => {
                         venue_country = EXCLUDED.venue_country,
                         artists = EXCLUDED.artists,
                         listing_date = EXCLUDED.listing_date,
+                        latitude = COALESCE(EXCLUDED.latitude, events.latitude),
+                        longitude = COALESCE(EXCLUDED.longitude, events.longitude),
                         updated_at = CURRENT_TIMESTAMP
                     RETURNING (xmax = 0) AS inserted
                 `, [
@@ -1430,7 +1588,9 @@ app.post('/db/sync', async (req, res) => {
                     e.venue?.area?.name,
                     e.venue?.area?.country?.name,
                     (e.artists || []).map(a => a.name).join(', '),
-                    listing.listingDate
+                    listing.listingDate,
+                    lat,
+                    lng
                 ]);
                 
                 if (result.rows[0].inserted) inserted++;
@@ -1445,10 +1605,70 @@ app.post('/db/sync', async (req, res) => {
             fetched: listings.length,
             totalAvailable: data.data.eventListings.totalResults,
             inserted,
-            updated
+            updated,
+            geocoded
         });
     } catch (error) {
         console.error('Sync error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Geocode events that don't have coordinates
+app.post('/db/events/geocode', async (req, res) => {
+    try {
+        const { limit = 50, city } = req.body;
+        
+        // Find events without coordinates
+        let query = `
+            SELECT id, venue_address, venue_city, venue_country
+            FROM events
+            WHERE latitude IS NULL
+            AND (venue_address IS NOT NULL OR venue_city IS NOT NULL)
+        `;
+        const params = [];
+        let paramIndex = 1;
+        
+        if (city) {
+            query += ` AND venue_city ILIKE $${paramIndex++}`;
+            params.push(city);
+        }
+        
+        query += ` ORDER BY date DESC LIMIT $${paramIndex}`;
+        params.push(parseInt(limit));
+        
+        const eventsResult = await pool.query(query, params);
+        const events = eventsResult.rows;
+        
+        let geocoded = 0;
+        let failed = 0;
+        
+        for (const event of events) {
+            const coords = await geocodeAddress(
+                event.venue_address,
+                event.venue_city,
+                event.venue_country
+            );
+            
+            if (coords) {
+                await pool.query(
+                    'UPDATE events SET latitude = $1, longitude = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3',
+                    [coords.latitude, coords.longitude, event.id]
+                );
+                geocoded++;
+            } else {
+                failed++;
+            }
+        }
+        
+        res.json({
+            success: true,
+            processed: events.length,
+            geocoded,
+            failed
+        });
+    } catch (error) {
+        console.error('Geocoding error:', error);
         res.status(500).json({ error: error.message });
     }
 });
