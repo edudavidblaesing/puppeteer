@@ -4331,12 +4331,19 @@ async function refreshMainEvent(eventId) {
     
     const { merged, fieldSources } = mergeSourceData(sourcesResult.rows);
     
+    // Extract date as YYYY-MM-DD string (handles Date objects and ISO strings)
+    let dateStr = null;
+    if (merged.date) {
+        const d = merged.date instanceof Date ? merged.date : new Date(merged.date);
+        dateStr = d.toISOString().split('T')[0];
+    }
+    
     // Combine date with time for timestamp fields
-    const startTimestamp = merged.date && merged.start_time 
-        ? `${merged.date} ${merged.start_time}` 
-        : (merged.date || null);
-    const endTimestamp = merged.date && merged.end_time 
-        ? `${merged.date} ${merged.end_time}` 
+    const startTimestamp = dateStr && merged.start_time 
+        ? `${dateStr} ${merged.start_time}` 
+        : null;
+    const endTimestamp = dateStr && merged.end_time 
+        ? `${dateStr} ${merged.end_time}` 
         : null;
     
     // Update main event with merged data
@@ -4359,7 +4366,7 @@ async function refreshMainEvent(eventId) {
             updated_at = CURRENT_TIMESTAMP
         WHERE id = $15
     `, [
-        merged.title, merged.date, startTimestamp, endTimestamp,
+        merged.title, dateStr, startTimestamp, endTimestamp,
         merged.description, merged.flyer_front, merged.content_url,
         merged.venue_name, merged.venue_address, merged.venue_city, merged.venue_country,
         merged.venue_latitude, merged.venue_longitude,
@@ -4472,11 +4479,17 @@ async function matchAndLinkEvents(options = {}) {
             if (!dryRun) {
                 const eventId = uuidv4();
                 
+                // Extract date as YYYY-MM-DD string (handles Date objects and ISO strings)
+                let dateStr = null;
+                if (scraped.date) {
+                    const d = scraped.date instanceof Date ? scraped.date : new Date(scraped.date);
+                    dateStr = d.toISOString().split('T')[0];
+                }
+                
                 // Combine date with time for timestamp fields
-                const dateStr = scraped.date;
                 const startTimestamp = dateStr && scraped.start_time 
                     ? `${dateStr} ${scraped.start_time}` 
-                    : (dateStr || null);
+                    : null;
                 const endTimestamp = dateStr && scraped.end_time 
                     ? `${dateStr} ${scraped.end_time}` 
                     : null;
@@ -4493,7 +4506,7 @@ async function matchAndLinkEvents(options = {}) {
                     scraped.source_code,
                     scraped.source_event_id,
                     scraped.title,
-                    scraped.date,
+                    dateStr,
                     startTimestamp,
                     endTimestamp,
                     scraped.description,
