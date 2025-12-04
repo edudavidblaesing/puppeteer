@@ -2115,7 +2115,7 @@ app.get('/db/artists/:id', async (req, res) => {
 // Create artist
 app.post('/db/artists', async (req, res) => {
     try {
-        const { id, name, country, content_url, image_url, source_code = 'manual' } = req.body;
+        const { id, name, country, content_url, image_url, source_code = 'ra' } = req.body;
         
         if (!name) {
             return res.status(400).json({ error: 'Name is required' });
@@ -2504,7 +2504,7 @@ app.get('/db/venues/:id', async (req, res) => {
 // Create venue
 app.post('/db/venues', async (req, res) => {
     try {
-        const { id, name, address, city, country, blurb, content_url, latitude, longitude, source_code = 'manual' } = req.body;
+        const { id, name, address, city, country, blurb, content_url, latitude, longitude, source_code = 'ra' } = req.body;
         
         if (!name) {
             return res.status(400).json({ error: 'Name is required' });
