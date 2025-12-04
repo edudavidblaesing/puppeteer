@@ -143,6 +143,12 @@ export async function fetchArtists(params?: { search?: string; country?: string;
   return response.json();
 }
 
+export async function fetchArtist(id: string) {
+  const response = await fetch(`${API_URL}/db/artists/${id}`, { headers });
+  if (!response.ok) throw new Error('Failed to fetch artist');
+  return response.json();
+}
+
 export async function createArtist(data: { name: string; country?: string; content_url?: string; image_url?: string }) {
   const response = await fetch(`${API_URL}/db/artists`, {
     method: 'POST',
@@ -243,6 +249,12 @@ export async function fetchAdminVenues(params?: { search?: string; city?: string
 
   const response = await fetch(`${API_URL}/db/venues?${searchParams}`, { headers });
   if (!response.ok) throw new Error('Failed to fetch venues');
+  return response.json();
+}
+
+export async function fetchVenue(id: string) {
+  const response = await fetch(`${API_URL}/db/venues/${id}`, { headers });
+  if (!response.ok) throw new Error('Failed to fetch venue');
   return response.json();
 }
 

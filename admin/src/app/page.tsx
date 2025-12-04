@@ -32,6 +32,7 @@ import clsx from 'clsx';
 import { Event, Stats, City, Venue, Artist } from '@/types';
 import {
   fetchEvents,
+  fetchEvent,
   fetchStats,
   deleteEvent,
   updateEvent,
@@ -42,6 +43,7 @@ import {
   enrichArtists,
   fetchCities,
   fetchArtists,
+  fetchArtist,
   createArtist,
   updateArtist,
   deleteArtist,
@@ -50,6 +52,7 @@ import {
   updateCity,
   deleteCity,
   fetchAdminVenues,
+  fetchVenue,
   createVenue,
   updateVenue,
   deleteVenue,
@@ -57,17 +60,8 @@ import {
   runMatching,
   fetchScrapeStats,
   fetchScrapedEvents,
-  fetchUnifiedEvents,
-  fetchUnifiedEvent,
-  updateUnifiedEvent,
   fetchScrapedVenues,
-  fetchUnifiedVenues,
-  fetchUnifiedVenue,
-  updateUnifiedVenue,
   fetchScrapedArtists,
-  fetchUnifiedArtists,
-  fetchUnifiedArtist,
-  updateUnifiedArtist,
   deduplicateEvents,
 } from '@/lib/api';
 
@@ -83,7 +77,7 @@ const EventMap = dynamic(() => import('@/components/EventMap'), {
 
 type ActiveTab = 'events' | 'artists' | 'venues' | 'cities' | 'scrape';
 type ViewMode = 'split' | 'list' | 'map';
-type DataSource = 'original' | 'unified' | 'scraped';
+type DataSource = 'main' | 'scraped';
 
 export default function AdminDashboard() {
   // Main state
@@ -91,11 +85,10 @@ export default function AdminDashboard() {
   const [viewMode, setViewMode] = useState<ViewMode>('split');
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [dataSource, setDataSource] = useState<DataSource>('original');
+  const [dataSource, setDataSource] = useState<DataSource>('main');
 
   // Events state
   const [events, setEvents] = useState<Event[]>([]);
-  const [unifiedEvents, setUnifiedEvents] = useState<any[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [enrichStats, setEnrichStats] = useState<any>(null);
   const [cities, setCities] = useState<City[]>([]);
@@ -106,16 +99,12 @@ export default function AdminDashboard() {
   // Artists state
   const [artists, setArtists] = useState<Artist[]>([]);
   const [artistsTotal, setArtistsTotal] = useState(0);
-  const [unifiedArtists, setUnifiedArtists] = useState<any[]>([]);
-  const [unifiedArtistsTotal, setUnifiedArtistsTotal] = useState(0);
   const [scrapedArtists, setScrapedArtists] = useState<any[]>([]);
   const [scrapedArtistsTotal, setScrapedArtistsTotal] = useState(0);
 
   // Venues state
   const [venues, setVenues] = useState<Venue[]>([]);
   const [venuesTotal, setVenuesTotal] = useState(0);
-  const [unifiedVenues, setUnifiedVenues] = useState<any[]>([]);
-  const [unifiedVenuesTotal, setUnifiedVenuesTotal] = useState(0);
   const [scrapedVenues, setScrapedVenues] = useState<any[]>([]);
   const [scrapedVenuesTotal, setScrapedVenuesTotal] = useState(0);
 
@@ -150,17 +139,12 @@ export default function AdminDashboard() {
   // Load events data
   const loadEvents = useCallback(async () => {
     try {
-      const [eventsData, unifiedData, statsData, enrichData, citiesData] = await Promise.all([
+      const [eventsData, statsData, enrichData, citiesData] = await Promise.all([
         fetchEvents({
           city: cityFilter || undefined,
           limit: pageSize,
           offset: (page - 1) * pageSize,
         }),
-        fetchUnifiedEvents({
-          city: cityFilter || undefined,
-          limit: pageSize,
-          offset: (page - 1) * pageSize,
-        }).catch(() => ({ data: [], total: 0 })),
         fetchStats(),
         fetchEnrichStats().catch(() => null),
         fetchCities().catch(() => []),
@@ -168,7 +152,6 @@ export default function AdminDashboard() {
 
       setEvents(eventsData.data);
       setTotal(eventsData.total);
-      setUnifiedEvents(unifiedData.data || []);
       setStats(statsData);
       setEnrichStats(enrichData);
       setCities(citiesData);
@@ -180,17 +163,12 @@ export default function AdminDashboard() {
   // Load artists
   const loadArtists = useCallback(async () => {
     try {
-      const [data, unifiedData, scrapedData] = await Promise.all([
+      const [data, scrapedData] = await Promise.all([
         fetchArtists({
           search: searchQuery || undefined,
           limit: pageSize,
           offset: (page - 1) * pageSize,
         }),
-        fetchUnifiedArtists({
-          search: searchQuery || undefined,
-          limit: pageSize,
-          offset: (page - 1) * pageSize,
-        }).catch(() => ({ data: [], total: 0 })),
         fetchScrapedArtists({
           search: searchQuery || undefined,
           limit: pageSize,
@@ -199,8 +177,6 @@ export default function AdminDashboard() {
       ]);
       setArtists(data.data || []);
       setArtistsTotal(data.total || 0);
-      setUnifiedArtists(unifiedData.data || []);
-      setUnifiedArtistsTotal(unifiedData.total || 0);
       setScrapedArtists(scrapedData.data || []);
       setScrapedArtistsTotal(scrapedData.total || 0);
     } catch (error) {
@@ -211,19 +187,13 @@ export default function AdminDashboard() {
   // Load venues
   const loadVenues = useCallback(async () => {
     try {
-      const [data, unifiedData, scrapedData] = await Promise.all([
+      const [data, scrapedData] = await Promise.all([
         fetchAdminVenues({
           search: searchQuery || undefined,
           city: cityFilter || undefined,
           limit: pageSize,
           offset: (page - 1) * pageSize,
         }),
-        fetchUnifiedVenues({
-          search: searchQuery || undefined,
-          city: cityFilter || undefined,
-          limit: pageSize,
-          offset: (page - 1) * pageSize,
-        }).catch(() => ({ data: [], total: 0 })),
         fetchScrapedVenues({
           search: searchQuery || undefined,
           city: cityFilter || undefined,
@@ -233,8 +203,6 @@ export default function AdminDashboard() {
       ]);
       setVenues(data.data || []);
       setVenuesTotal(data.total || 0);
-      setUnifiedVenues(unifiedData.data || []);
-      setUnifiedVenuesTotal(unifiedData.total || 0);
       setScrapedVenues(scrapedData.data || []);
       setScrapedVenuesTotal(scrapedData.total || 0);
     } catch (error) {
@@ -299,7 +267,7 @@ export default function AdminDashboard() {
 
   // Filter events locally
   const filteredEvents = useMemo(() => {
-    const sourceEvents = dataSource === 'unified' ? unifiedEvents : events;
+    const sourceEvents = events; // Main events table is THE source
     return sourceEvents.filter((event) => {
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
@@ -313,26 +281,24 @@ export default function AdminDashboard() {
       if (statusFilter === 'draft' && event.is_published) return false;
       return true;
     });
-  }, [events, unifiedEvents, dataSource, searchQuery, statusFilter]);
+  }, [events, searchQuery, statusFilter]);
 
   // Get current total based on tab and data source
   const currentTotal = useMemo(() => {
     if (activeTab === 'events') {
-      return dataSource === 'unified' ? unifiedEvents.length : total;
+      return total;
     }
     if (activeTab === 'artists') {
-      if (dataSource === 'unified') return unifiedArtistsTotal;
       if (dataSource === 'scraped') return scrapedArtistsTotal;
       return artistsTotal;
     }
     if (activeTab === 'venues') {
-      if (dataSource === 'unified') return unifiedVenuesTotal;
       if (dataSource === 'scraped') return scrapedVenuesTotal;
       return venuesTotal;
     }
     if (activeTab === 'cities') return citiesTotal;
     return 0;
-  }, [activeTab, dataSource, total, artistsTotal, venuesTotal, citiesTotal, unifiedEvents, unifiedArtistsTotal, unifiedVenuesTotal, scrapedArtistsTotal, scrapedVenuesTotal]);
+  }, [activeTab, dataSource, total, artistsTotal, venuesTotal, citiesTotal, scrapedArtistsTotal, scrapedVenuesTotal]);
 
   const totalPages = Math.ceil(currentTotal / pageSize);
 
@@ -374,20 +340,20 @@ export default function AdminDashboard() {
       }
       setEditForm(formData);
       
-      // Fetch source references for unified events
-      if (dataSource === 'unified' && item.id) {
-        fetchUnifiedEvent(item.id).then(data => {
+      // Fetch source references for main events (from linked scraped sources)
+      if (dataSource === 'main' && item.id) {
+        fetchEvent(item.id).then(data => {
           setSourceReferences(data.source_references || []);
         }).catch(console.error);
       }
-    } else if (activeTab === 'artists' && dataSource === 'unified' && item.id) {
+    } else if (activeTab === 'artists' && dataSource === 'main' && item.id) {
       setEditForm({ ...item });
-      fetchUnifiedArtist(item.id).then(data => {
+      fetchArtist(item.id).then(data => {
         setSourceReferences(data.source_references || []);
       }).catch(console.error);
-    } else if (activeTab === 'venues' && dataSource === 'unified' && item.id) {
+    } else if (activeTab === 'venues' && dataSource === 'main' && item.id) {
       setEditForm({ ...item });
-      fetchUnifiedVenue(item.id).then(data => {
+      fetchVenue(item.id).then(data => {
         setSourceReferences(data.source_references || []);
       }).catch(console.error);
     } else {
@@ -417,22 +383,12 @@ export default function AdminDashboard() {
     try {
       if (activeTab === 'events') {
         if (editingItem) {
-          // Use unified API if in unified mode
-          if (dataSource === 'unified') {
-            await updateUnifiedEvent(editingItem.id, editForm);
-            loadEvents();
-          } else {
-            await updateEvent(editingItem.id, editForm);
-            setEvents(events.map(e => e.id === editingItem.id ? { ...e, ...editForm } : e));
-          }
+          await updateEvent(editingItem.id, editForm);
+          setEvents(events.map(e => e.id === editingItem.id ? { ...e, ...editForm } : e));
         }
       } else if (activeTab === 'artists') {
         if (editingItem) {
-          if (dataSource === 'unified') {
-            await updateUnifiedArtist(editingItem.id, editForm);
-          } else {
-            await updateArtist(editingItem.id, editForm);
-          }
+          await updateArtist(editingItem.id, editForm);
         } else {
           await createArtist(editForm);
         }
@@ -444,11 +400,7 @@ export default function AdminDashboard() {
           longitude: editForm.longitude ? parseFloat(editForm.longitude) : undefined,
         };
         if (editingItem) {
-          if (dataSource === 'unified') {
-            await updateUnifiedVenue(editingItem.id, payload);
-          } else {
-            await updateVenue(editingItem.id, payload);
-          }
+          await updateVenue(editingItem.id, payload);
         } else {
           await createVenue(payload);
         }
@@ -632,7 +584,7 @@ export default function AdminDashboard() {
   // Render list items based on active tab
   const renderListItem = (item: any) => {
     if (activeTab === 'events') {
-      const isUnified = dataSource === 'unified';
+      const isMain = dataSource === 'main';
       return (
         <div
           key={item.id}
@@ -658,7 +610,7 @@ export default function AdminDashboard() {
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <p className="font-medium text-sm truncate">{item.title}</p>
-              {isUnified && item.source_references?.length > 0 && (
+              {isMain && item.source_references?.length > 0 && (
                 <span className="text-[10px] bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded flex-shrink-0">
                   {item.source_references.map((s: any) => s.source_code?.toUpperCase()).join(' + ')}
                 </span>
@@ -683,7 +635,7 @@ export default function AdminDashboard() {
     }
 
     if (activeTab === 'artists') {
-      const isUnified = dataSource === 'unified';
+      const isMain = dataSource === 'main';
       const isScraped = dataSource === 'scraped';
       return (
         <div
@@ -705,7 +657,7 @@ export default function AdminDashboard() {
             <p className="font-medium text-sm truncate">{item.name}</p>
             <div className="flex items-center gap-2 text-xs text-gray-500">
               <span>{item.country || item.genres || '—'}</span>
-              {isUnified && item.source_references?.length > 0 && (
+              {isMain && item.source_references?.length > 0 && (
                 <span className="bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded">
                   {item.source_references.length} sources
                 </span>
@@ -723,11 +675,6 @@ export default function AdminDashboard() {
                   <Link2 className="w-3 h-3" /> linked
                 </span>
               )}
-              {isUnified && item.event_count > 0 && (
-                <span className="bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">
-                  {item.event_count} events
-                </span>
-              )}
             </div>
           </div>
           {item.content_url && (
@@ -740,7 +687,7 @@ export default function AdminDashboard() {
     }
 
     if (activeTab === 'venues') {
-      const isUnified = dataSource === 'unified';
+      const isMain = dataSource === 'main';
       const isScraped = dataSource === 'scraped';
       return (
         <div
@@ -772,14 +719,9 @@ export default function AdminDashboard() {
                 <Link2 className="w-3 h-3" />
               </span>
             )}
-            {isUnified && item.source_references?.length > 0 && (
+            {isMain && item.source_references?.length > 0 && (
               <span className="text-xs bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded">
                 {item.source_references.length} src
-              </span>
-            )}
-            {isUnified && item.event_count > 0 && (
-              <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded">
-                {item.event_count}
               </span>
             )}
             {item.latitude && item.longitude ? (
@@ -824,18 +766,16 @@ export default function AdminDashboard() {
   const currentItems = useMemo(() => {
     if (activeTab === 'events') return filteredEvents;
     if (activeTab === 'artists') {
-      if (dataSource === 'unified') return unifiedArtists;
       if (dataSource === 'scraped') return scrapedArtists;
       return artists;
     }
     if (activeTab === 'venues') {
-      if (dataSource === 'unified') return unifiedVenues;
       if (dataSource === 'scraped') return scrapedVenues;
       return venues;
     }
     if (activeTab === 'cities') return adminCities;
     return [];
-  }, [activeTab, dataSource, filteredEvents, artists, venues, adminCities, unifiedArtists, unifiedVenues, scrapedArtists, scrapedVenues]);
+  }, [activeTab, dataSource, filteredEvents, artists, venues, adminCities, scrapedArtists, scrapedVenues]);
 
   return (
     <div className="h-screen flex flex-col bg-gray-100">
@@ -939,59 +879,37 @@ export default function AdminDashboard() {
             </select>
           )}
 
-          {/* Data source toggle (for events, artists, venues) */}
-          {(activeTab === 'events' || activeTab === 'artists' || activeTab === 'venues') && (
+          {/* Data source toggle (for artists, venues only - to view raw scraped data) */}
+          {(activeTab === 'artists' || activeTab === 'venues') && (
             <div className="flex items-center bg-gray-100 rounded-lg p-0.5">
               <button
-                onClick={() => setDataSource('original')}
+                onClick={() => setDataSource('main')}
                 className={clsx(
                   'px-2 py-1 text-xs font-medium rounded transition-all flex items-center gap-1',
-                  dataSource === 'original' ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'
+                  dataSource === 'main' ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'
                 )}
-                title="Original database (events table)"
+                title="Main database"
               >
                 <Database className="w-3 h-3" />
-                Original
+                Main
               </button>
               <button
-                onClick={() => setDataSource('unified')}
+                onClick={() => setDataSource('scraped')}
                 className={clsx(
                   'px-2 py-1 text-xs font-medium rounded transition-all flex items-center gap-1',
-                  dataSource === 'unified' ? 'bg-white shadow text-indigo-600' : 'text-gray-500 hover:text-gray-700'
+                  dataSource === 'scraped' ? 'bg-white shadow text-amber-600' : 'text-gray-500 hover:text-gray-700'
                 )}
-                title="Unified scraped data (deduplicated)"
+                title="Raw scraped data (for debugging)"
               >
-                <Link2 className="w-3 h-3" />
-                Unified
-                {activeTab === 'events' && unifiedEvents.length > 0 && (
-                  <span className="ml-1 bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded text-[10px]">{unifiedEvents.length}</span>
+                <Layers className="w-3 h-3" />
+                Scraped
+                {activeTab === 'artists' && scrapedArtistsTotal > 0 && (
+                  <span className="ml-1 bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded text-[10px]">{scrapedArtistsTotal}</span>
                 )}
-                {activeTab === 'artists' && unifiedArtistsTotal > 0 && (
-                  <span className="ml-1 bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded text-[10px]">{unifiedArtistsTotal}</span>
-                )}
-                {activeTab === 'venues' && unifiedVenuesTotal > 0 && (
-                  <span className="ml-1 bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded text-[10px]">{unifiedVenuesTotal}</span>
+                {activeTab === 'venues' && scrapedVenuesTotal > 0 && (
+                  <span className="ml-1 bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded text-[10px]">{scrapedVenuesTotal}</span>
                 )}
               </button>
-              {(activeTab === 'artists' || activeTab === 'venues') && (
-                <button
-                  onClick={() => setDataSource('scraped')}
-                  className={clsx(
-                    'px-2 py-1 text-xs font-medium rounded transition-all flex items-center gap-1',
-                    dataSource === 'scraped' ? 'bg-white shadow text-amber-600' : 'text-gray-500 hover:text-gray-700'
-                  )}
-                  title="Raw scraped data (before deduplication)"
-                >
-                  <Layers className="w-3 h-3" />
-                  Scraped
-                  {activeTab === 'artists' && scrapedArtistsTotal > 0 && (
-                    <span className="ml-1 bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded text-[10px]">{scrapedArtistsTotal}</span>
-                  )}
-                  {activeTab === 'venues' && scrapedVenuesTotal > 0 && (
-                    <span className="ml-1 bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded text-[10px]">{scrapedVenuesTotal}</span>
-                  )}
-                </button>
-              )}
             </div>
           )}
 
@@ -1453,12 +1371,12 @@ export default function AdminDashboard() {
               </div>
 
               <div className="p-4 space-y-4">
-                {/* Source References Section */}
-                {dataSource === 'unified' && sourceReferences.length > 0 && editingItem && (
+                {/* Source References Section - show linked scraped sources */}
+                {dataSource === 'main' && sourceReferences.length > 0 && editingItem && (
                   <div className="bg-gray-50 rounded-lg p-3 border">
                     <h3 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
                       <Layers className="w-4 h-4" />
-                      Data Sources ({sourceReferences.length})
+                      Linked Sources ({sourceReferences.length})
                     </h3>
                     <div className="space-y-2 max-h-32 overflow-auto">
                       {sourceReferences.map((source: any, idx: number) => (
@@ -1466,7 +1384,7 @@ export default function AdminDashboard() {
                           <span className="flex items-center gap-2">
                             <span className={clsx(
                               'px-1.5 py-0.5 rounded font-medium uppercase',
-                              source.source_code === 'original' ? 'bg-green-100 text-green-700' :
+                              source.source_code === 'manual' ? 'bg-green-100 text-green-700' :
                               source.source_code === 'ra' ? 'bg-purple-100 text-purple-700' :
                               source.source_code === 'ticketmaster' ? 'bg-blue-100 text-blue-700' :
                               'bg-gray-100 text-gray-700'
@@ -1504,7 +1422,7 @@ export default function AdminDashboard() {
                       ))}
                     </div>
                     <p className="text-xs text-gray-500 mt-2">
-                      Click "Use" to apply source data. Changes will be saved as "original" source.
+                      Click "Use" to apply source data. Changes will be saved to your main record.
                     </p>
                   </div>
                 )}

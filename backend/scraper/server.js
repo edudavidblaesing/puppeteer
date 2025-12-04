@@ -1215,16 +1215,55 @@ app.get('/db/events', async (req, res) => {
     }
 });
 
-// Get single event
+// Get single event with source references
 app.get('/db/events/:id', async (req, res) => {
     try {
+        // Get the event
         const result = await pool.query('SELECT * FROM events WHERE id = $1', [req.params.id]);
         
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Event not found' });
         }
         
-        res.json(result.rows[0]);
+        const event = result.rows[0];
+        
+        // Try to get source references from event_scraped_links (new schema)
+        // or fall back to event_source_links via unified_events (old schema)
+        try {
+            // First try new direct link table
+            const sourceRefsNew = await pool.query(`
+                SELECT se.id, se.source_code, se.source_event_id, se.title, se.date, 
+                       se.start_time, se.content_url, se.flyer_front, se.venue_name, 
+                       se.price_info, esl.match_confidence as confidence, esl.is_primary
+                FROM event_scraped_links esl
+                JOIN scraped_events se ON se.id = esl.scraped_event_id
+                WHERE esl.event_id = $1
+            `, [req.params.id]);
+            
+            if (sourceRefsNew.rows.length > 0) {
+                event.source_references = sourceRefsNew.rows;
+            }
+        } catch (e) {
+            // Table might not exist yet, try old schema via unified_events
+            try {
+                const sourceRefsOld = await pool.query(`
+                    SELECT se.id, se.source_code, se.source_event_id, se.title, se.date,
+                           se.start_time, se.content_url, se.flyer_front, se.venue_name,
+                           se.price_info, esl.match_confidence as confidence, esl.is_primary
+                    FROM unified_events ue
+                    JOIN event_source_links esl ON esl.unified_event_id = ue.id
+                    JOIN scraped_events se ON se.id = esl.scraped_event_id
+                    WHERE ue.original_event_id = $1
+                `, [req.params.id]);
+                
+                event.source_references = sourceRefsOld.rows;
+            } catch (e2) {
+                // No source references available
+                event.source_references = [];
+            }
+        }
+        
+        res.json(event);
     } catch (error) {
         console.error('Database error:', error);
         res.status(500).json({ error: error.message });
@@ -1752,27 +1791,119 @@ app.get('/db/artists/missing', async (req, res) => {
     }
 });
 
-// Get venue from database
+// Get venue from database with source references
 app.get('/db/venues/:id', async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM venues WHERE id = $1', [req.params.id]);
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Venue not found' });
         }
-        res.json(result.rows[0]);
+        
+        const venue = result.rows[0];
+        
+        // Get events at this venue
+        const eventsResult = await pool.query(`
+            SELECT id, title, date, artists 
+            FROM events 
+            WHERE venue_id = $1 OR venue_name = $2
+            ORDER BY date DESC
+            LIMIT 50
+        `, [req.params.id, venue.name]);
+        venue.events = eventsResult.rows;
+        
+        // Try to get source references from venue_scraped_links (new schema)
+        // or fall back to unified_venues (old schema)
+        try {
+            const sourceRefsNew = await pool.query(`
+                SELECT sv.id, sv.source_code, sv.source_venue_id, sv.name,
+                       sv.address, sv.city, sv.country, sv.content_url,
+                       sv.latitude, sv.longitude, vsl.match_confidence as confidence
+                FROM venue_scraped_links vsl
+                JOIN scraped_venues sv ON sv.id = vsl.scraped_venue_id
+                WHERE vsl.venue_id = $1
+            `, [req.params.id]);
+            
+            if (sourceRefsNew.rows.length > 0) {
+                venue.source_references = sourceRefsNew.rows;
+            }
+        } catch (e) {
+            // Table might not exist yet, try old schema via unified_venues
+            try {
+                const sourceRefsOld = await pool.query(`
+                    SELECT sv.id, sv.source_code, sv.source_venue_id, sv.name,
+                           sv.address, sv.city, sv.country, sv.content_url,
+                           sv.latitude, sv.longitude, vsl.match_confidence as confidence
+                    FROM unified_venues uv
+                    JOIN venue_source_links vsl ON vsl.unified_venue_id = uv.id
+                    JOIN scraped_venues sv ON sv.id = vsl.scraped_venue_id
+                    WHERE uv.original_venue_id = $1
+                `, [req.params.id]);
+                
+                venue.source_references = sourceRefsOld.rows;
+            } catch (e2) {
+                venue.source_references = [];
+            }
+        }
+        
+        res.json(venue);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });
 
-// Get artist from database
+// Get artist from database with source references
 app.get('/db/artists/:id', async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM artists WHERE id = $1', [req.params.id]);
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Artist not found' });
         }
-        res.json(result.rows[0]);
+        
+        const artist = result.rows[0];
+        
+        // Get events featuring this artist
+        const eventsResult = await pool.query(`
+            SELECT id, title, date, venue_name, venue_city 
+            FROM events 
+            WHERE artists ILIKE $1
+            ORDER BY date DESC
+            LIMIT 20
+        `, [`%${artist.name}%`]);
+        artist.events = eventsResult.rows;
+        
+        // Try to get source references from artist_scraped_links (new schema)
+        // or fall back to unified_artists (old schema)
+        try {
+            const sourceRefsNew = await pool.query(`
+                SELECT sa.id, sa.source_code, sa.source_artist_id, sa.name,
+                       sa.content_url, sa.image_url, asl.match_confidence as confidence
+                FROM artist_scraped_links asl
+                JOIN scraped_artists sa ON sa.id = asl.scraped_artist_id
+                WHERE asl.artist_id = $1
+            `, [req.params.id]);
+            
+            if (sourceRefsNew.rows.length > 0) {
+                artist.source_references = sourceRefsNew.rows;
+            }
+        } catch (e) {
+            // Table might not exist yet, try old schema via unified_artists
+            try {
+                const sourceRefsOld = await pool.query(`
+                    SELECT sa.id, sa.source_code, sa.source_artist_id, sa.name,
+                           sa.content_url, sa.image_url, asl.match_confidence as confidence
+                    FROM unified_artists ua
+                    JOIN artist_source_links asl ON asl.unified_artist_id = ua.id
+                    JOIN scraped_artists sa ON sa.id = asl.scraped_artist_id
+                    WHERE ua.original_artist_id = $1
+                `, [req.params.id]);
+                
+                artist.source_references = sourceRefsOld.rows;
+            } catch (e2) {
+                artist.source_references = [];
+            }
+        }
+        
+        res.json(artist);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -2082,32 +2213,6 @@ app.get('/db/artists', async (req, res) => {
         });
     } catch (error) {
         console.error('Error fetching artists:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// Get single artist
-app.get('/db/artists/:id', async (req, res) => {
-    try {
-        const result = await pool.query('SELECT * FROM artists WHERE id = $1', [req.params.id]);
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Artist not found' });
-        }
-        
-        // Get events featuring this artist
-        const eventsResult = await pool.query(`
-            SELECT id, title, date, venue_name, venue_city 
-            FROM events 
-            WHERE artists ILIKE $1
-            ORDER BY date DESC
-            LIMIT 20
-        `, [`%${result.rows[0].name}%`]);
-        
-        res.json({
-            ...result.rows[0],
-            events: eventsResult.rows
-        });
-    } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });
@@ -2542,32 +2647,6 @@ app.get('/db/venues', async (req, res) => {
         });
     } catch (error) {
         console.error('Error fetching venues:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// Get single venue with events
-app.get('/db/venues/:id', async (req, res) => {
-    try {
-        const result = await pool.query('SELECT * FROM venues WHERE id = $1', [req.params.id]);
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Venue not found' });
-        }
-        
-        // Get events at this venue
-        const eventsResult = await pool.query(`
-            SELECT id, title, date, artists 
-            FROM events 
-            WHERE venue_id = $1 OR venue_name = $2
-            ORDER BY date DESC
-            LIMIT 50
-        `, [req.params.id, result.rows[0].name]);
-        
-        res.json({
-            ...result.rows[0],
-            events: eventsResult.rows
-        });
-    } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });
