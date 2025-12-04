@@ -9,6 +9,10 @@ puppeteer.use(StealthPlugin());
 const app = express();
 app.use(bodyParser.json());
 
+app.get('/health', (req, res) => {
+    res.json({ status: 'ok', browser: browser ? 'launched' : 'not-launched' });
+});
+
 const PORT = process.env.PORT || 3000;
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
@@ -20,33 +24,54 @@ if (TELEGRAM_TOKEN) {
 
 let browser = null;
 let page = null;
+let browserPromise = null;
 
 async function initBrowser() {
-    if (browser) return;
+    if (browser) return browser;
+    if (browserPromise) return browserPromise;
 
     console.log('Launching browser...');
+    
+    browserPromise = (async () => {
+        try {
+            const b = await puppeteer.launch({
+                headless: true,
+                executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+                dumpio: true,
+                ignoreHTTPSErrors: true,
+                args: [
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-accelerated-2d-canvas',
+                    '--no-first-run',
+                    '--no-zygote',
+                    '--disable-gpu',
+                    '--remote-debugging-port=9222',
+                    '--remote-debugging-address=0.0.0.0'
+                ]
+            });
+            
+            const p = await b.newPage();
+            await p.setViewport({ width: 1920, height: 1080 });
+            
+            // Set default headers
+            await p.setExtraHTTPHeaders({
+                'Accept-Language': 'en-US,en;q=0.9'
+            });
 
-    browser = await puppeteer.launch({
-        headless: "new", // Set to false if you have a display/VNC
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-accelerated-2d-canvas',
-            '--no-first-run',
-            '--no-zygote',
-            '--disable-gpu',
-            '--remote-debugging-port=9222',
-            '--remote-debugging-address=0.0.0.0'
-        ]
-    });
-    page = await browser.newPage();
-    await page.setViewport({ width: 1920, height: 1080 });
+            browser = b;
+            page = p;
+            console.log('Browser launched and ready for debugging on port 9222');
+            return b;
+        } catch (err) {
+            console.error('Failed to launch browser:', err);
+            browserPromise = null;
+            throw err;
+        }
+    })();
 
-    // Set default headers
-    await page.setExtraHTTPHeaders({
-        'Accept-Language': 'en-US,en;q=0.9'
-    });
+    return browserPromise;
 }
 
 async function checkCaptcha(page) {
@@ -186,6 +211,16 @@ app.post('/scrape-event', async (req, res) => {
         console.error(error);
         res.status(500).json({ error: error.message });
     }
+});
+
+process.on('unhandledRejection', (reason, p) => {
+    console.error('Unhandled Rejection at:', p, 'reason:', reason);
+    // Application specific logging, throwing an error, or other logic here
+});
+
+process.on('uncaughtException', (err) => {
+    console.error('Uncaught Exception:', err);
+    // process.exit(1); // Optional: restart the process
 });
 
 app.listen(PORT, async () => {
