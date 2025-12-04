@@ -58,7 +58,19 @@ services:
     environment:
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-https://pptr.davidblaesing.com}
       - API_KEY=${API_KEY:-your-secure-api-key-here}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.events-admin.rule=Host(`eventadmin.davidblaesing.com`)"
+      - "traefik.http.routers.events-admin.entrypoints=websecure"
+      - "traefik.http.routers.events-admin.tls.certresolver=letsencrypt"
+      - "traefik.http.services.events-admin.loadbalancer.server.port=3000"
+    networks:
+      - dokploy-network
     restart: unless-stopped
+
+networks:
+  dokploy-network:
+    external: true
 
 volumes:
   postgres_data:
