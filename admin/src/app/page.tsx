@@ -22,6 +22,9 @@ import {
   ExternalLink,
   Music,
   Globe,
+  Zap,
+  Link2,
+  CloudDownload,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import clsx from 'clsx';
@@ -49,6 +52,11 @@ import {
   createVenue,
   updateVenue,
   deleteVenue,
+  scrapeEvents,
+  runMatching,
+  fetchScrapeStats,
+  fetchScrapedEvents,
+  fetchUnifiedEvents,
 } from '@/lib/api';
 
 // Dynamic import for map (client-side only)
@@ -61,7 +69,7 @@ const EventMap = dynamic(() => import('@/components/EventMap'), {
   ),
 });
 
-type ActiveTab = 'events' | 'artists' | 'venues' | 'cities';
+type ActiveTab = 'events' | 'artists' | 'venues' | 'cities' | 'scrape';
 type ViewMode = 'split' | 'list' | 'map';
 
 export default function AdminDashboard() {
@@ -91,6 +99,15 @@ export default function AdminDashboard() {
   // Cities state
   const [adminCities, setAdminCities] = useState<City[]>([]);
   const [citiesTotal, setCitiesTotal] = useState(0);
+
+  // Scrape state
+  const [scrapeStats, setScrapeStats] = useState<any>(null);
+  const [scrapedEvents, setScrapedEvents] = useState<any[]>([]);
+  const [scrapeCity, setScrapeCity] = useState('berlin');
+  const [scrapeSources, setScrapeSources] = useState<string[]>(['ra', 'ticketmaster']);
+  const [isScraping, setIsScraping] = useState(false);
+  const [isMatching, setIsMatching] = useState(false);
+  const [scrapeResult, setScrapeResult] = useState<any>(null);
 
   // Filters
   const [cityFilter, setCityFilter] = useState<string>('');
@@ -175,6 +192,20 @@ export default function AdminDashboard() {
     }
   }, [searchQuery, page, pageSize]);
 
+  // Load scrape data
+  const loadScrapeData = useCallback(async () => {
+    try {
+      const [statsData, eventsData] = await Promise.all([
+        fetchScrapeStats().catch(() => null),
+        fetchScrapedEvents({ limit: 50, linked: false }).catch(() => ({ data: [] })),
+      ]);
+      setScrapeStats(statsData);
+      setScrapedEvents(eventsData.data || []);
+    } catch (error) {
+      console.error('Failed to load scrape data:', error);
+    }
+  }, []);
+
   // Main data loader
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -183,10 +214,11 @@ export default function AdminDashboard() {
       else if (activeTab === 'artists') await loadArtists();
       else if (activeTab === 'venues') await loadVenues();
       else if (activeTab === 'cities') await loadCities();
+      else if (activeTab === 'scrape') await loadScrapeData();
     } finally {
       setIsLoading(false);
     }
-  }, [activeTab, loadEvents, loadArtists, loadVenues, loadCities]);
+  }, [activeTab, loadEvents, loadArtists, loadVenues, loadCities, loadScrapeData]);
 
   useEffect(() => {
     loadData();
@@ -399,6 +431,51 @@ export default function AdminDashboard() {
     }
   };
 
+  // Multi-source scraping
+  const handleScrape = async () => {
+    setIsScraping(true);
+    setScrapeResult(null);
+    try {
+      const result = await scrapeEvents({
+        city: scrapeCity,
+        sources: scrapeSources,
+        limit: 100,
+        match: true,
+      });
+      setScrapeResult(result);
+      await loadScrapeData();
+    } catch (error: any) {
+      console.error('Scrape failed:', error);
+      setScrapeResult({ error: error.message });
+    } finally {
+      setIsScraping(false);
+    }
+  };
+
+  // Run matching algorithm
+  const handleRunMatching = async () => {
+    setIsMatching(true);
+    try {
+      const result = await runMatching({ dryRun: false });
+      alert(`Matched ${result.events.matched} events, created ${result.events.created} new unified events`);
+      await loadScrapeData();
+    } catch (error) {
+      console.error('Matching failed:', error);
+      alert('Failed to run matching');
+    } finally {
+      setIsMatching(false);
+    }
+  };
+
+  // Toggle source selection
+  const toggleSource = (source: string) => {
+    if (scrapeSources.includes(source)) {
+      setScrapeSources(scrapeSources.filter(s => s !== source));
+    } else {
+      setScrapeSources([...scrapeSources, source]);
+    }
+  };
+
   // Enrich data
   const handleEnrich = async (type: 'venues' | 'artists') => {
     setIsEnriching(true);
@@ -580,15 +657,16 @@ export default function AdminDashboard() {
           {/* Tab Navigation */}
           <div className="flex-1 flex justify-center">
             <div className="flex bg-gray-100 rounded-lg p-1">
-              {(['events', 'artists', 'venues', 'cities'] as ActiveTab[]).map((tab) => (
+              {(['events', 'artists', 'venues', 'cities', 'scrape'] as ActiveTab[]).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
                   className={clsx(
-                    'px-4 py-1.5 text-sm font-medium rounded-md transition-all capitalize',
+                    'px-4 py-1.5 text-sm font-medium rounded-md transition-all capitalize flex items-center gap-1',
                     activeTab === tab ? 'bg-white shadow text-gray-900' : 'text-gray-600 hover:text-gray-900'
                   )}
                 >
+                  {tab === 'scrape' && <CloudDownload className="w-4 h-4" />}
                   {tab}
                 </button>
               ))}
@@ -738,6 +816,268 @@ export default function AdminDashboard() {
 
       {/* Main Content */}
       <main className="flex-1 flex overflow-hidden">
+        {/* Scrape Tab Content */}
+        {activeTab === 'scrape' ? (
+          <div className="flex-1 overflow-auto p-6">
+            <div className="max-w-6xl mx-auto space-y-6">
+              {/* Scrape Stats */}
+              {scrapeStats && (
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                  <div className="bg-white rounded-xl p-4 shadow-sm">
+                    <p className="text-2xl font-bold text-indigo-600">{scrapeStats.total_scraped_events || 0}</p>
+                    <p className="text-xs text-gray-500">Scraped Events</p>
+                  </div>
+                  <div className="bg-white rounded-xl p-4 shadow-sm">
+                    <p className="text-2xl font-bold text-blue-600">{scrapeStats.ra_events || 0}</p>
+                    <p className="text-xs text-gray-500">From RA</p>
+                  </div>
+                  <div className="bg-white rounded-xl p-4 shadow-sm">
+                    <p className="text-2xl font-bold text-cyan-600">{scrapeStats.ticketmaster_events || 0}</p>
+                    <p className="text-xs text-gray-500">From Ticketmaster</p>
+                  </div>
+                  <div className="bg-white rounded-xl p-4 shadow-sm">
+                    <p className="text-2xl font-bold text-green-600">{scrapeStats.total_unified_events || 0}</p>
+                    <p className="text-xs text-gray-500">Unified Events</p>
+                  </div>
+                  <div className="bg-white rounded-xl p-4 shadow-sm">
+                    <p className="text-2xl font-bold text-amber-600">{scrapeStats.unlinked_scraped_events || 0}</p>
+                    <p className="text-xs text-gray-500">Unlinked Events</p>
+                  </div>
+                  <div className="bg-white rounded-xl p-4 shadow-sm">
+                    <p className="text-2xl font-bold text-purple-600">{scrapeStats.published_events || 0}</p>
+                    <p className="text-xs text-gray-500">Published</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Scrape Controls */}
+              <div className="bg-white rounded-xl shadow-sm p-6">
+                <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">
+                  <CloudDownload className="w-5 h-5 text-indigo-600" />
+                  Scrape Events
+                </h3>
+                
+                <div className="grid md:grid-cols-3 gap-6">
+                  {/* City Selection */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">City</label>
+                    <select
+                      value={scrapeCity}
+                      onChange={(e) => setScrapeCity(e.target.value)}
+                      className="w-full px-3 py-2 border rounded-lg bg-white"
+                    >
+                      <optgroup label="🇩🇪 Germany">
+                        <option value="berlin">Berlin</option>
+                        <option value="hamburg">Hamburg</option>
+                        <option value="munich">Munich</option>
+                        <option value="cologne">Cologne</option>
+                        <option value="frankfurt">Frankfurt</option>
+                        <option value="dusseldorf">Düsseldorf</option>
+                        <option value="stuttgart">Stuttgart</option>
+                        <option value="leipzig">Leipzig</option>
+                        <option value="dresden">Dresden</option>
+                        <option value="hannover">Hannover</option>
+                        <option value="nuremberg">Nuremberg</option>
+                        <option value="dortmund">Dortmund</option>
+                        <option value="essen">Essen</option>
+                        <option value="bremen">Bremen</option>
+                        <option value="mannheim">Mannheim</option>
+                        <option value="freiburg">Freiburg</option>
+                        <option value="munster">Münster</option>
+                        <option value="aachen">Aachen</option>
+                        <option value="karlsruhe">Karlsruhe</option>
+                        <option value="rostock">Rostock</option>
+                        <option value="kiel">Kiel</option>
+                        <option value="mainz">Mainz</option>
+                        <option value="bonn">Bonn</option>
+                        <option value="augsburg">Augsburg</option>
+                        <option value="wiesbaden">Wiesbaden</option>
+                      </optgroup>
+                      <optgroup label="🇬🇧 UK">
+                        <option value="london">London</option>
+                        <option value="manchester">Manchester</option>
+                        <option value="birmingham">Birmingham</option>
+                        <option value="glasgow">Glasgow</option>
+                        <option value="leeds">Leeds</option>
+                        <option value="liverpool">Liverpool</option>
+                        <option value="bristol">Bristol</option>
+                        <option value="edinburgh">Edinburgh</option>
+                      </optgroup>
+                      <optgroup label="🇪🇺 Europe">
+                        <option value="amsterdam">Amsterdam</option>
+                        <option value="paris">Paris</option>
+                        <option value="barcelona">Barcelona</option>
+                        <option value="madrid">Madrid</option>
+                        <option value="vienna">Vienna</option>
+                        <option value="zurich">Zurich</option>
+                        <option value="brussels">Brussels</option>
+                        <option value="prague">Prague</option>
+                        <option value="copenhagen">Copenhagen</option>
+                        <option value="stockholm">Stockholm</option>
+                        <option value="oslo">Oslo</option>
+                        <option value="milan">Milan</option>
+                        <option value="rome">Rome</option>
+                        <option value="ibiza">Ibiza</option>
+                      </optgroup>
+                      <optgroup label="🇺🇸 USA">
+                        <option value="new york">New York</option>
+                        <option value="los angeles">Los Angeles</option>
+                        <option value="chicago">Chicago</option>
+                        <option value="miami">Miami</option>
+                        <option value="san francisco">San Francisco</option>
+                        <option value="detroit">Detroit</option>
+                        <option value="seattle">Seattle</option>
+                        <option value="boston">Boston</option>
+                        <option value="austin">Austin</option>
+                        <option value="denver">Denver</option>
+                        <option value="atlanta">Atlanta</option>
+                      </optgroup>
+                    </select>
+                  </div>
+
+                  {/* Source Selection */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Sources</label>
+                    <div className="flex gap-3">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={scrapeSources.includes('ra')}
+                          onChange={() => toggleSource('ra')}
+                          className="rounded text-indigo-600"
+                        />
+                        <span className="text-sm">Resident Advisor</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={scrapeSources.includes('ticketmaster')}
+                          onChange={() => toggleSource('ticketmaster')}
+                          className="rounded text-indigo-600"
+                        />
+                        <span className="text-sm">Ticketmaster</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex items-end gap-3">
+                    <button
+                      onClick={handleScrape}
+                      disabled={isScraping || scrapeSources.length === 0}
+                      className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      {isScraping ? (
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <CloudDownload className="w-4 h-4" />
+                      )}
+                      {isScraping ? 'Scraping...' : 'Scrape'}
+                    </button>
+                    <button
+                      onClick={handleRunMatching}
+                      disabled={isMatching}
+                      className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 flex items-center gap-2"
+                    >
+                      {isMatching ? (
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Link2 className="w-4 h-4" />
+                      )}
+                      Match
+                    </button>
+                  </div>
+                </div>
+
+                {/* Scrape Result */}
+                {scrapeResult && (
+                  <div className={clsx(
+                    'mt-4 p-4 rounded-lg',
+                    scrapeResult.error ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'
+                  )}>
+                    {scrapeResult.error ? (
+                      <p>Error: {scrapeResult.error}</p>
+                    ) : (
+                      <div className="space-y-2">
+                        <p className="font-medium">Scrape completed for {scrapeResult.city}</p>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                          {Object.entries(scrapeResult.sources || {}).map(([source, data]: [string, any]) => (
+                            <div key={source} className="bg-white/50 rounded p-2">
+                              <p className="font-medium capitalize">{source}</p>
+                              {data.error ? (
+                                <p className="text-red-600 text-xs">{data.error}</p>
+                              ) : (
+                                <p className="text-xs">
+                                  {data.fetched} fetched, {data.inserted} new, {data.updated} updated
+                                </p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                        {scrapeResult.matching && (
+                          <p className="text-sm mt-2">
+                            Matching: {scrapeResult.matching.matched} matched, {scrapeResult.matching.created} created
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Unlinked Scraped Events */}
+              <div className="bg-white rounded-xl shadow-sm p-6">
+                <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">
+                  <Zap className="w-5 h-5 text-amber-500" />
+                  Unlinked Scraped Events ({scrapedEvents.length})
+                </h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-gray-500 border-b">
+                        <th className="pb-2 font-medium">Source</th>
+                        <th className="pb-2 font-medium">Title</th>
+                        <th className="pb-2 font-medium">Date</th>
+                        <th className="pb-2 font-medium">Venue</th>
+                        <th className="pb-2 font-medium">City</th>
+                        <th className="pb-2 font-medium">Link</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {scrapedEvents.slice(0, 20).map((event) => (
+                        <tr key={event.id} className="border-b hover:bg-gray-50">
+                          <td className="py-2">
+                            <span className={clsx(
+                              'px-2 py-0.5 rounded text-xs font-medium',
+                              event.source_code === 'ra' ? 'bg-blue-100 text-blue-700' : 'bg-cyan-100 text-cyan-700'
+                            )}>
+                              {event.source_code?.toUpperCase()}
+                            </span>
+                          </td>
+                          <td className="py-2 max-w-xs truncate">{event.title}</td>
+                          <td className="py-2">{event.date ? format(new Date(event.date), 'MMM d, yyyy') : '—'}</td>
+                          <td className="py-2 max-w-[150px] truncate">{event.venue_name || '—'}</td>
+                          <td className="py-2">{event.venue_city || '—'}</td>
+                          <td className="py-2">
+                            {event.content_url && (
+                              <a href={event.content_url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:text-indigo-800">
+                                <ExternalLink className="w-4 h-4" />
+                              </a>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {scrapedEvents.length === 0 && (
+                    <p className="text-center py-8 text-gray-500">No unlinked events. All scraped data is matched!</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <>
         {/* List Panel */}
         {(viewMode === 'split' || viewMode === 'list') && (
           <div className={clsx(
@@ -1175,6 +1515,8 @@ export default function AdminDashboard() {
             </div>
           )}
         </div>
+          </>
+        )}
       </main>
     </div>
   );

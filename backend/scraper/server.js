@@ -2772,35 +2772,145 @@ const TICKETMASTER_API_KEY = process.env.TICKETMASTER_API_KEY || 'YX7oyk3K4mzYNx
 
 // City to country code mapping for Ticketmaster
 const TICKETMASTER_CITY_MAP = {
+    // Germany (all major cities)
     'berlin': { city: 'Berlin', countryCode: 'DE' },
     'hamburg': { city: 'Hamburg', countryCode: 'DE' },
     'munich': { city: 'Munich', countryCode: 'DE' },
     'cologne': { city: 'Cologne', countryCode: 'DE' },
     'frankfurt': { city: 'Frankfurt', countryCode: 'DE' },
+    'stuttgart': { city: 'Stuttgart', countryCode: 'DE' },
+    'dusseldorf': { city: 'Dusseldorf', countryCode: 'DE' },
+    'düsseldorf': { city: 'Dusseldorf', countryCode: 'DE' },
+    'dortmund': { city: 'Dortmund', countryCode: 'DE' },
+    'essen': { city: 'Essen', countryCode: 'DE' },
+    'leipzig': { city: 'Leipzig', countryCode: 'DE' },
+    'bremen': { city: 'Bremen', countryCode: 'DE' },
+    'dresden': { city: 'Dresden', countryCode: 'DE' },
+    'hanover': { city: 'Hanover', countryCode: 'DE' },
+    'hannover': { city: 'Hanover', countryCode: 'DE' },
+    'nuremberg': { city: 'Nuremberg', countryCode: 'DE' },
+    'nürnberg': { city: 'Nuremberg', countryCode: 'DE' },
+    'duisburg': { city: 'Duisburg', countryCode: 'DE' },
+    'bochum': { city: 'Bochum', countryCode: 'DE' },
+    'wuppertal': { city: 'Wuppertal', countryCode: 'DE' },
+    'bielefeld': { city: 'Bielefeld', countryCode: 'DE' },
+    'bonn': { city: 'Bonn', countryCode: 'DE' },
+    'mannheim': { city: 'Mannheim', countryCode: 'DE' },
+    'karlsruhe': { city: 'Karlsruhe', countryCode: 'DE' },
+    'augsburg': { city: 'Augsburg', countryCode: 'DE' },
+    'wiesbaden': { city: 'Wiesbaden', countryCode: 'DE' },
+    'münster': { city: 'Munster', countryCode: 'DE' },
+    'munster': { city: 'Munster', countryCode: 'DE' },
+    'freiburg': { city: 'Freiburg', countryCode: 'DE' },
+    'mainz': { city: 'Mainz', countryCode: 'DE' },
+    'kiel': { city: 'Kiel', countryCode: 'DE' },
+    'aachen': { city: 'Aachen', countryCode: 'DE' },
+    'rostock': { city: 'Rostock', countryCode: 'DE' },
+    // UK
     'london': { city: 'London', countryCode: 'GB' },
     'manchester': { city: 'Manchester', countryCode: 'GB' },
     'birmingham': { city: 'Birmingham', countryCode: 'GB' },
+    'glasgow': { city: 'Glasgow', countryCode: 'GB' },
+    'leeds': { city: 'Leeds', countryCode: 'GB' },
+    'liverpool': { city: 'Liverpool', countryCode: 'GB' },
+    'bristol': { city: 'Bristol', countryCode: 'GB' },
+    'edinburgh': { city: 'Edinburgh', countryCode: 'GB' },
+    // Other Europe
     'paris': { city: 'Paris', countryCode: 'FR' },
     'amsterdam': { city: 'Amsterdam', countryCode: 'NL' },
     'barcelona': { city: 'Barcelona', countryCode: 'ES' },
     'madrid': { city: 'Madrid', countryCode: 'ES' },
+    'vienna': { city: 'Vienna', countryCode: 'AT' },
+    'zurich': { city: 'Zurich', countryCode: 'CH' },
+    'brussels': { city: 'Brussels', countryCode: 'BE' },
+    'prague': { city: 'Prague', countryCode: 'CZ' },
+    'copenhagen': { city: 'Copenhagen', countryCode: 'DK' },
+    'stockholm': { city: 'Stockholm', countryCode: 'SE' },
+    'oslo': { city: 'Oslo', countryCode: 'NO' },
+    'milan': { city: 'Milan', countryCode: 'IT' },
+    'rome': { city: 'Rome', countryCode: 'IT' },
+    // USA
     'new york': { city: 'New York', countryCode: 'US' },
     'los angeles': { city: 'Los Angeles', countryCode: 'US' },
     'chicago': { city: 'Chicago', countryCode: 'US' },
     'miami': { city: 'Miami', countryCode: 'US' },
     'san francisco': { city: 'San Francisco', countryCode: 'US' },
-    'vienna': { city: 'Vienna', countryCode: 'AT' },
-    'zurich': { city: 'Zurich', countryCode: 'CH' }
+    'seattle': { city: 'Seattle', countryCode: 'US' },
+    'boston': { city: 'Boston', countryCode: 'US' },
+    'detroit': { city: 'Detroit', countryCode: 'US' },
+    'austin': { city: 'Austin', countryCode: 'US' },
+    'denver': { city: 'Denver', countryCode: 'US' },
+    'atlanta': { city: 'Atlanta', countryCode: 'US' }
 };
 
-// RA Area ID mapping
+// RA Area ID mapping (research from ra.co)
 const RA_AREA_MAP = {
-    'london': 13, 'berlin': 34, 'hamburg': 148, 'new york': 8, 'paris': 12,
-    'amsterdam': 29, 'barcelona': 20, 'manchester': 15, 'bristol': 16,
-    'leeds': 17, 'los angeles': 38, 'san francisco': 39, 'tokyo': 10,
-    'melbourne': 6, 'sydney': 5, 'miami': 44, 'chicago': 19,
-    'detroit': 21, 'ibiza': 24, 'cologne': 143, 'frankfurt': 147,
-    'munich': 151, 'vienna': 159
+    // Germany
+    'berlin': 34,
+    'hamburg': 148,
+    'cologne': 143,
+    'frankfurt': 147,
+    'munich': 151,
+    'düsseldorf': 144,
+    'dusseldorf': 144,
+    'stuttgart': 154,
+    'leipzig': 149,
+    'dresden': 145,
+    'hannover': 178,
+    'hanover': 178,
+    'nuremberg': 150,
+    'nürnberg': 150,
+    'mannheim': 176,
+    'freiburg': 146,
+    'münster': 179,
+    'munster': 179,
+    'dortmund': 177,
+    'essen': 175,
+    'bremen': 142,
+    // UK
+    'london': 13,
+    'manchester': 15,
+    'bristol': 16,
+    'leeds': 17,
+    'birmingham': 18,
+    'glasgow': 41,
+    'edinburgh': 42,
+    'liverpool': 43,
+    'brighton': 14,
+    'nottingham': 45,
+    'sheffield': 46,
+    // Other Europe
+    'amsterdam': 29,
+    'paris': 12,
+    'barcelona': 20,
+    'madrid': 63,
+    'ibiza': 24,
+    'vienna': 159,
+    'zurich': 69,
+    'prague': 160,
+    'brussels': 30,
+    'copenhagen': 58,
+    'stockholm': 59,
+    'oslo': 62,
+    'lisbon': 64,
+    'milan': 65,
+    'rome': 66,
+    // USA
+    'new york': 8,
+    'los angeles': 38,
+    'san francisco': 39,
+    'miami': 44,
+    'chicago': 19,
+    'detroit': 21,
+    'seattle': 40,
+    'boston': 47,
+    'austin': 48,
+    'denver': 49,
+    'atlanta': 50,
+    // Other
+    'tokyo': 10,
+    'melbourne': 6,
+    'sydney': 5
 };
 
 // Ticketmaster API scraper
@@ -3649,6 +3759,44 @@ app.get('/scrape/stats', async (req, res) => {
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
+});
+
+// Get available cities for scraping with source support
+app.get('/scrape/cities', (req, res) => {
+    const allCities = new Set([
+        ...Object.keys(RA_AREA_MAP),
+        ...Object.keys(TICKETMASTER_CITY_MAP)
+    ]);
+    
+    const cities = Array.from(allCities).sort().map(city => {
+        const hasRA = RA_AREA_MAP[city] !== undefined;
+        const hasTM = TICKETMASTER_CITY_MAP[city] !== undefined;
+        return {
+            name: city.charAt(0).toUpperCase() + city.slice(1),
+            key: city,
+            sources: {
+                ra: hasRA,
+                ticketmaster: hasTM
+            },
+            ra_area_id: RA_AREA_MAP[city] || null,
+            tm_country: TICKETMASTER_CITY_MAP[city]?.countryCode || null
+        };
+    });
+    
+    // Group by country/region
+    const german = cities.filter(c => 
+        TICKETMASTER_CITY_MAP[c.key]?.countryCode === 'DE' || 
+        ['berlin', 'hamburg', 'cologne', 'frankfurt', 'munich', 'düsseldorf', 'dusseldorf', 
+         'stuttgart', 'leipzig', 'dresden', 'hannover', 'hanover', 'nuremberg', 'nürnberg',
+         'mannheim', 'freiburg', 'münster', 'munster', 'dortmund', 'essen', 'bremen'].includes(c.key)
+    );
+    
+    res.json({
+        total: cities.length,
+        cities,
+        german: german.filter((c, i, arr) => arr.findIndex(x => x.name === c.name) === i),
+        sources: ['ra', 'ticketmaster']
+    });
 });
 
 process.on('unhandledRejection', (reason, p) => {
