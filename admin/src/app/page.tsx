@@ -1,9 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import {
-  LayoutDashboard,
   Calendar,
   MapPin,
   RefreshCw,
@@ -11,21 +10,22 @@ import {
   EyeOff,
   Trash2,
   Download,
-  Filter,
   ChevronLeft,
   ChevronRight,
   Search,
-  Settings,
   Database,
   Users,
   Building2,
-  BarChart3,
+  X,
+  Plus,
+  Check,
+  ExternalLink,
+  Music,
+  Globe,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import clsx from 'clsx';
-import EventTable from '@/components/EventTable';
-import EventModal from '@/components/EventModal';
-import { Event, Stats, City } from '@/types';
+import { Event, Stats, City, Venue, Artist } from '@/types';
 import {
   fetchEvents,
   fetchStats,
@@ -37,6 +37,18 @@ import {
   enrichVenues,
   enrichArtists,
   fetchCities,
+  fetchArtists,
+  createArtist,
+  updateArtist,
+  deleteArtist,
+  fetchAdminCities,
+  createCity,
+  updateCity,
+  deleteCity,
+  fetchAdminVenues,
+  createVenue,
+  updateVenue,
+  deleteVenue,
 } from '@/lib/api';
 
 // Dynamic import for map (client-side only)
@@ -49,21 +61,36 @@ const EventMap = dynamic(() => import('@/components/EventMap'), {
   ),
 });
 
-// Fallback cities in case API fails
-const FALLBACK_CITIES = ['Berlin', 'Hamburg', 'London', 'Paris', 'Amsterdam', 'Barcelona'];
+type ActiveTab = 'events' | 'artists' | 'venues' | 'cities';
+type ViewMode = 'split' | 'list' | 'map';
 
 export default function AdminDashboard() {
-  const [view, setView] = useState<'table' | 'map' | 'split'>('split');
+  // Main state
+  const [activeTab, setActiveTab] = useState<ActiveTab>('events');
+  const [viewMode, setViewMode] = useState<ViewMode>('split');
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Events state
   const [events, setEvents] = useState<Event[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [enrichStats, setEnrichStats] = useState<any>(null);
   const [cities, setCities] = useState<City[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isEnriching, setIsEnriching] = useState(false);
+
+  // Artists state
+  const [artists, setArtists] = useState<Artist[]>([]);
+  const [artistsTotal, setArtistsTotal] = useState(0);
+
+  // Venues state
+  const [venues, setVenues] = useState<Venue[]>([]);
+  const [venuesTotal, setVenuesTotal] = useState(0);
+
+  // Cities state
+  const [adminCities, setAdminCities] = useState<City[]>([]);
+  const [citiesTotal, setCitiesTotal] = useState(0);
 
   // Filters
   const [cityFilter, setCityFilter] = useState<string>('');
@@ -73,9 +100,13 @@ export default function AdminDashboard() {
   const [pageSize] = useState(50);
   const [total, setTotal] = useState(0);
 
-  // Load data
-  const loadData = useCallback(async () => {
-    setIsLoading(true);
+  // Edit panel state
+  const [editingItem, setEditingItem] = useState<any>(null);
+  const [editForm, setEditForm] = useState<any>({});
+  const [showEditPanel, setShowEditPanel] = useState(false);
+
+  // Load events data
+  const loadEvents = useCallback(async () => {
     try {
       const [eventsData, statsData, enrichData, citiesData] = await Promise.all([
         fetchEvents({
@@ -84,8 +115,8 @@ export default function AdminDashboard() {
           offset: (page - 1) * pageSize,
         }),
         fetchStats(),
-        fetchEnrichStats(),
-        fetchCities().catch(() => []), // Fallback to empty array on error
+        fetchEnrichStats().catch(() => null),
+        fetchCities().catch(() => []),
       ]);
 
       setEvents(eventsData.data);
@@ -94,62 +125,226 @@ export default function AdminDashboard() {
       setEnrichStats(enrichData);
       setCities(citiesData);
     } catch (error) {
-      console.error('Failed to load data:', error);
+      console.error('Failed to load events:', error);
+    }
+  }, [cityFilter, page, pageSize]);
+
+  // Load artists
+  const loadArtists = useCallback(async () => {
+    try {
+      const data = await fetchArtists({
+        search: searchQuery || undefined,
+        limit: pageSize,
+        offset: (page - 1) * pageSize,
+      });
+      setArtists(data.data || []);
+      setArtistsTotal(data.total || 0);
+    } catch (error) {
+      console.error('Failed to load artists:', error);
+    }
+  }, [searchQuery, page, pageSize]);
+
+  // Load venues
+  const loadVenues = useCallback(async () => {
+    try {
+      const data = await fetchAdminVenues({
+        search: searchQuery || undefined,
+        city: cityFilter || undefined,
+        limit: pageSize,
+        offset: (page - 1) * pageSize,
+      });
+      setVenues(data.data || []);
+      setVenuesTotal(data.total || 0);
+    } catch (error) {
+      console.error('Failed to load venues:', error);
+    }
+  }, [searchQuery, cityFilter, page, pageSize]);
+
+  // Load cities
+  const loadCities = useCallback(async () => {
+    try {
+      const data = await fetchAdminCities({
+        search: searchQuery || undefined,
+        limit: pageSize,
+        offset: (page - 1) * pageSize,
+      });
+      setAdminCities(data.data || []);
+      setCitiesTotal(data.total || 0);
+    } catch (error) {
+      console.error('Failed to load cities:', error);
+    }
+  }, [searchQuery, page, pageSize]);
+
+  // Main data loader
+  const loadData = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      if (activeTab === 'events') await loadEvents();
+      else if (activeTab === 'artists') await loadArtists();
+      else if (activeTab === 'venues') await loadVenues();
+      else if (activeTab === 'cities') await loadCities();
     } finally {
       setIsLoading(false);
     }
-  }, [cityFilter, page, pageSize]);
+  }, [activeTab, loadEvents, loadArtists, loadVenues, loadCities]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
-  // Filter events locally for search and status
-  const filteredEvents = events.filter((event) => {
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      const matchesSearch =
-        event.title.toLowerCase().includes(query) ||
-        event.venue_name?.toLowerCase().includes(query) ||
-        event.artists?.toLowerCase().includes(query);
-      if (!matchesSearch) return false;
-    }
+  // Reset page when changing tabs or filters
+  useEffect(() => {
+    setPage(1);
+    setSelectedIds(new Set());
+    setShowEditPanel(false);
+    setEditingItem(null);
+  }, [activeTab, cityFilter, searchQuery, statusFilter]);
 
-    if (statusFilter === 'published' && !event.is_published) return false;
-    if (statusFilter === 'draft' && event.is_published) return false;
+  // Filter events locally
+  const filteredEvents = useMemo(() => {
+    return events.filter((event) => {
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        const matches =
+          event.title.toLowerCase().includes(query) ||
+          event.venue_name?.toLowerCase().includes(query) ||
+          event.artists?.toLowerCase().includes(query);
+        if (!matches) return false;
+      }
+      if (statusFilter === 'published' && !event.is_published) return false;
+      if (statusFilter === 'draft' && event.is_published) return false;
+      return true;
+    });
+  }, [events, searchQuery, statusFilter]);
 
-    return true;
-  });
+  // Get current total based on tab
+  const currentTotal = useMemo(() => {
+    if (activeTab === 'events') return total;
+    if (activeTab === 'artists') return artistsTotal;
+    if (activeTab === 'venues') return venuesTotal;
+    if (activeTab === 'cities') return citiesTotal;
+    return 0;
+  }, [activeTab, total, artistsTotal, venuesTotal, citiesTotal]);
+
+  const totalPages = Math.ceil(currentTotal / pageSize);
 
   // Selection handlers
   const handleSelect = (id: string) => {
     const newSelected = new Set(selectedIds);
-    if (newSelected.has(id)) {
-      newSelected.delete(id);
-    } else {
-      newSelected.add(id);
-    }
+    if (newSelected.has(id)) newSelected.delete(id);
+    else newSelected.add(id);
     setSelectedIds(newSelected);
   };
 
   const handleSelectAll = () => {
-    if (selectedIds.size === filteredEvents.length) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(filteredEvents.map((e) => e.id)));
+    if (activeTab === 'events') {
+      if (selectedIds.size === filteredEvents.length) setSelectedIds(new Set());
+      else setSelectedIds(new Set(filteredEvents.map((e) => e.id)));
     }
   };
 
-  // Bulk actions
+  // Edit handlers
+  const handleEdit = (item: any) => {
+    setEditingItem(item);
+    setEditForm({ ...item });
+    setShowEditPanel(true);
+  };
+
+  const handleCreate = () => {
+    setEditingItem(null);
+    if (activeTab === 'events') {
+      setEditForm({ title: '', date: '', venue_name: '', venue_city: '', artists: '', is_published: false });
+    } else if (activeTab === 'artists') {
+      setEditForm({ name: '', country: '', content_url: '', image_url: '' });
+    } else if (activeTab === 'venues') {
+      setEditForm({ name: '', address: '', city: '', country: '', latitude: '', longitude: '', content_url: '' });
+    } else if (activeTab === 'cities') {
+      setEditForm({ name: '', country: '', latitude: '', longitude: '', timezone: '', is_active: true });
+    }
+    setShowEditPanel(true);
+  };
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      if (activeTab === 'events') {
+        if (editingItem) {
+          await updateEvent(editingItem.id, editForm);
+          setEvents(events.map(e => e.id === editingItem.id ? { ...e, ...editForm } : e));
+        }
+      } else if (activeTab === 'artists') {
+        if (editingItem) {
+          await updateArtist(editingItem.id, editForm);
+        } else {
+          await createArtist(editForm);
+        }
+        await loadArtists();
+      } else if (activeTab === 'venues') {
+        const payload = {
+          ...editForm,
+          latitude: editForm.latitude ? parseFloat(editForm.latitude) : undefined,
+          longitude: editForm.longitude ? parseFloat(editForm.longitude) : undefined,
+        };
+        if (editingItem) {
+          await updateVenue(editingItem.id, payload);
+        } else {
+          await createVenue(payload);
+        }
+        await loadVenues();
+      } else if (activeTab === 'cities') {
+        const payload = {
+          ...editForm,
+          latitude: editForm.latitude ? parseFloat(editForm.latitude) : undefined,
+          longitude: editForm.longitude ? parseFloat(editForm.longitude) : undefined,
+        };
+        if (editingItem?.id) {
+          await updateCity(editingItem.id.toString(), payload);
+        } else {
+          await createCity(payload);
+        }
+        await loadCities();
+      }
+      setShowEditPanel(false);
+      setEditingItem(null);
+    } catch (error: any) {
+      console.error('Save failed:', error);
+      alert(error.message || 'Failed to save');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDelete = async (item: any) => {
+    if (!confirm(`Delete "${item.title || item.name}"?`)) return;
+    try {
+      if (activeTab === 'events') {
+        await deleteEvent(item.id);
+        await loadEvents();
+      } else if (activeTab === 'artists') {
+        await deleteArtist(item.id);
+        await loadArtists();
+      } else if (activeTab === 'venues') {
+        await deleteVenue(item.id);
+        await loadVenues();
+      } else if (activeTab === 'cities') {
+        await deleteCity(item.id.toString());
+        await loadCities();
+      }
+      if (editingItem?.id === item.id) {
+        setShowEditPanel(false);
+        setEditingItem(null);
+      }
+    } catch (error: any) {
+      alert(error.message || 'Failed to delete');
+    }
+  };
+
+  // Bulk actions for events
   const handleBulkPublish = async (publish: boolean) => {
     try {
       const ids = Array.from(selectedIds);
       await publishEvents(ids, publish);
-      // Update local state
-      const updatedEvents = events.map((e) =>
-        selectedIds.has(e.id) ? { ...e, is_published: publish } : e
-      );
-      setEvents(updatedEvents);
+      setEvents(events.map(e => selectedIds.has(e.id) ? { ...e, is_published: publish } : e));
       setSelectedIds(new Set());
     } catch (error) {
       console.error('Failed to update publish status:', error);
@@ -158,10 +353,8 @@ export default function AdminDashboard() {
   };
 
   const handleBulkDelete = async () => {
-    if (!confirm(`Delete ${selectedIds.size} events?`)) return;
-
-    const idsToDelete = Array.from(selectedIds);
-    for (const id of idsToDelete) {
+    if (!confirm(`Delete ${selectedIds.size} items?`)) return;
+    for (const id of selectedIds) {
       try {
         await deleteEvent(id);
       } catch (error) {
@@ -172,50 +365,7 @@ export default function AdminDashboard() {
     loadData();
   };
 
-  // Single event actions
-  const handleEdit = (event: Event) => {
-    setSelectedEvent(event);
-    setIsModalOpen(true);
-  };
-
-  const handleDelete = async (id: string) => {
-    if (!confirm('Delete this event?')) return;
-    try {
-      await deleteEvent(id);
-      loadData();
-    } catch (error) {
-      console.error('Failed to delete:', error);
-    }
-  };
-
-  const handlePublish = async (id: string, publish: boolean) => {
-    try {
-      await publishEvents([id], publish);
-      // Update local state
-      const updatedEvents = events.map((e) =>
-        e.id === id ? { ...e, is_published: publish } : e
-      );
-      setEvents(updatedEvents);
-    } catch (error) {
-      console.error('Failed to update publish status:', error);
-      alert('Failed to update publish status');
-    }
-  };
-
-  const handleSave = async (id: string, data: Partial<Event>) => {
-    try {
-      await updateEvent(id, data);
-      // Update local state
-      const updatedEvents = events.map((e) => (e.id === id ? { ...e, ...data } : e));
-      setEvents(updatedEvents);
-    } catch (error) {
-      console.error('Failed to save event:', error);
-      alert('Failed to save event');
-      throw error; // Re-throw so modal knows save failed
-    }
-  };
-
-  // Sync from source
+  // Sync events
   const handleSync = async (city: string) => {
     setIsSyncing(true);
     try {
@@ -234,8 +384,7 @@ export default function AdminDashboard() {
   const handleEnrich = async (type: 'venues' | 'artists') => {
     setIsEnriching(true);
     try {
-      const result =
-        type === 'venues' ? await enrichVenues(100) : await enrichArtists(200);
+      const result = type === 'venues' ? await enrichVenues(100) : await enrichArtists(200);
       alert(`Enriched ${result.saved} ${type}`);
       loadData();
     } catch (error) {
@@ -246,322 +395,768 @@ export default function AdminDashboard() {
     }
   };
 
-  const totalPages = Math.ceil(total / pageSize);
+  // Toggle publish for single event
+  const handleTogglePublish = async (event: Event) => {
+    try {
+      await publishEvents([event.id], !event.is_published);
+      setEvents(events.map(e => e.id === event.id ? { ...e, is_published: !e.is_published } : e));
+    } catch (error) {
+      console.error('Failed to toggle publish:', error);
+    }
+  };
+
+  // Render list items based on active tab
+  const renderListItem = (item: any) => {
+    if (activeTab === 'events') {
+      return (
+        <div
+          key={item.id}
+          onClick={() => handleEdit(item)}
+          className={clsx(
+            'px-4 py-3 flex items-center gap-3 cursor-pointer hover:bg-gray-50 border-b transition-colors',
+            editingItem?.id === item.id && 'bg-indigo-50 border-l-2 border-l-indigo-500'
+          )}
+        >
+          <input
+            type="checkbox"
+            checked={selectedIds.has(item.id)}
+            onChange={(e) => { e.stopPropagation(); handleSelect(item.id); }}
+            className="rounded text-indigo-600"
+          />
+          {item.flyer_front && (
+            <img src={item.flyer_front} alt="" className="w-10 h-10 rounded object-cover flex-shrink-0" />
+          )}
+          <div className="flex-1 min-w-0">
+            <p className="font-medium text-sm truncate">{item.title}</p>
+            <p className="text-xs text-gray-500 truncate">{item.venue_name} • {item.venue_city}</p>
+          </div>
+          <div className="text-right flex-shrink-0">
+            <p className="text-xs font-medium">{format(new Date(item.date), 'MMM d')}</p>
+            <button
+              onClick={(e) => { e.stopPropagation(); handleTogglePublish(item); }}
+              className={clsx(
+                'text-xs px-2 py-0.5 rounded mt-1',
+                item.is_published ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
+              )}
+            >
+              {item.is_published ? 'Live' : 'Draft'}
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    if (activeTab === 'artists') {
+      return (
+        <div
+          key={item.id}
+          onClick={() => handleEdit(item)}
+          className={clsx(
+            'px-4 py-3 flex items-center gap-3 cursor-pointer hover:bg-gray-50 border-b transition-colors',
+            editingItem?.id === item.id && 'bg-indigo-50 border-l-2 border-l-indigo-500'
+          )}
+        >
+          <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0 overflow-hidden">
+            {item.image_url ? (
+              <img src={item.image_url} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <Music className="w-5 h-5 text-gray-400" />
+            )}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-medium text-sm truncate">{item.name}</p>
+            <p className="text-xs text-gray-500">{item.country || '—'}</p>
+          </div>
+          {item.content_url && (
+            <a href={item.content_url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-gray-400 hover:text-indigo-600">
+              <ExternalLink className="w-4 h-4" />
+            </a>
+          )}
+        </div>
+      );
+    }
+
+    if (activeTab === 'venues') {
+      return (
+        <div
+          key={item.id}
+          onClick={() => handleEdit(item)}
+          className={clsx(
+            'px-4 py-3 flex items-center gap-3 cursor-pointer hover:bg-gray-50 border-b transition-colors',
+            editingItem?.id === item.id && 'bg-indigo-50 border-l-2 border-l-indigo-500'
+          )}
+        >
+          <div className="w-10 h-10 rounded bg-gray-200 flex items-center justify-center flex-shrink-0">
+            <Building2 className="w-5 h-5 text-gray-400" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-medium text-sm truncate">{item.name}</p>
+            <p className="text-xs text-gray-500 truncate">{item.city || '—'}{item.country && `, ${item.country}`}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {item.latitude && item.longitude ? (
+              <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">📍</span>
+            ) : (
+              <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded">No coords</span>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    if (activeTab === 'cities') {
+      return (
+        <div
+          key={item.id}
+          onClick={() => handleEdit(item)}
+          className={clsx(
+            'px-4 py-3 flex items-center gap-3 cursor-pointer hover:bg-gray-50 border-b transition-colors',
+            editingItem?.id === item.id && 'bg-indigo-50 border-l-2 border-l-indigo-500'
+          )}
+        >
+          <div className="w-10 h-10 rounded bg-gray-200 flex items-center justify-center flex-shrink-0">
+            <Globe className="w-5 h-5 text-gray-400" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-medium text-sm truncate">{item.name}</p>
+            <p className="text-xs text-gray-500">{item.country || '—'}</p>
+          </div>
+          <div className="flex items-center gap-2 text-xs">
+            <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded">{item.event_count || 0} events</span>
+            <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded">{item.venue_count || 0} venues</span>
+          </div>
+        </div>
+      );
+    }
+
+    return null;
+  };
+
+  // Get items for current tab
+  const currentItems = useMemo(() => {
+    if (activeTab === 'events') return filteredEvents;
+    if (activeTab === 'artists') return artists;
+    if (activeTab === 'venues') return venues;
+    if (activeTab === 'cities') return adminCities;
+    return [];
+  }, [activeTab, filteredEvents, artists, venues, adminCities]);
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b sticky top-0 z-40">
-        <div className="px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <div className="flex items-center">
-              <LayoutDashboard className="w-8 h-8 text-primary-600" />
-              <h1 className="ml-2 text-xl font-bold text-gray-900">Events Admin</h1>
-            </div>
-
-            {/* Stats badges */}
+    <div className="h-screen flex flex-col bg-gray-100">
+      {/* Top Bar */}
+      <header className="bg-white border-b flex-shrink-0 z-50">
+        <div className="flex items-center h-14 px-4">
+          {/* Logo & Stats */}
+          <div className="flex items-center gap-6">
+            <h1 className="text-lg font-bold text-gray-900">Events Admin</h1>
             {stats && (
-              <div className="hidden md:flex items-center space-x-4 ml-8">
-                <div className="flex items-center text-sm text-gray-600">
-                  <Calendar className="w-4 h-4 mr-1" />
-                  <span className="font-semibold">{stats.total_events}</span> events
-                </div>
-                <div className="flex items-center text-sm text-gray-600">
-                  <Building2 className="w-4 h-4 mr-1" />
-                  <span className="font-semibold">{stats.venues}</span> venues
-                </div>
-                <div className="flex items-center text-sm text-gray-600">
-                  <MapPin className="w-4 h-4 mr-1" />
-                  <span className="font-semibold">{stats.cities}</span> cities
-                </div>
+              <div className="hidden lg:flex items-center gap-4 text-sm text-gray-500">
+                <span><Calendar className="w-4 h-4 inline mr-1" />{stats.total_events}</span>
+                <span><Building2 className="w-4 h-4 inline mr-1" />{stats.venues}</span>
+                <span><MapPin className="w-4 h-4 inline mr-1" />{stats.cities}</span>
               </div>
             )}
           </div>
 
-          <div className="flex items-center space-x-3">
-            {/* View Toggle */}
+          {/* Tab Navigation */}
+          <div className="flex-1 flex justify-center">
             <div className="flex bg-gray-100 rounded-lg p-1">
-              <button
-                onClick={() => setView('table')}
-                className={clsx(
-                  'px-3 py-1.5 text-sm font-medium rounded-md transition-colors',
-                  view === 'table' ? 'bg-white shadow text-gray-900' : 'text-gray-600'
-                )}
-              >
-                Table
-              </button>
-              <button
-                onClick={() => setView('map')}
-                className={clsx(
-                  'px-3 py-1.5 text-sm font-medium rounded-md transition-colors',
-                  view === 'map' ? 'bg-white shadow text-gray-900' : 'text-gray-600'
-                )}
-              >
-                Map
-              </button>
-              <button
-                onClick={() => setView('split')}
-                className={clsx(
-                  'px-3 py-1.5 text-sm font-medium rounded-md transition-colors',
-                  view === 'split' ? 'bg-white shadow text-gray-900' : 'text-gray-600'
-                )}
-              >
-                Split
-              </button>
+              {(['events', 'artists', 'venues', 'cities'] as ActiveTab[]).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  className={clsx(
+                    'px-4 py-1.5 text-sm font-medium rounded-md transition-all capitalize',
+                    activeTab === tab ? 'bg-white shadow text-gray-900' : 'text-gray-600 hover:text-gray-900'
+                  )}
+                >
+                  {tab}
+                </button>
+              ))}
             </div>
+          </div>
 
-            <button
-              onClick={() => loadData()}
-              className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg"
-              title="Refresh"
-            >
-              <RefreshCw className={clsx('w-5 h-5', isLoading && 'animate-spin')} />
+          {/* Right Actions */}
+          <div className="flex items-center gap-2">
+            {/* View toggle */}
+            <div className="flex bg-gray-100 rounded-lg p-1">
+              {(['split', 'list', 'map'] as ViewMode[]).map((mode) => (
+                <button
+                  key={mode}
+                  onClick={() => setViewMode(mode)}
+                  className={clsx(
+                    'px-3 py-1 text-xs font-medium rounded transition-all capitalize',
+                    viewMode === mode ? 'bg-white shadow text-gray-900' : 'text-gray-500'
+                  )}
+                >
+                  {mode}
+                </button>
+              ))}
+            </div>
+            <button onClick={loadData} className="p-2 hover:bg-gray-100 rounded-lg" title="Refresh">
+              <RefreshCw className={clsx('w-4 h-4', isLoading && 'animate-spin')} />
             </button>
           </div>
         </div>
-      </header>
 
-      {/* Toolbar */}
-      <div className="bg-white border-b px-6 py-3">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          {/* Left: Filters */}
-          <div className="flex items-center space-x-3">
-            {/* Search */}
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search events..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 pr-4 py-2 border rounded-lg text-sm w-64 focus:ring-2 focus:ring-primary-500"
-              />
-            </div>
+        {/* Secondary toolbar */}
+        <div className="flex items-center px-4 py-2 gap-3 border-t bg-gray-50">
+          {/* Search */}
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder={`Search ${activeTab}...`}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-4 py-1.5 text-sm border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+            />
+          </div>
 
-            {/* City filter */}
+          {/* City filter (for events & venues) */}
+          {(activeTab === 'events' || activeTab === 'venues') && (
             <select
               value={cityFilter}
-              onChange={(e) => {
-                setCityFilter(e.target.value);
-                setPage(1);
-              }}
-              className="px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+              onChange={(e) => setCityFilter(e.target.value)}
+              className="px-3 py-1.5 text-sm border rounded-lg"
             >
               <option value="">All Cities</option>
-              {cities.length > 0
-                ? cities.map((city) => (
-                    <option key={city.id} value={city.name}>
-                      {city.name} ({city.event_count || 0})
-                    </option>
-                  ))
-                : FALLBACK_CITIES.map((city) => (
-                    <option key={city} value={city}>
-                      {city}
-                    </option>
-                  ))}
+              {cities.map((city) => (
+                <option key={city.id || city.name} value={city.name}>
+                  {city.name} ({city.event_count || 0})
+                </option>
+              ))}
             </select>
+          )}
 
-            {/* Status filter */}
+          {/* Status filter (for events) */}
+          {activeTab === 'events' && (
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as any)}
-              className="px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+              className="px-3 py-1.5 text-sm border rounded-lg"
             >
               <option value="all">All Status</option>
               <option value="published">Published</option>
               <option value="draft">Draft</option>
             </select>
-          </div>
+          )}
 
-          {/* Right: Actions */}
-          <div className="flex items-center space-x-2">
-            {/* Bulk actions */}
-            {selectedIds.size > 0 && (
-              <div className="flex items-center space-x-2 pr-4 border-r">
-                <span className="text-sm text-gray-600">{selectedIds.size} selected</span>
-                <button
-                  onClick={() => handleBulkPublish(true)}
-                  className="px-3 py-1.5 text-sm bg-green-100 text-green-700 rounded-lg hover:bg-green-200 flex items-center"
-                >
-                  <Eye className="w-4 h-4 mr-1" />
-                  Publish
-                </button>
-                <button
-                  onClick={() => handleBulkPublish(false)}
-                  className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 flex items-center"
-                >
-                  <EyeOff className="w-4 h-4 mr-1" />
-                  Unpublish
-                </button>
-                <button
-                  onClick={handleBulkDelete}
-                  className="px-3 py-1.5 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200 flex items-center"
-                >
-                  <Trash2 className="w-4 h-4 mr-1" />
-                  Delete
-                </button>
-              </div>
-            )}
+          <div className="flex-1" />
 
-            {/* Sync dropdown */}
+          {/* Bulk actions */}
+          {selectedIds.size > 0 && activeTab === 'events' && (
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-600">{selectedIds.size} selected</span>
+              <button onClick={() => handleBulkPublish(true)} className="px-3 py-1.5 text-xs bg-green-100 text-green-700 rounded-lg hover:bg-green-200 flex items-center gap-1">
+                <Eye className="w-3 h-3" /> Publish
+              </button>
+              <button onClick={() => handleBulkPublish(false)} className="px-3 py-1.5 text-xs bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 flex items-center gap-1">
+                <EyeOff className="w-3 h-3" /> Unpublish
+              </button>
+              <button onClick={handleBulkDelete} className="px-3 py-1.5 text-xs bg-red-100 text-red-700 rounded-lg hover:bg-red-200 flex items-center gap-1">
+                <Trash2 className="w-3 h-3" /> Delete
+              </button>
+            </div>
+          )}
+
+          {/* Add button */}
+          {activeTab !== 'events' && (
+            <button
+              onClick={handleCreate}
+              className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-1"
+            >
+              <Plus className="w-4 h-4" /> Add {activeTab.slice(0, -1)}
+            </button>
+          )}
+
+          {/* Sync button (events only) */}
+          {activeTab === 'events' && (
             <div className="relative group">
               <button
                 disabled={isSyncing}
-                className="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 flex items-center disabled:opacity-50"
+                className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-1 disabled:opacity-50"
               >
-                <Download className="w-4 h-4 mr-1" />
-                {isSyncing ? 'Syncing...' : 'Sync Events'}
+                <Download className="w-4 h-4" />
+                {isSyncing ? 'Syncing...' : 'Sync'}
               </button>
-              <div className="absolute right-0 mt-1 w-48 bg-white rounded-lg shadow-lg border opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
-                {(cities.length > 0 ? cities.slice(0, 4).map(c => c.name) : FALLBACK_CITIES.slice(0, 4)).map((city) => (
+              <div className="absolute right-0 mt-1 w-40 bg-white rounded-lg shadow-lg border opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+                {(cities.length > 0 ? cities.slice(0, 6).map(c => c.name) : ['Berlin', 'Hamburg', 'London', 'Paris']).map((city) => (
                   <button
                     key={city}
                     onClick={() => handleSync(city)}
-                    className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 first:rounded-t-lg last:rounded-b-lg"
+                    className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50"
                   >
-                    Sync {city}
+                    {city}
                   </button>
                 ))}
               </div>
             </div>
+          )}
 
-            {/* Enrich dropdown */}
+          {/* Enrich button (events only) */}
+          {activeTab === 'events' && (
             <div className="relative group">
               <button
                 disabled={isEnriching}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 flex items-center disabled:opacity-50"
+                className="px-3 py-1.5 text-sm bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 flex items-center gap-1 disabled:opacity-50"
               >
-                <Database className="w-4 h-4 mr-1" />
-                {isEnriching ? 'Enriching...' : 'Enrich'}
+                <Database className="w-4 h-4" />
+                {isEnriching ? '...' : 'Enrich'}
               </button>
-              <div className="absolute right-0 mt-1 w-48 bg-white rounded-lg shadow-lg border opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
-                <button
-                  onClick={() => handleEnrich('venues')}
-                  className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 rounded-t-lg flex items-center"
-                >
-                  <Building2 className="w-4 h-4 mr-2" />
-                  Enrich Venues
-                  {enrichStats && (
-                    <span className="ml-auto text-xs text-gray-500">
-                      {enrichStats.venues_missing} missing
-                    </span>
-                  )}
+              <div className="absolute right-0 mt-1 w-40 bg-white rounded-lg shadow-lg border opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+                <button onClick={() => handleEnrich('venues')} className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2">
+                  <Building2 className="w-4 h-4" /> Venues
                 </button>
-                <button
-                  onClick={() => handleEnrich('artists')}
-                  className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 rounded-b-lg flex items-center"
-                >
-                  <Users className="w-4 h-4 mr-2" />
-                  Enrich Artists
-                  {enrichStats && (
-                    <span className="ml-auto text-xs text-gray-500">
-                      {enrichStats.artists_missing} missing
-                    </span>
-                  )}
+                <button onClick={() => handleEnrich('artists')} className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2">
+                  <Users className="w-4 h-4" /> Artists
                 </button>
               </div>
             </div>
-          </div>
+          )}
         </div>
-      </div>
+      </header>
 
       {/* Main Content */}
-      <main className="p-6">
-        <div
-          className={clsx(
-            'grid gap-6',
-            view === 'split' ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1'
-          )}
-        >
-          {/* Table View */}
-          {(view === 'table' || view === 'split') && (
-            <div className={clsx(
-              'flex flex-col',
-              view === 'table' ? 'h-[calc(100vh-220px)]' : 'h-[calc(100vh-220px)]',
-              view === 'split' && 'lg:order-1'
-            )}>
-              <div className="flex-1 min-h-0">
-                <EventTable
-                events={filteredEvents}
-                selectedIds={selectedIds}
-                onSelect={handleSelect}
-                onSelectAll={handleSelectAll}
-                onEdit={handleEdit}
-                onDelete={handleDelete}
-                onPublish={handlePublish}
-                  isLoading={isLoading}
-                />
-              </div>
-
-              {/* Pagination */}
-              {totalPages > 1 && (
-                <div className="mt-2 flex items-center justify-between flex-shrink-0">
-                  <p className="text-sm text-gray-600">
-                    Showing {(page - 1) * pageSize + 1} to{' '}
-                    {Math.min(page * pageSize, total)} of {total} events
-                  </p>
-                  <div className="flex items-center space-x-2">
-                    <button
-                      onClick={() => setPage(page - 1)}
-                      disabled={page === 1}
-                      className="p-2 rounded-lg border hover:bg-gray-50 disabled:opacity-50"
-                    >
-                      <ChevronLeft className="w-5 h-5" />
-                    </button>
-                    <span className="text-sm text-gray-600">
-                      Page {page} of {totalPages}
-                    </span>
-                    <button
-                      onClick={() => setPage(page + 1)}
-                      disabled={page === totalPages}
-                      className="p-2 rounded-lg border hover:bg-gray-50 disabled:opacity-50"
-                    >
-                      <ChevronRight className="w-5 h-5" />
-                    </button>
-                  </div>
-                </div>
+      <main className="flex-1 flex overflow-hidden">
+        {/* List Panel */}
+        {(viewMode === 'split' || viewMode === 'list') && (
+          <div className={clsx(
+            'bg-white border-r flex flex-col',
+            viewMode === 'split' ? 'w-96' : 'flex-1'
+          )}>
+            {/* List header */}
+            <div className="px-4 py-2 bg-gray-50 border-b flex items-center justify-between">
+              <span className="text-sm text-gray-600">
+                {currentTotal.toLocaleString()} {activeTab}
+              </span>
+              {activeTab === 'events' && (
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.size === filteredEvents.length && filteredEvents.length > 0}
+                    onChange={handleSelectAll}
+                    className="rounded text-indigo-600"
+                  />
+                  Select all
+                </label>
               )}
+            </div>
+
+            {/* List content */}
+            <div className="flex-1 overflow-auto">
+              {isLoading ? (
+                <div className="flex items-center justify-center h-32">
+                  <RefreshCw className="w-6 h-6 animate-spin text-gray-400" />
+                </div>
+              ) : currentItems.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-32 text-gray-500">
+                  <p>No {activeTab} found</p>
+                </div>
+              ) : (
+                currentItems.map(renderListItem)
+              )}
+            </div>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="px-4 py-2 border-t bg-gray-50 flex items-center justify-between">
+                <span className="text-xs text-gray-500">
+                  Page {page}/{totalPages}
+                </span>
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => setPage(p => Math.max(1, p - 1))}
+                    disabled={page === 1}
+                    className="p-1 rounded hover:bg-gray-200 disabled:opacity-50"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                    disabled={page >= totalPages}
+                    className="p-1 rounded hover:bg-gray-200 disabled:opacity-50"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Map / Edit Panel */}
+        <div className="flex-1 flex">
+          {/* Map */}
+          {(viewMode === 'split' || viewMode === 'map') && !showEditPanel && (
+            <div className="flex-1 relative">
+              <EventMap
+                events={activeTab === 'events' ? filteredEvents : []}
+                cities={cities}
+                selectedCity={cityFilter}
+                onCityChange={(city) => setCityFilter(city)}
+                onEventClick={(event) => handleEdit(event)}
+              />
             </div>
           )}
 
-          {/* Map View */}
-          {(view === 'map' || view === 'split') && (
-            <div
-              className={clsx(
-                'bg-white rounded-lg shadow overflow-hidden relative',
-                'h-[calc(100vh-220px)]',
-                view === 'split' && 'lg:order-2'
-              )}
-              style={{ zIndex: 1 }}
-            >
-              <EventMap
-                events={filteredEvents}
-                cities={cities}
-                selectedCity={cityFilter}
-                onCityChange={(city) => {
-                  setCityFilter(city);
-                  setPage(1);
-                }}
-                onEventClick={(event) => {
-                  setSelectedEvent(event);
-                  setIsModalOpen(true);
-                }}
-              />
+          {/* Edit Panel */}
+          {showEditPanel && (
+            <div className="flex-1 bg-white border-l overflow-auto">
+              <div className="sticky top-0 bg-white border-b px-4 py-3 flex items-center justify-between z-10">
+                <h2 className="font-semibold">
+                  {editingItem ? `Edit ${activeTab.slice(0, -1)}` : `New ${activeTab.slice(0, -1)}`}
+                </h2>
+                <div className="flex items-center gap-2">
+                  {editingItem && (
+                    <button
+                      onClick={() => handleDelete(editingItem)}
+                      className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
+                  <button
+                    onClick={() => { setShowEditPanel(false); setEditingItem(null); }}
+                    className="p-2 hover:bg-gray-100 rounded-lg"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-4 space-y-4">
+                {/* Event form */}
+                {activeTab === 'events' && (
+                  <>
+                    {editForm.flyer_front && (
+                      <img src={editForm.flyer_front} alt="" className="w-full h-48 object-cover rounded-lg" />
+                    )}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+                      <input
+                        type="text"
+                        value={editForm.title || ''}
+                        onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
+                        className="w-full px-3 py-2 border rounded-lg"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                        <input
+                          type="date"
+                          value={editForm.date || ''}
+                          onChange={(e) => setEditForm({ ...editForm, date: e.target.value })}
+                          className="w-full px-3 py-2 border rounded-lg"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Start Time</label>
+                        <input
+                          type="time"
+                          value={editForm.start_time || ''}
+                          onChange={(e) => setEditForm({ ...editForm, start_time: e.target.value })}
+                          className="w-full px-3 py-2 border rounded-lg"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Venue</label>
+                      <input
+                        type="text"
+                        value={editForm.venue_name || ''}
+                        onChange={(e) => setEditForm({ ...editForm, venue_name: e.target.value })}
+                        className="w-full px-3 py-2 border rounded-lg"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
+                        <input
+                          type="text"
+                          value={editForm.venue_city || ''}
+                          onChange={(e) => setEditForm({ ...editForm, venue_city: e.target.value })}
+                          className="w-full px-3 py-2 border rounded-lg"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Country</label>
+                        <input
+                          type="text"
+                          value={editForm.venue_country || ''}
+                          onChange={(e) => setEditForm({ ...editForm, venue_country: e.target.value })}
+                          className="w-full px-3 py-2 border rounded-lg"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
+                      <input
+                        type="text"
+                        value={editForm.venue_address || ''}
+                        onChange={(e) => setEditForm({ ...editForm, venue_address: e.target.value })}
+                        className="w-full px-3 py-2 border rounded-lg"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Artists</label>
+                      <input
+                        type="text"
+                        value={editForm.artists || ''}
+                        onChange={(e) => setEditForm({ ...editForm, artists: e.target.value })}
+                        className="w-full px-3 py-2 border rounded-lg"
+                        placeholder="Comma-separated"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                      <textarea
+                        value={editForm.description || ''}
+                        onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                        rows={3}
+                        className="w-full px-3 py-2 border rounded-lg"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Event URL</label>
+                      <input
+                        type="url"
+                        value={editForm.content_url || ''}
+                        onChange={(e) => setEditForm({ ...editForm, content_url: e.target.value })}
+                        className="w-full px-3 py-2 border rounded-lg"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Flyer URL</label>
+                      <input
+                        type="url"
+                        value={editForm.flyer_front || ''}
+                        onChange={(e) => setEditForm({ ...editForm, flyer_front: e.target.value })}
+                        className="w-full px-3 py-2 border rounded-lg"
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id="is_published"
+                        checked={editForm.is_published || false}
+                        onChange={(e) => setEditForm({ ...editForm, is_published: e.target.checked })}
+                        className="rounded text-indigo-600"
+                      />
+                      <label htmlFor="is_published" className="text-sm">Published</label>
+                    </div>
+                  </>
+                )}
+
+                {/* Artist form */}
+                {activeTab === 'artists' && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+                      <input
+                        type="text"
+                        value={editForm.name || ''}
+                        onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                        className="w-full px-3 py-2 border rounded-lg"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Country</label>
+                      <input
+                        type="text"
+                        value={editForm.country || ''}
+                        onChange={(e) => setEditForm({ ...editForm, country: e.target.value })}
+                        className="w-full px-3 py-2 border rounded-lg"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Profile URL</label>
+                      <input
+                        type="url"
+                        value={editForm.content_url || ''}
+                        onChange={(e) => setEditForm({ ...editForm, content_url: e.target.value })}
+                        className="w-full px-3 py-2 border rounded-lg"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Image URL</label>
+                      <input
+                        type="url"
+                        value={editForm.image_url || ''}
+                        onChange={(e) => setEditForm({ ...editForm, image_url: e.target.value })}
+                        className="w-full px-3 py-2 border rounded-lg"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {/* Venue form */}
+                {activeTab === 'venues' && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+                      <input
+                        type="text"
+                        value={editForm.name || ''}
+                        onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                        className="w-full px-3 py-2 border rounded-lg"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
+                      <input
+                        type="text"
+                        value={editForm.address || ''}
+                        onChange={(e) => setEditForm({ ...editForm, address: e.target.value })}
+                        className="w-full px-3 py-2 border rounded-lg"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
+                        <input
+                          type="text"
+                          value={editForm.city || ''}
+                          onChange={(e) => setEditForm({ ...editForm, city: e.target.value })}
+                          className="w-full px-3 py-2 border rounded-lg"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Country</label>
+                        <input
+                          type="text"
+                          value={editForm.country || ''}
+                          onChange={(e) => setEditForm({ ...editForm, country: e.target.value })}
+                          className="w-full px-3 py-2 border rounded-lg"
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Latitude</label>
+                        <input
+                          type="number"
+                          step="any"
+                          value={editForm.latitude || ''}
+                          onChange={(e) => setEditForm({ ...editForm, latitude: e.target.value })}
+                          className="w-full px-3 py-2 border rounded-lg"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Longitude</label>
+                        <input
+                          type="number"
+                          step="any"
+                          value={editForm.longitude || ''}
+                          onChange={(e) => setEditForm({ ...editForm, longitude: e.target.value })}
+                          className="w-full px-3 py-2 border rounded-lg"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Website URL</label>
+                      <input
+                        type="url"
+                        value={editForm.content_url || ''}
+                        onChange={(e) => setEditForm({ ...editForm, content_url: e.target.value })}
+                        className="w-full px-3 py-2 border rounded-lg"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {/* City form */}
+                {activeTab === 'cities' && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+                      <input
+                        type="text"
+                        value={editForm.name || ''}
+                        onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                        className="w-full px-3 py-2 border rounded-lg"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Country</label>
+                      <input
+                        type="text"
+                        value={editForm.country || ''}
+                        onChange={(e) => setEditForm({ ...editForm, country: e.target.value })}
+                        className="w-full px-3 py-2 border rounded-lg"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Latitude</label>
+                        <input
+                          type="number"
+                          step="any"
+                          value={editForm.latitude || ''}
+                          onChange={(e) => setEditForm({ ...editForm, latitude: e.target.value })}
+                          className="w-full px-3 py-2 border rounded-lg"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Longitude</label>
+                        <input
+                          type="number"
+                          step="any"
+                          value={editForm.longitude || ''}
+                          onChange={(e) => setEditForm({ ...editForm, longitude: e.target.value })}
+                          className="w-full px-3 py-2 border rounded-lg"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Timezone</label>
+                      <input
+                        type="text"
+                        value={editForm.timezone || ''}
+                        onChange={(e) => setEditForm({ ...editForm, timezone: e.target.value })}
+                        className="w-full px-3 py-2 border rounded-lg"
+                        placeholder="Europe/Berlin"
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id="is_active"
+                        checked={editForm.is_active !== false}
+                        onChange={(e) => setEditForm({ ...editForm, is_active: e.target.checked })}
+                        className="rounded text-indigo-600"
+                      />
+                      <label htmlFor="is_active" className="text-sm">Active</label>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Save button */}
+              <div className="sticky bottom-0 bg-white border-t px-4 py-3">
+                <button
+                  onClick={handleSave}
+                  disabled={isSaving}
+                  className="w-full px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {isSaving ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4" />
+                      Save Changes
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           )}
         </div>
       </main>
-
-      {/* Edit Modal */}
-      <EventModal
-        event={selectedEvent}
-        isOpen={isModalOpen}
-        onClose={() => {
-          setIsModalOpen(false);
-          setSelectedEvent(null);
-        }}
-        onSave={handleSave}
-      />
     </div>
   );
 }
