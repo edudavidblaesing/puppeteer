@@ -68,6 +68,7 @@ import {
   fetchUnifiedArtists,
   fetchUnifiedArtist,
   updateUnifiedArtist,
+  deduplicateEvents,
 } from '@/lib/api';
 
 // Dynamic import for map (client-side only)
@@ -566,14 +567,31 @@ export default function AdminDashboard() {
   const handleRunMatching = async () => {
     setIsMatching(true);
     try {
-      const result = await runMatching({ dryRun: false });
-      alert(`Matched ${result.events.matched} events, created ${result.events.created} new unified events`);
+      const result = await runMatching({ dryRun: false, minConfidence: 0.5 });
+      alert(`Matched ${result.events.matched} events, created ${result.events.created} new, merged ${result.events.merged || 0} duplicates`);
       await loadScrapeData();
     } catch (error) {
       console.error('Matching failed:', error);
       alert('Failed to run matching');
     } finally {
       setIsMatching(false);
+    }
+  };
+
+  // Deduplicate unified events
+  const [isDeduplicating, setIsDeduplicating] = useState(false);
+  const handleDeduplicate = async () => {
+    setIsDeduplicating(true);
+    try {
+      const result = await deduplicateEvents();
+      alert(`Merged ${result.merged} duplicate events`);
+      await loadScrapeData();
+      await loadEvents();
+    } catch (error: any) {
+      console.error('Deduplication failed:', error);
+      alert(error.message || 'Failed to deduplicate');
+    } finally {
+      setIsDeduplicating(false);
     }
   };
 
@@ -1223,6 +1241,18 @@ export default function AdminDashboard() {
                         <Link2 className="w-4 h-4" />
                       )}
                       Match
+                    </button>
+                    <button
+                      onClick={handleDeduplicate}
+                      disabled={isDeduplicating}
+                      className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 flex items-center gap-2"
+                    >
+                      {isDeduplicating ? (
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Layers className="w-4 h-4" />
+                      )}
+                      Dedupe
                     </button>
                   </div>
                 </div>

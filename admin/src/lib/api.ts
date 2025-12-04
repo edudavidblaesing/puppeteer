@@ -472,3 +472,15 @@ export async function updateUnifiedVenue(id: string, data: Record<string, any>) 
   }
   return response.json();
 }
+
+export async function deduplicateEvents() {
+  const response = await fetch(`${API_URL}/scrape/deduplicate`, {
+    method: 'POST',
+    headers,
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to deduplicate events');
+  }
+  return response.json();
+}
