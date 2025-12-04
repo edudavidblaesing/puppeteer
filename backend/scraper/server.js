@@ -2764,6 +2764,893 @@ app.get('/db/dashboard', async (req, res) => {
     }
 });
 
+// =====================================================
+// MULTI-SOURCE SCRAPING SYSTEM
+// =====================================================
+
+const TICKETMASTER_API_KEY = process.env.TICKETMASTER_API_KEY || 'YX7oyk3K4mzYNxVTWjXsuX2fU7nJPPqOT';
+
+// City to country code mapping for Ticketmaster
+const TICKETMASTER_CITY_MAP = {
+    'berlin': { city: 'Berlin', countryCode: 'DE' },
+    'hamburg': { city: 'Hamburg', countryCode: 'DE' },
+    'munich': { city: 'Munich', countryCode: 'DE' },
+    'cologne': { city: 'Cologne', countryCode: 'DE' },
+    'frankfurt': { city: 'Frankfurt', countryCode: 'DE' },
+    'london': { city: 'London', countryCode: 'GB' },
+    'manchester': { city: 'Manchester', countryCode: 'GB' },
+    'birmingham': { city: 'Birmingham', countryCode: 'GB' },
+    'paris': { city: 'Paris', countryCode: 'FR' },
+    'amsterdam': { city: 'Amsterdam', countryCode: 'NL' },
+    'barcelona': { city: 'Barcelona', countryCode: 'ES' },
+    'madrid': { city: 'Madrid', countryCode: 'ES' },
+    'new york': { city: 'New York', countryCode: 'US' },
+    'los angeles': { city: 'Los Angeles', countryCode: 'US' },
+    'chicago': { city: 'Chicago', countryCode: 'US' },
+    'miami': { city: 'Miami', countryCode: 'US' },
+    'san francisco': { city: 'San Francisco', countryCode: 'US' },
+    'vienna': { city: 'Vienna', countryCode: 'AT' },
+    'zurich': { city: 'Zurich', countryCode: 'CH' }
+};
+
+// RA Area ID mapping
+const RA_AREA_MAP = {
+    'london': 13, 'berlin': 34, 'hamburg': 148, 'new york': 8, 'paris': 12,
+    'amsterdam': 29, 'barcelona': 20, 'manchester': 15, 'bristol': 16,
+    'leeds': 17, 'los angeles': 38, 'san francisco': 39, 'tokyo': 10,
+    'melbourne': 6, 'sydney': 5, 'miami': 44, 'chicago': 19,
+    'detroit': 21, 'ibiza': 24, 'cologne': 143, 'frankfurt': 147,
+    'munich': 151, 'vienna': 159
+};
+
+// Ticketmaster API scraper
+async function scrapeTicketmaster(city, options = {}) {
+    const cityConfig = TICKETMASTER_CITY_MAP[city.toLowerCase()];
+    if (!cityConfig) {
+        throw new Error(`City not configured for Ticketmaster: ${city}. Available: ${Object.keys(TICKETMASTER_CITY_MAP).join(', ')}`);
+    }
+    
+    const { limit = 100, classificationName = 'Music' } = options;
+    const params = new URLSearchParams({
+        city: cityConfig.city,
+        countryCode: cityConfig.countryCode,
+        apikey: TICKETMASTER_API_KEY,
+        size: Math.min(limit, 200).toString(),
+        classificationName: classificationName,
+        sort: 'date,asc'
+    });
+    
+    const url = `https://app.ticketmaster.com/discovery/v2/events.json?${params}`;
+    console.log(`Fetching Ticketmaster: ${url}`);
+    
+    const response = await fetch(url);
+    if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Ticketmaster API error: ${response.status} - ${error}`);
+    }
+    
+    const data = await response.json();
+    const events = data._embedded?.events || [];
+    
+    return events.map(event => {
+        const venue = event._embedded?.venues?.[0];
+        const attractions = event._embedded?.attractions || [];
+        const priceRange = event.priceRanges?.[0];
+        
+        return {
+            source_code: 'ticketmaster',
+            source_event_id: event.id,
+            title: event.name,
+            date: event.dates?.start?.localDate || null,
+            start_time: event.dates?.start?.localTime || null,
+            end_time: null,
+            content_url: event.url,
+            flyer_front: event.images?.find(i => i.ratio === '16_9')?.url || event.images?.[0]?.url,
+            description: event.info || event.pleaseNote,
+            venue_name: venue?.name,
+            venue_address: [venue?.address?.line1, venue?.address?.line2].filter(Boolean).join(', '),
+            venue_city: venue?.city?.name || cityConfig.city,
+            venue_country: venue?.country?.name || venue?.country?.countryCode,
+            venue_latitude: venue?.location?.latitude ? parseFloat(venue.location.latitude) : null,
+            venue_longitude: venue?.location?.longitude ? parseFloat(venue.location.longitude) : null,
+            artists_json: attractions.map(a => ({
+                source_artist_id: a.id,
+                name: a.name,
+                genres: a.classifications?.map(c => c.genre?.name).filter(Boolean),
+                image_url: a.images?.[0]?.url
+            })),
+            price_info: priceRange ? {
+                min: priceRange.min,
+                max: priceRange.max,
+                currency: priceRange.currency
+            } : null,
+            raw_data: event,
+            venue_raw: venue ? {
+                source_venue_id: venue.id,
+                name: venue.name,
+                address: [venue.address?.line1, venue.address?.line2].filter(Boolean).join(', '),
+                city: venue.city?.name,
+                country: venue.country?.name,
+                latitude: venue.location?.latitude,
+                longitude: venue.location?.longitude,
+                content_url: venue.url
+            } : null
+        };
+    });
+}
+
+// RA GraphQL scraper
+async function scrapeResidentAdvisor(city, options = {}) {
+    const areaId = RA_AREA_MAP[city.toLowerCase()];
+    if (!areaId) {
+        throw new Error(`City not configured for Resident Advisor: ${city}. Available: ${Object.keys(RA_AREA_MAP).join(', ')}`);
+    }
+    
+    const { limit = 100, startDate, endDate } = options;
+    const today = new Date().toISOString().split('T')[0];
+    
+    const query = `
+        query GetEvents($filters: FilterInputDtoInput, $pageSize: Int) {
+            eventListings(filters: $filters, pageSize: $pageSize) {
+                data {
+                    event {
+                        id
+                        title
+                        date
+                        startTime
+                        endTime
+                        contentUrl
+                        flyerFront
+                        content
+                        venue {
+                            id
+                            name
+                            address
+                            area {
+                                name
+                                country { name }
+                            }
+                        }
+                        artists { id name }
+                    }
+                    listingDate
+                }
+                totalResults
+            }
+        }
+    `;
+    
+    const filters = {
+        areas: { eq: areaId },
+        listingDate: {
+            gte: startDate || today,
+            lte: endDate || new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+        }
+    };
+    
+    const response = await fetch('https://ra.co/graphql', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+            'Referer': 'https://ra.co/'
+        },
+        body: JSON.stringify({ query, variables: { filters, pageSize: parseInt(limit) } })
+    });
+    
+    const data = await response.json();
+    if (data.errors) {
+        throw new Error(`RA GraphQL error: ${JSON.stringify(data.errors)}`);
+    }
+    
+    const listings = data.data.eventListings.data || [];
+    
+    return listings.map(listing => {
+        const e = listing.event;
+        if (!e) return null;
+        
+        return {
+            source_code: 'ra',
+            source_event_id: e.id,
+            title: e.title,
+            date: e.date?.split('T')[0] || null,
+            start_time: e.startTime?.split('T')[1]?.substring(0, 8) || null,
+            end_time: e.endTime?.split('T')[1]?.substring(0, 8) || null,
+            content_url: e.contentUrl ? `https://ra.co${e.contentUrl}` : null,
+            flyer_front: e.flyerFront,
+            description: e.content?.substring(0, 5000),
+            venue_name: e.venue?.name,
+            venue_address: e.venue?.address,
+            venue_city: e.venue?.area?.name,
+            venue_country: e.venue?.area?.country?.name,
+            venue_latitude: null,
+            venue_longitude: null,
+            artists_json: (e.artists || []).map(a => ({
+                source_artist_id: a.id,
+                name: a.name
+            })),
+            price_info: null,
+            raw_data: { ...e, listingDate: listing.listingDate },
+            venue_raw: e.venue ? {
+                source_venue_id: e.venue.id,
+                name: e.venue.name,
+                address: e.venue.address,
+                city: e.venue.area?.name,
+                country: e.venue.area?.country?.name
+            } : null
+        };
+    }).filter(Boolean);
+}
+
+// Save scraped events to database
+async function saveScrapedEvents(events) {
+    let inserted = 0, updated = 0;
+    const savedVenues = new Set();
+    const savedArtists = new Set();
+    
+    for (const event of events) {
+        try {
+            // Save scraped event
+            const eventResult = await pool.query(`
+                INSERT INTO scraped_events (
+                    source_code, source_event_id, title, date, start_time, end_time,
+                    content_url, flyer_front, description, venue_name, venue_address,
+                    venue_city, venue_country, venue_latitude, venue_longitude,
+                    artists_json, price_info, raw_data
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+                ON CONFLICT (source_code, source_event_id) DO UPDATE SET
+                    title = EXCLUDED.title,
+                    date = EXCLUDED.date,
+                    start_time = EXCLUDED.start_time,
+                    end_time = EXCLUDED.end_time,
+                    content_url = EXCLUDED.content_url,
+                    flyer_front = EXCLUDED.flyer_front,
+                    description = EXCLUDED.description,
+                    venue_name = EXCLUDED.venue_name,
+                    venue_address = EXCLUDED.venue_address,
+                    venue_city = EXCLUDED.venue_city,
+                    venue_country = EXCLUDED.venue_country,
+                    venue_latitude = COALESCE(EXCLUDED.venue_latitude, scraped_events.venue_latitude),
+                    venue_longitude = COALESCE(EXCLUDED.venue_longitude, scraped_events.venue_longitude),
+                    artists_json = EXCLUDED.artists_json,
+                    price_info = EXCLUDED.price_info,
+                    raw_data = EXCLUDED.raw_data,
+                    updated_at = CURRENT_TIMESTAMP
+                RETURNING id, (xmax = 0) AS is_inserted
+            `, [
+                event.source_code,
+                event.source_event_id,
+                event.title,
+                event.date,
+                event.start_time,
+                event.end_time,
+                event.content_url,
+                event.flyer_front,
+                event.description,
+                event.venue_name,
+                event.venue_address,
+                event.venue_city,
+                event.venue_country,
+                event.venue_latitude,
+                event.venue_longitude,
+                JSON.stringify(event.artists_json),
+                event.price_info ? JSON.stringify(event.price_info) : null,
+                JSON.stringify(event.raw_data)
+            ]);
+            
+            if (eventResult.rows[0].is_inserted) inserted++;
+            else updated++;
+            
+            // Save scraped venue if present
+            if (event.venue_raw && event.venue_raw.source_venue_id) {
+                const venueKey = `${event.source_code}:${event.venue_raw.source_venue_id}`;
+                if (!savedVenues.has(venueKey)) {
+                    await pool.query(`
+                        INSERT INTO scraped_venues (
+                            source_code, source_venue_id, name, address, city, country,
+                            latitude, longitude, content_url, raw_data
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                        ON CONFLICT (source_code, source_venue_id) DO UPDATE SET
+                            name = EXCLUDED.name,
+                            address = COALESCE(EXCLUDED.address, scraped_venues.address),
+                            city = COALESCE(EXCLUDED.city, scraped_venues.city),
+                            country = COALESCE(EXCLUDED.country, scraped_venues.country),
+                            latitude = COALESCE(EXCLUDED.latitude, scraped_venues.latitude),
+                            longitude = COALESCE(EXCLUDED.longitude, scraped_venues.longitude),
+                            content_url = COALESCE(EXCLUDED.content_url, scraped_venues.content_url),
+                            updated_at = CURRENT_TIMESTAMP
+                    `, [
+                        event.source_code,
+                        event.venue_raw.source_venue_id,
+                        event.venue_raw.name,
+                        event.venue_raw.address,
+                        event.venue_raw.city,
+                        event.venue_raw.country,
+                        event.venue_raw.latitude,
+                        event.venue_raw.longitude,
+                        event.venue_raw.content_url,
+                        JSON.stringify(event.venue_raw)
+                    ]);
+                    savedVenues.add(venueKey);
+                }
+            }
+            
+            // Save scraped artists if present
+            for (const artist of (event.artists_json || [])) {
+                if (artist.source_artist_id) {
+                    const artistKey = `${event.source_code}:${artist.source_artist_id}`;
+                    if (!savedArtists.has(artistKey)) {
+                        await pool.query(`
+                            INSERT INTO scraped_artists (
+                                source_code, source_artist_id, name, genres, image_url, content_url, raw_data
+                            ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+                            ON CONFLICT (source_code, source_artist_id) DO UPDATE SET
+                                name = EXCLUDED.name,
+                                genres = COALESCE(EXCLUDED.genres, scraped_artists.genres),
+                                image_url = COALESCE(EXCLUDED.image_url, scraped_artists.image_url),
+                                updated_at = CURRENT_TIMESTAMP
+                        `, [
+                            event.source_code,
+                            artist.source_artist_id,
+                            artist.name,
+                            artist.genres ? JSON.stringify(artist.genres) : null,
+                            artist.image_url,
+                            artist.content_url,
+                            JSON.stringify(artist)
+                        ]);
+                        savedArtists.add(artistKey);
+                    }
+                }
+            }
+        } catch (err) {
+            console.error(`Error saving scraped event ${event.source_event_id}:`, err.message);
+        }
+    }
+    
+    return { inserted, updated, venues: savedVenues.size, artists: savedArtists.size };
+}
+
+// =====================================================
+// MATCHING ALGORITHM
+// =====================================================
+
+// Normalize string for matching
+function normalizeForMatch(str) {
+    if (!str) return '';
+    return str.toLowerCase()
+        .replace(/[^a-z0-9\s]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+// Calculate string similarity (Levenshtein-based)
+function stringSimilarity(a, b) {
+    if (!a || !b) return 0;
+    a = normalizeForMatch(a);
+    b = normalizeForMatch(b);
+    if (a === b) return 1;
+    
+    const longer = a.length > b.length ? a : b;
+    const shorter = a.length > b.length ? b : a;
+    
+    if (longer.length === 0) return 1;
+    
+    // Simple contains check
+    if (longer.includes(shorter) || shorter.includes(longer)) {
+        return shorter.length / longer.length;
+    }
+    
+    // Word overlap
+    const wordsA = new Set(a.split(' ').filter(w => w.length > 2));
+    const wordsB = new Set(b.split(' ').filter(w => w.length > 2));
+    const intersection = [...wordsA].filter(w => wordsB.has(w));
+    const union = new Set([...wordsA, ...wordsB]);
+    
+    if (union.size === 0) return 0;
+    return intersection.length / union.size;
+}
+
+// Match scraped events to unified events or create new ones
+async function matchAndLinkEvents(options = {}) {
+    const { dryRun = false, minConfidence = 0.7 } = options;
+    
+    // Get unlinked scraped events
+    const unlinkedResult = await pool.query(`
+        SELECT se.* FROM scraped_events se
+        WHERE NOT EXISTS (
+            SELECT 1 FROM event_source_links esl WHERE esl.scraped_event_id = se.id
+        )
+        ORDER BY se.date, se.venue_city
+        LIMIT 500
+    `);
+    
+    const unlinked = unlinkedResult.rows;
+    let matched = 0, created = 0;
+    const results = [];
+    
+    for (const scraped of unlinked) {
+        // Try to find matching unified event
+        const potentialMatches = await pool.query(`
+            SELECT ue.*, 
+                   (SELECT array_agg(se.source_code) FROM event_source_links esl 
+                    JOIN scraped_events se ON se.id = esl.scraped_event_id 
+                    WHERE esl.unified_event_id = ue.id) as existing_sources
+            FROM unified_events ue
+            WHERE ue.date = $1
+            AND (
+                LOWER(ue.venue_city) = LOWER($2) 
+                OR LOWER(ue.venue_name) ILIKE $3
+            )
+        `, [scraped.date, scraped.venue_city, `%${scraped.venue_name}%`]);
+        
+        let bestMatch = null;
+        let bestScore = 0;
+        
+        for (const potential of potentialMatches.rows) {
+            // Skip if already linked from same source
+            if (potential.existing_sources?.includes(scraped.source_code)) continue;
+            
+            // Calculate match score
+            const titleScore = stringSimilarity(scraped.title, potential.title);
+            const venueScore = stringSimilarity(scraped.venue_name, potential.venue_name);
+            
+            // Weighted average
+            const score = (titleScore * 0.6) + (venueScore * 0.4);
+            
+            if (score > bestScore && score >= minConfidence) {
+                bestScore = score;
+                bestMatch = potential;
+            }
+        }
+        
+        if (bestMatch) {
+            // Link to existing unified event
+            if (!dryRun) {
+                await pool.query(`
+                    INSERT INTO event_source_links (unified_event_id, scraped_event_id, match_confidence)
+                    VALUES ($1, $2, $3)
+                    ON CONFLICT DO NOTHING
+                `, [bestMatch.id, scraped.id, bestScore]);
+            }
+            matched++;
+            results.push({
+                action: 'matched',
+                scraped: { id: scraped.id, title: scraped.title, source: scraped.source_code },
+                unified: { id: bestMatch.id, title: bestMatch.title },
+                confidence: bestScore
+            });
+        } else {
+            // Create new unified event
+            if (!dryRun) {
+                const newEvent = await pool.query(`
+                    INSERT INTO unified_events (
+                        title, date, start_time, end_time, description, flyer_front,
+                        ticket_url, price_info, venue_name, venue_address, venue_city, venue_country
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                    RETURNING id
+                `, [
+                    scraped.title,
+                    scraped.date,
+                    scraped.start_time,
+                    scraped.end_time,
+                    scraped.description,
+                    scraped.flyer_front,
+                    scraped.content_url,
+                    scraped.price_info,
+                    scraped.venue_name,
+                    scraped.venue_address,
+                    scraped.venue_city,
+                    scraped.venue_country
+                ]);
+                
+                // Link to the new unified event
+                await pool.query(`
+                    INSERT INTO event_source_links (unified_event_id, scraped_event_id, match_confidence, is_primary)
+                    VALUES ($1, $2, 1.0, true)
+                `, [newEvent.rows[0].id, scraped.id]);
+            }
+            created++;
+            results.push({
+                action: 'created',
+                scraped: { id: scraped.id, title: scraped.title, source: scraped.source_code }
+            });
+        }
+    }
+    
+    return { processed: unlinked.length, matched, created, results: results.slice(0, 20) };
+}
+
+// Match scraped venues to unified venues
+async function matchAndLinkVenues(options = {}) {
+    const { dryRun = false, minConfidence = 0.8 } = options;
+    
+    const unlinkedResult = await pool.query(`
+        SELECT sv.* FROM scraped_venues sv
+        WHERE NOT EXISTS (
+            SELECT 1 FROM venue_source_links vsl WHERE vsl.scraped_venue_id = sv.id
+        )
+        LIMIT 200
+    `);
+    
+    let matched = 0, created = 0;
+    
+    for (const scraped of unlinkedResult.rows) {
+        // Find potential matches by city and name similarity
+        const potentialMatches = await pool.query(`
+            SELECT uv.* FROM unified_venues uv
+            WHERE LOWER(uv.city) = LOWER($1)
+            AND (
+                similarity(LOWER(uv.name), LOWER($2)) > 0.3
+                OR LOWER(uv.name) ILIKE $3
+            )
+        `, [scraped.city, scraped.name, `%${scraped.name}%`]);
+        
+        let bestMatch = null;
+        let bestScore = 0;
+        
+        for (const potential of potentialMatches.rows) {
+            const nameScore = stringSimilarity(scraped.name, potential.name);
+            const addressScore = stringSimilarity(scraped.address, potential.address);
+            const score = (nameScore * 0.7) + (addressScore * 0.3);
+            
+            if (score > bestScore && score >= minConfidence) {
+                bestScore = score;
+                bestMatch = potential;
+            }
+        }
+        
+        if (bestMatch) {
+            if (!dryRun) {
+                await pool.query(`
+                    INSERT INTO venue_source_links (unified_venue_id, scraped_venue_id, match_confidence)
+                    VALUES ($1, $2, $3)
+                    ON CONFLICT DO NOTHING
+                `, [bestMatch.id, scraped.id, bestScore]);
+            }
+            matched++;
+        } else {
+            if (!dryRun) {
+                const newVenue = await pool.query(`
+                    INSERT INTO unified_venues (name, address, city, country, latitude, longitude, website)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    RETURNING id
+                `, [scraped.name, scraped.address, scraped.city, scraped.country, 
+                    scraped.latitude, scraped.longitude, scraped.content_url]);
+                
+                await pool.query(`
+                    INSERT INTO venue_source_links (unified_venue_id, scraped_venue_id, match_confidence, is_primary)
+                    VALUES ($1, $2, 1.0, true)
+                `, [newVenue.rows[0].id, scraped.id]);
+            }
+            created++;
+        }
+    }
+    
+    return { processed: unlinkedResult.rows.length, matched, created };
+}
+
+// =====================================================
+// MULTI-SOURCE SCRAPE API ENDPOINTS
+// =====================================================
+
+// Scrape events from specific source(s)
+app.post('/scrape/events', async (req, res) => {
+    try {
+        const { sources = ['ra', 'ticketmaster'], city, limit = 100, match = true } = req.body;
+        
+        if (!city) {
+            return res.status(400).json({ 
+                error: 'City required',
+                availableCities: {
+                    ra: Object.keys(RA_AREA_MAP),
+                    ticketmaster: Object.keys(TICKETMASTER_CITY_MAP)
+                }
+            });
+        }
+        
+        const results = {};
+        const sourceList = Array.isArray(sources) ? sources : [sources];
+        
+        for (const source of sourceList) {
+            try {
+                let events = [];
+                
+                if (source === 'ra') {
+                    events = await scrapeResidentAdvisor(city, { limit });
+                } else if (source === 'ticketmaster') {
+                    events = await scrapeTicketmaster(city, { limit });
+                } else {
+                    results[source] = { error: `Unknown source: ${source}` };
+                    continue;
+                }
+                
+                const saveResult = await saveScrapedEvents(events);
+                results[source] = {
+                    fetched: events.length,
+                    ...saveResult
+                };
+            } catch (err) {
+                console.error(`Error scraping ${source}:`, err.message);
+                results[source] = { error: err.message };
+            }
+        }
+        
+        // Optionally run matching
+        let matchResult = null;
+        if (match) {
+            matchResult = await matchAndLinkEvents({ dryRun: false });
+        }
+        
+        res.json({
+            success: true,
+            city,
+            sources: results,
+            matching: matchResult
+        });
+    } catch (error) {
+        console.error('Scrape error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Scrape from Ticketmaster only
+app.post('/scrape/ticketmaster', async (req, res) => {
+    try {
+        const { city, limit = 100, classificationName = 'Music' } = req.body;
+        
+        if (!city) {
+            return res.status(400).json({ 
+                error: 'City required',
+                availableCities: Object.keys(TICKETMASTER_CITY_MAP)
+            });
+        }
+        
+        const events = await scrapeTicketmaster(city, { limit, classificationName });
+        const saveResult = await saveScrapedEvents(events);
+        
+        res.json({
+            success: true,
+            city,
+            source: 'ticketmaster',
+            fetched: events.length,
+            ...saveResult
+        });
+    } catch (error) {
+        console.error('Ticketmaster scrape error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Run matching algorithm
+app.post('/scrape/match', async (req, res) => {
+    try {
+        const { dryRun = false, minConfidence = 0.7 } = req.body;
+        
+        const eventResult = await matchAndLinkEvents({ dryRun, minConfidence });
+        const venueResult = await matchAndLinkVenues({ dryRun, minConfidence: 0.8 });
+        
+        res.json({
+            success: true,
+            dryRun,
+            events: eventResult,
+            venues: venueResult
+        });
+    } catch (error) {
+        console.error('Match error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get scraped events
+app.get('/scraped/events', async (req, res) => {
+    try {
+        const { source, city, linked, limit = 100, offset = 0 } = req.query;
+        
+        let query = 'SELECT se.*, EXISTS(SELECT 1 FROM event_source_links esl WHERE esl.scraped_event_id = se.id) as is_linked FROM scraped_events se WHERE 1=1';
+        const params = [];
+        let paramIndex = 1;
+        
+        if (source) {
+            query += ` AND se.source_code = $${paramIndex++}`;
+            params.push(source);
+        }
+        if (city) {
+            query += ` AND LOWER(se.venue_city) = LOWER($${paramIndex++})`;
+            params.push(city);
+        }
+        if (linked === 'true') {
+            query += ` AND EXISTS(SELECT 1 FROM event_source_links esl WHERE esl.scraped_event_id = se.id)`;
+        } else if (linked === 'false') {
+            query += ` AND NOT EXISTS(SELECT 1 FROM event_source_links esl WHERE esl.scraped_event_id = se.id)`;
+        }
+        
+        query += ` ORDER BY se.date ASC LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
+        params.push(parseInt(limit), parseInt(offset));
+        
+        const result = await pool.query(query, params);
+        
+        const countQuery = query.replace(/SELECT se\.\*, EXISTS.*FROM/, 'SELECT COUNT(*) FROM').replace(/ORDER BY.*$/, '');
+        const countParams = params.slice(0, -2);
+        const countResult = await pool.query(countQuery, countParams);
+        
+        res.json({
+            data: result.rows,
+            total: parseInt(countResult.rows[0].count),
+            limit: parseInt(limit),
+            offset: parseInt(offset)
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get unified events (with source references)
+app.get('/unified/events', async (req, res) => {
+    try {
+        const { city, published, limit = 100, offset = 0 } = req.query;
+        
+        let query = `
+            SELECT ue.*,
+                (SELECT json_agg(json_build_object(
+                    'source_code', se.source_code,
+                    'source_event_id', se.source_event_id,
+                    'title', se.title,
+                    'content_url', se.content_url,
+                    'confidence', esl.match_confidence
+                ))
+                FROM event_source_links esl
+                JOIN scraped_events se ON se.id = esl.scraped_event_id
+                WHERE esl.unified_event_id = ue.id) as source_references
+            FROM unified_events ue
+            WHERE 1=1
+        `;
+        const params = [];
+        let paramIndex = 1;
+        
+        if (city) {
+            query += ` AND LOWER(ue.venue_city) = LOWER($${paramIndex++})`;
+            params.push(city);
+        }
+        if (published === 'true') {
+            query += ` AND ue.is_published = true`;
+        } else if (published === 'false') {
+            query += ` AND ue.is_published = false`;
+        }
+        
+        query += ` ORDER BY ue.date ASC LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
+        params.push(parseInt(limit), parseInt(offset));
+        
+        const result = await pool.query(query, params);
+        
+        res.json({
+            data: result.rows,
+            total: result.rows.length,
+            limit: parseInt(limit),
+            offset: parseInt(offset)
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get unified event by ID with full source details
+app.get('/unified/events/:id', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT ue.*,
+                (SELECT json_agg(json_build_object(
+                    'id', se.id,
+                    'source_code', se.source_code,
+                    'source_event_id', se.source_event_id,
+                    'title', se.title,
+                    'date', se.date,
+                    'start_time', se.start_time,
+                    'content_url', se.content_url,
+                    'flyer_front', se.flyer_front,
+                    'venue_name', se.venue_name,
+                    'price_info', se.price_info,
+                    'confidence', esl.match_confidence,
+                    'is_primary', esl.is_primary
+                ))
+                FROM event_source_links esl
+                JOIN scraped_events se ON se.id = esl.scraped_event_id
+                WHERE esl.unified_event_id = ue.id) as source_references,
+                (SELECT json_agg(json_build_object(
+                    'id', ua.id,
+                    'name', ua.name,
+                    'image_url', ua.image_url
+                ))
+                FROM unified_event_artists uea
+                JOIN unified_artists ua ON ua.id = uea.unified_artist_id
+                WHERE uea.unified_event_id = ue.id) as artists
+            FROM unified_events ue
+            WHERE ue.id = $1
+        `, [req.params.id]);
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Event not found' });
+        }
+        
+        res.json(result.rows[0]);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Update unified event (user edits)
+app.patch('/unified/events/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const updates = req.body;
+        
+        // Build dynamic update query
+        const allowedFields = ['title', 'date', 'start_time', 'end_time', 'description', 
+            'flyer_front', 'ticket_url', 'price_info', 'unified_venue_id', 'venue_name',
+            'venue_address', 'venue_city', 'venue_country', 'is_published', 'is_featured'];
+        
+        const setClauses = [];
+        const values = [];
+        let paramIndex = 1;
+        
+        for (const [key, value] of Object.entries(updates)) {
+            if (allowedFields.includes(key)) {
+                setClauses.push(`${key} = $${paramIndex++}`);
+                values.push(key === 'price_info' ? JSON.stringify(value) : value);
+            }
+        }
+        
+        if (setClauses.length === 0) {
+            return res.status(400).json({ error: 'No valid fields to update' });
+        }
+        
+        // Handle publish timestamp
+        if (updates.is_published === true) {
+            setClauses.push(`published_at = COALESCE(published_at, CURRENT_TIMESTAMP)`);
+        }
+        
+        values.push(id);
+        
+        const result = await pool.query(`
+            UPDATE unified_events SET ${setClauses.join(', ')}, updated_at = CURRENT_TIMESTAMP
+            WHERE id = $${paramIndex}
+            RETURNING *
+        `, values);
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Event not found' });
+        }
+        
+        res.json(result.rows[0]);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Scrape stats
+app.get('/scrape/stats', async (req, res) => {
+    try {
+        const stats = await pool.query(`
+            SELECT 
+                (SELECT COUNT(*) FROM scraped_events) as total_scraped_events,
+                (SELECT COUNT(*) FROM scraped_events WHERE source_code = 'ra') as ra_events,
+                (SELECT COUNT(*) FROM scraped_events WHERE source_code = 'ticketmaster') as ticketmaster_events,
+                (SELECT COUNT(*) FROM scraped_venues) as total_scraped_venues,
+                (SELECT COUNT(*) FROM scraped_artists) as total_scraped_artists,
+                (SELECT COUNT(*) FROM unified_events) as total_unified_events,
+                (SELECT COUNT(*) FROM unified_events WHERE is_published = true) as published_events,
+                (SELECT COUNT(*) FROM unified_venues) as total_unified_venues,
+                (SELECT COUNT(*) FROM unified_artists) as total_unified_artists,
+                (SELECT COUNT(*) FROM event_source_links) as total_event_links,
+                (SELECT COUNT(DISTINCT scraped_event_id) FROM event_source_links) as linked_scraped_events,
+                (SELECT COUNT(*) FROM scraped_events WHERE NOT EXISTS(SELECT 1 FROM event_source_links esl WHERE esl.scraped_event_id = scraped_events.id)) as unlinked_scraped_events
+        `);
+        
+        res.json(stats.rows[0]);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 process.on('unhandledRejection', (reason, p) => {
     console.error('Unhandled Rejection at:', p, 'reason:', reason);
     // Application specific logging, throwing an error, or other logic here

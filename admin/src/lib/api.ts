@@ -292,4 +292,93 @@ export async function fetchDashboard() {
   return response.json();
 }
 
+// ============== Multi-Source Scraping API ==============
 
+export async function scrapeEvents(params: { sources?: string[]; city: string; limit?: number; match?: boolean }) {
+  const response = await fetch(`${API_URL}/scrape/events`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(params),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to scrape events');
+  }
+  return response.json();
+}
+
+export async function scrapeTicketmaster(params: { city: string; limit?: number }) {
+  const response = await fetch(`${API_URL}/scrape/ticketmaster`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(params),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to scrape Ticketmaster');
+  }
+  return response.json();
+}
+
+export async function runMatching(params?: { dryRun?: boolean; minConfidence?: number }) {
+  const response = await fetch(`${API_URL}/scrape/match`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(params || {}),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to run matching');
+  }
+  return response.json();
+}
+
+export async function fetchScrapedEvents(params?: { source?: string; city?: string; linked?: boolean; limit?: number; offset?: number }) {
+  const searchParams = new URLSearchParams();
+  if (params?.source) searchParams.set('source', params.source);
+  if (params?.city) searchParams.set('city', params.city);
+  if (params?.linked !== undefined) searchParams.set('linked', params.linked.toString());
+  if (params?.limit) searchParams.set('limit', params.limit.toString());
+  if (params?.offset) searchParams.set('offset', params.offset.toString());
+
+  const response = await fetch(`${API_URL}/scraped/events?${searchParams}`, { headers });
+  if (!response.ok) throw new Error('Failed to fetch scraped events');
+  return response.json();
+}
+
+export async function fetchUnifiedEvents(params?: { city?: string; published?: boolean; limit?: number; offset?: number }) {
+  const searchParams = new URLSearchParams();
+  if (params?.city) searchParams.set('city', params.city);
+  if (params?.published !== undefined) searchParams.set('published', params.published.toString());
+  if (params?.limit) searchParams.set('limit', params.limit.toString());
+  if (params?.offset) searchParams.set('offset', params.offset.toString());
+
+  const response = await fetch(`${API_URL}/unified/events?${searchParams}`, { headers });
+  if (!response.ok) throw new Error('Failed to fetch unified events');
+  return response.json();
+}
+
+export async function fetchUnifiedEvent(id: string) {
+  const response = await fetch(`${API_URL}/unified/events/${id}`, { headers });
+  if (!response.ok) throw new Error('Failed to fetch unified event');
+  return response.json();
+}
+
+export async function updateUnifiedEvent(id: string, data: Record<string, any>) {
+  const response = await fetch(`${API_URL}/unified/events/${id}`, {
+    method: 'PATCH',
+    headers,
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to update unified event');
+  }
+  return response.json();
+}
+
+export async function fetchScrapeStats() {
+  const response = await fetch(`${API_URL}/scrape/stats`, { headers });
+  if (!response.ok) throw new Error('Failed to fetch scrape stats');
+  return response.json();
+}
