@@ -115,7 +115,7 @@ export default function EventMap({ events, onEventClick, selectedEventId }: Even
       showCoverageOnHover: false,
       zoomToBoundsOnClick: true,
       maxClusterRadius: 50,
-      iconCreateFunction: (cluster) => {
+      iconCreateFunction: (cluster: any) => {
         const childCount = cluster.getChildCount();
         const publishedCount = cluster.getAllChildMarkers().filter((m: any) => m.options.isPublished).length;
         
