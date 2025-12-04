@@ -1070,6 +1070,61 @@ app.get('/api/venues', async (req, res) => {
 // DATABASE ENDPOINTS
 // ============================================
 
+// Create a single event
+app.post('/db/events/create', async (req, res) => {
+    try {
+        const { title, date, start_time, venue_name, venue_city, venue_country, venue_address, artists, description, content_url, flyer_front, is_published } = req.body;
+        
+        if (!title) {
+            return res.status(400).json({ error: 'Title is required' });
+        }
+        
+        // Generate a unique ID
+        const id = `manual_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        
+        // Try to find or link venue
+        let venueId = null;
+        if (venue_name) {
+            const venueResult = await pool.query(
+                `SELECT id FROM venues WHERE LOWER(name) = LOWER($1) AND LOWER(city) = LOWER($2) LIMIT 1`,
+                [venue_name, venue_city || '']
+            );
+            if (venueResult.rows.length > 0) {
+                venueId = venueResult.rows[0].id;
+            }
+        }
+        
+        const result = await pool.query(`
+            INSERT INTO events (
+                id, title, date, start_time, venue_id, venue_name, venue_address, 
+                venue_city, venue_country, artists, description, content_url, 
+                flyer_front, is_published, created_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)
+            RETURNING *
+        `, [
+            id,
+            title,
+            date || null,
+            start_time || null,
+            venueId,
+            venue_name || null,
+            venue_address || null,
+            venue_city || null,
+            venue_country || null,
+            artists || null,
+            description || null,
+            content_url || null,
+            flyer_front || null,
+            is_published || false
+        ]);
+        
+        res.json(result.rows[0]);
+    } catch (error) {
+        console.error('Create event error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Upsert events to database
 app.post('/db/events', async (req, res) => {
     try {

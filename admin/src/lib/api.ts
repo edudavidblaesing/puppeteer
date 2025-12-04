@@ -47,6 +47,19 @@ export async function updateEvent(id: string, data: Partial<Event>) {
   return response.json();
 }
 
+export async function createEvent(data: Partial<Event>) {
+  const response = await fetch(`${API_URL}/db/events/create`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || 'Failed to create event');
+  }
+  return response.json();
+}
+
 export async function deleteEvent(id: string) {
   const response = await fetch(`${API_URL}/db/events/${id}`, {
     method: 'DELETE',

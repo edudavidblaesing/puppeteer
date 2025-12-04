@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import dynamic from 'next/dynamic';
 import {
   Calendar,
   MapPin,
@@ -9,7 +8,6 @@ import {
   Eye,
   EyeOff,
   Trash2,
-  Download,
   ChevronLeft,
   ChevronRight,
   Search,
@@ -22,7 +20,6 @@ import {
   ExternalLink,
   Music,
   Globe,
-  Zap,
   Link2,
   CloudDownload,
   Layers,
@@ -36,11 +33,8 @@ import {
   fetchStats,
   deleteEvent,
   updateEvent,
+  createEvent,
   publishEvents,
-  syncEvents,
-  fetchEnrichStats,
-  enrichVenues,
-  enrichArtists,
   fetchCities,
   fetchArtists,
   fetchArtist,
@@ -65,24 +59,12 @@ import {
   deduplicateData,
 } from '@/lib/api';
 
-// Dynamic import for map (client-side only)
-const EventMap = dynamic(() => import('@/components/EventMap'), {
-  ssr: false,
-  loading: () => (
-    <div className="h-full w-full flex items-center justify-center bg-gray-100 rounded-lg">
-      <RefreshCw className="w-8 h-8 animate-spin text-gray-400" />
-    </div>
-  ),
-});
-
 type ActiveTab = 'events' | 'artists' | 'venues' | 'cities' | 'scrape';
-type ViewMode = 'split' | 'list' | 'map';
 type DataSource = 'main' | 'scraped';
 
 export default function AdminDashboard() {
   // Main state
   const [activeTab, setActiveTab] = useState<ActiveTab>('events');
-  const [viewMode, setViewMode] = useState<ViewMode>('split');
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [dataSource, setDataSource] = useState<DataSource>('main');
@@ -90,11 +72,8 @@ export default function AdminDashboard() {
   // Events state
   const [events, setEvents] = useState<Event[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
-  const [enrichStats, setEnrichStats] = useState<any>(null);
   const [cities, setCities] = useState<City[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [isEnriching, setIsEnriching] = useState(false);
 
   // Artists state
   const [artists, setArtists] = useState<Artist[]>([]);
@@ -136,24 +115,30 @@ export default function AdminDashboard() {
   const [sourceReferences, setSourceReferences] = useState<any[]>([]);
   const [selectedSourceFields, setSelectedSourceFields] = useState<Record<string, string>>({});
 
+  // Autocomplete state for event form
+  const [artistSearch, setArtistSearch] = useState('');
+  const [venueSearch, setVenueSearch] = useState('');
+  const [artistSuggestions, setArtistSuggestions] = useState<any[]>([]);
+  const [venueSuggestions, setVenueSuggestions] = useState<any[]>([]);
+  const [showArtistDropdown, setShowArtistDropdown] = useState(false);
+  const [showVenueDropdown, setShowVenueDropdown] = useState(false);
+
   // Load events data
   const loadEvents = useCallback(async () => {
     try {
-      const [eventsData, statsData, enrichData, citiesData] = await Promise.all([
+      const [eventsData, statsData, citiesData] = await Promise.all([
         fetchEvents({
           city: cityFilter || undefined,
           limit: pageSize,
           offset: (page - 1) * pageSize,
         }),
         fetchStats(),
-        fetchEnrichStats().catch(() => null),
         fetchCities().catch(() => []),
       ]);
 
       setEvents(eventsData.data);
       setTotal(eventsData.total);
       setStats(statsData);
-      setEnrichStats(enrichData);
       setCities(citiesData);
     } catch (error) {
       console.error('Failed to load events:', error);
@@ -243,7 +228,14 @@ export default function AdminDashboard() {
   const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
-      if (activeTab === 'events') await loadEvents();
+      if (activeTab === 'events') {
+        // Also load artists and venues for autocomplete
+        await Promise.all([
+          loadEvents(),
+          loadArtists(),
+          loadVenues()
+        ]);
+      }
       else if (activeTab === 'artists') await loadArtists();
       else if (activeTab === 'venues') await loadVenues();
       else if (activeTab === 'cities') await loadCities();
@@ -256,6 +248,34 @@ export default function AdminDashboard() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // Autocomplete search for artists
+  useEffect(() => {
+    if (artistSearch.length >= 2) {
+      const filtered = artists.filter(a => 
+        a.name?.toLowerCase().includes(artistSearch.toLowerCase())
+      ).slice(0, 8);
+      setArtistSuggestions(filtered);
+      setShowArtistDropdown(filtered.length > 0);
+    } else {
+      setArtistSuggestions([]);
+      setShowArtistDropdown(false);
+    }
+  }, [artistSearch, artists]);
+
+  // Autocomplete search for venues
+  useEffect(() => {
+    if (venueSearch.length >= 2) {
+      const filtered = venues.filter(v => 
+        v.name?.toLowerCase().includes(venueSearch.toLowerCase())
+      ).slice(0, 8);
+      setVenueSuggestions(filtered);
+      setShowVenueDropdown(filtered.length > 0);
+    } else {
+      setVenueSuggestions([]);
+      setShowVenueDropdown(false);
+    }
+  }, [venueSearch, venues]);
 
   // Reset page when changing tabs or filters
   useEffect(() => {
@@ -385,6 +405,9 @@ export default function AdminDashboard() {
         if (editingItem) {
           await updateEvent(editingItem.id, editForm);
           setEvents(events.map(e => e.id === editingItem.id ? { ...e, ...editForm } : e));
+        } else {
+          await createEvent(editForm);
+          await loadEvents();
         }
       } else if (activeTab === 'artists') {
         if (editingItem) {
@@ -480,20 +503,6 @@ export default function AdminDashboard() {
   };
 
   // Sync events
-  const handleSync = async (city: string) => {
-    setIsSyncing(true);
-    try {
-      const result = await syncEvents(city, 200);
-      alert(`Synced ${result.fetched} events (${result.inserted} new, ${result.updated} updated)`);
-      loadData();
-    } catch (error) {
-      console.error('Sync failed:', error);
-      alert('Failed to sync events');
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
   // Multi-source scraping
   const handleScrape = async () => {
     setIsScraping(true);
@@ -566,20 +575,6 @@ export default function AdminDashboard() {
   };
 
   // Enrich data
-  const handleEnrich = async (type: 'venues' | 'artists') => {
-    setIsEnriching(true);
-    try {
-      const result = type === 'venues' ? await enrichVenues(100) : await enrichArtists(200);
-      alert(`Enriched ${result.saved} ${type}`);
-      loadData();
-    } catch (error) {
-      console.error('Enrich failed:', error);
-      alert(`Failed to enrich ${type}`);
-    } finally {
-      setIsEnriching(false);
-    }
-  };
-
   // Toggle publish for single event
   const handleTogglePublish = async (event: Event) => {
     try {
@@ -824,21 +819,6 @@ export default function AdminDashboard() {
 
           {/* Right Actions */}
           <div className="flex items-center gap-2">
-            {/* View toggle */}
-            <div className="flex bg-gray-100 rounded-lg p-1">
-              {(['split', 'list', 'map'] as ViewMode[]).map((mode) => (
-                <button
-                  key={mode}
-                  onClick={() => setViewMode(mode)}
-                  className={clsx(
-                    'px-3 py-1 text-xs font-medium rounded transition-all capitalize',
-                    viewMode === mode ? 'bg-white shadow text-gray-900' : 'text-gray-500'
-                  )}
-                >
-                  {mode}
-                </button>
-              ))}
-            </div>
             <button onClick={loadData} className="p-2 hover:bg-gray-100 rounded-lg" title="Refresh">
               <RefreshCw className={clsx('w-4 h-4', isLoading && 'animate-spin')} />
             </button>
@@ -958,58 +938,13 @@ export default function AdminDashboard() {
           )}
 
           {/* Add button */}
-          {activeTab !== 'events' && (
+          {activeTab !== 'scrape' && (
             <button
               onClick={handleCreate}
               className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-1"
             >
-              <Plus className="w-4 h-4" /> Add {activeTab.slice(0, -1)}
+              <Plus className="w-4 h-4" /> Add {activeTab === 'cities' ? 'city' : activeTab.slice(0, -1)}
             </button>
-          )}
-
-          {/* Sync button (events only) */}
-          {activeTab === 'events' && (
-            <div className="relative group">
-              <button
-                disabled={isSyncing}
-                className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-1 disabled:opacity-50"
-              >
-                <Download className="w-4 h-4" />
-                {isSyncing ? 'Syncing...' : 'Sync'}
-              </button>
-              <div className="absolute right-0 mt-1 w-40 bg-white rounded-lg shadow-lg border opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
-                {(cities.length > 0 ? cities.slice(0, 6).map(c => c.name) : ['Berlin', 'Hamburg', 'London', 'Paris']).map((city) => (
-                  <button
-                    key={city}
-                    onClick={() => handleSync(city)}
-                    className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50"
-                  >
-                    {city}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Enrich button (events only) */}
-          {activeTab === 'events' && (
-            <div className="relative group">
-              <button
-                disabled={isEnriching}
-                className="px-3 py-1.5 text-sm bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 flex items-center gap-1 disabled:opacity-50"
-              >
-                <Database className="w-4 h-4" />
-                {isEnriching ? '...' : 'Enrich'}
-              </button>
-              <div className="absolute right-0 mt-1 w-40 bg-white rounded-lg shadow-lg border opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
-                <button onClick={() => handleEnrich('venues')} className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2">
-                  <Building2 className="w-4 h-4" /> Venues
-                </button>
-                <button onClick={() => handleEnrich('artists')} className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2">
-                  <Users className="w-4 h-4" /> Artists
-                </button>
-              </div>
-            </div>
           )}
         </div>
       </header>
@@ -1240,7 +1175,7 @@ export default function AdminDashboard() {
               {/* Unlinked Scraped Events */}
               <div className="bg-white rounded-xl shadow-sm p-6">
                 <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">
-                  <Zap className="w-5 h-5 text-amber-500" />
+                  <CloudDownload className="w-5 h-5 text-amber-500" />
                   Unlinked Scraped Events ({scrapedEvents.length})
                 </h3>
                 <div className="overflow-x-auto">
@@ -1289,92 +1224,72 @@ export default function AdminDashboard() {
             </div>
           </div>
         ) : (
-          <>
-        {/* List Panel */}
-        {(viewMode === 'split' || viewMode === 'list') && (
-          <div className={clsx(
-            'bg-white border-r flex flex-col',
-            viewMode === 'split' ? 'w-96' : 'flex-1'
-          )}>
-            {/* List header */}
-            <div className="px-4 py-2 bg-gray-50 border-b flex items-center justify-between">
-              <span className="text-sm text-gray-600">
-                {currentTotal.toLocaleString()} {activeTab}
-              </span>
-              {activeTab === 'events' && (
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={selectedIds.size === filteredEvents.length && filteredEvents.length > 0}
-                    onChange={handleSelectAll}
-                    className="rounded text-indigo-600"
-                  />
-                  Select all
-                </label>
-              )}
-            </div>
-
-            {/* List content */}
-            <div className="flex-1 overflow-auto">
-              {isLoading ? (
-                <div className="flex items-center justify-center h-32">
-                  <RefreshCw className="w-6 h-6 animate-spin text-gray-400" />
-                </div>
-              ) : currentItems.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-32 text-gray-500">
-                  <p>No {activeTab} found</p>
-                </div>
-              ) : (
-                currentItems.map(renderListItem)
-              )}
-            </div>
-
-            {/* Pagination */}
-            {totalPages > 1 && (
-              <div className="px-4 py-2 border-t bg-gray-50 flex items-center justify-between">
-                <span className="text-xs text-gray-500">
-                  Page {page}/{totalPages}
+          <div className="flex-1 flex">
+            {/* List Panel */}
+            <div className="bg-white border-r flex flex-col w-96">
+              {/* List header */}
+              <div className="px-4 py-2 bg-gray-50 border-b flex items-center justify-between">
+                <span className="text-sm text-gray-600">
+                  {currentTotal.toLocaleString()} {activeTab}
                 </span>
-                <div className="flex gap-1">
-                  <button
-                    onClick={() => setPage(p => Math.max(1, p - 1))}
-                    disabled={page === 1}
-                    className="p-1 rounded hover:bg-gray-200 disabled:opacity-50"
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                    disabled={page >= totalPages}
-                    className="p-1 rounded hover:bg-gray-200 disabled:opacity-50"
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                </div>
+                {activeTab === 'events' && (
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.size === filteredEvents.length && filteredEvents.length > 0}
+                      onChange={handleSelectAll}
+                      className="rounded text-indigo-600"
+                    />
+                    Select all
+                  </label>
+                )}
               </div>
-            )}
-          </div>
-        )}
 
-        {/* Map / Edit Panel */}
-        <div className="flex-1 flex">
-          {/* Map */}
-          {(viewMode === 'split' || viewMode === 'map') && !showEditPanel && (
-            <div className="flex-1 relative">
-              <EventMap
-                events={activeTab === 'events' ? filteredEvents : []}
-                cities={cities}
-                selectedCity={cityFilter}
-                onCityChange={(city) => setCityFilter(city)}
-                onEventClick={(event) => handleEdit(event)}
-              />
+              {/* List content */}
+              <div className="flex-1 overflow-auto">
+                {isLoading ? (
+                  <div className="flex items-center justify-center h-32">
+                    <RefreshCw className="w-6 h-6 animate-spin text-gray-400" />
+                  </div>
+                ) : currentItems.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-32 text-gray-500">
+                    <p>No {activeTab} found</p>
+                  </div>
+                ) : (
+                  currentItems.map(renderListItem)
+                )}
+              </div>
+
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <div className="px-4 py-2 border-t bg-gray-50 flex items-center justify-between">
+                  <span className="text-xs text-gray-500">
+                    Page {page}/{totalPages}
+                  </span>
+                  <div className="flex gap-1">
+                    <button
+                      onClick={() => setPage(p => Math.max(1, p - 1))}
+                      disabled={page === 1}
+                      className="p-1 rounded hover:bg-gray-200 disabled:opacity-50"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                      disabled={page >= totalPages}
+                      className="p-1 rounded hover:bg-gray-200 disabled:opacity-50"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
-          )}
 
-          {/* Edit Panel */}
-          {showEditPanel && (
-            <div className="flex-1 bg-white border-l overflow-auto">
-              <div className="sticky top-0 bg-white border-b px-4 py-3 flex items-center justify-between z-10">
+            {/* Edit Panel */}
+            {showEditPanel ? (
+              <div className="flex-1 bg-white border-l overflow-auto">
+                <div className="sticky top-0 bg-white border-b px-4 py-3 flex items-center justify-between z-10">
                 <h2 className="font-semibold">
                   {editingItem ? `Edit ${activeTab.slice(0, -1)}` : `New ${activeTab.slice(0, -1)}`}
                 </h2>
@@ -1488,14 +1403,49 @@ export default function AdminDashboard() {
                         />
                       </div>
                     </div>
-                    <div>
+                    <div className="relative">
                       <label className="block text-sm font-medium text-gray-700 mb-1">Venue</label>
                       <input
                         type="text"
                         value={editForm.venue_name || ''}
-                        onChange={(e) => setEditForm({ ...editForm, venue_name: e.target.value })}
-                        className="w-full px-3 py-2 border rounded-lg"
+                        onChange={(e) => {
+                          setEditForm({ ...editForm, venue_name: e.target.value });
+                          setVenueSearch(e.target.value);
+                        }}
+                        onFocus={() => venueSearch.length >= 2 && setShowVenueDropdown(true)}
+                        onBlur={() => setTimeout(() => setShowVenueDropdown(false), 200)}
+                        className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"
+                        placeholder="Type to search venues..."
                       />
+                      {showVenueDropdown && venueSuggestions.length > 0 && (
+                        <div className="absolute z-50 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-auto">
+                          {venueSuggestions.map((venue: any) => (
+                            <button
+                              key={venue.id}
+                              type="button"
+                              onClick={() => {
+                                setEditForm({
+                                  ...editForm,
+                                  venue_name: venue.name,
+                                  venue_city: venue.city || editForm.venue_city,
+                                  venue_country: venue.country || editForm.venue_country,
+                                  venue_address: venue.address || editForm.venue_address,
+                                  venue_id: venue.id
+                                });
+                                setShowVenueDropdown(false);
+                                setVenueSearch('');
+                              }}
+                              className="w-full px-3 py-2 text-left hover:bg-indigo-50 flex items-center gap-2 border-b last:border-0"
+                            >
+                              <Building2 className="w-4 h-4 text-gray-400" />
+                              <div>
+                                <p className="text-sm font-medium">{venue.name}</p>
+                                <p className="text-xs text-gray-500">{venue.city}, {venue.country}</p>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
@@ -1526,15 +1476,70 @@ export default function AdminDashboard() {
                         className="w-full px-3 py-2 border rounded-lg"
                       />
                     </div>
-                    <div>
+                    <div className="relative">
                       <label className="block text-sm font-medium text-gray-700 mb-1">Artists</label>
-                      <input
-                        type="text"
-                        value={editForm.artists || ''}
-                        onChange={(e) => setEditForm({ ...editForm, artists: e.target.value })}
-                        className="w-full px-3 py-2 border rounded-lg"
-                        placeholder="Comma-separated"
-                      />
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value={artistSearch}
+                          onChange={(e) => setArtistSearch(e.target.value)}
+                          onFocus={() => artistSearch.length >= 2 && setShowArtistDropdown(true)}
+                          onBlur={() => setTimeout(() => setShowArtistDropdown(false), 200)}
+                          className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"
+                          placeholder="Type to search artists..."
+                        />
+                        {showArtistDropdown && artistSuggestions.length > 0 && (
+                          <div className="absolute z-50 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-auto">
+                            {artistSuggestions.map((artist: any) => (
+                              <button
+                                key={artist.id}
+                                type="button"
+                                onClick={() => {
+                                  const currentArtists = editForm.artists ? editForm.artists.split(',').map((a: string) => a.trim()).filter(Boolean) : [];
+                                  if (!currentArtists.includes(artist.name)) {
+                                    currentArtists.push(artist.name);
+                                    setEditForm({ ...editForm, artists: currentArtists.join(', ') });
+                                  }
+                                  setArtistSearch('');
+                                  setShowArtistDropdown(false);
+                                }}
+                                className="w-full px-3 py-2 text-left hover:bg-indigo-50 flex items-center gap-2 border-b last:border-0"
+                              >
+                                {artist.image_url ? (
+                                  <img src={artist.image_url} alt="" className="w-6 h-6 rounded-full object-cover" />
+                                ) : (
+                                  <Music className="w-4 h-4 text-gray-400" />
+                                )}
+                                <span className="text-sm font-medium">{artist.name}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      {/* Selected artists display */}
+                      {editForm.artists && (
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {editForm.artists.split(',').map((artist: string, idx: number) => artist.trim() && (
+                            <span
+                              key={idx}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full text-xs"
+                            >
+                              {artist.trim()}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const currentArtists = editForm.artists.split(',').map((a: string) => a.trim()).filter(Boolean);
+                                  currentArtists.splice(idx, 1);
+                                  setEditForm({ ...editForm, artists: currentArtists.join(', ') });
+                                }}
+                                className="hover:text-indigo-900"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
@@ -1781,9 +1786,16 @@ export default function AdminDashboard() {
                 </button>
               </div>
             </div>
+          ) : (
+            <div className="flex-1 bg-gray-50 flex items-center justify-center">
+              <div className="text-center text-gray-500">
+                <Calendar className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                <p>Select an item to view details</p>
+                <p className="text-sm mt-1">or click "Add" to create new</p>
+              </div>
+            </div>
           )}
-        </div>
-          </>
+          </div>
         )}
       </main>
     </div>
