@@ -1,9 +1,10 @@
 version: '3.8'
 
 services:
-  puppeteer-service:
-    build: .
-    container_name: ra-scraper-service-v2
+  # Event Scraper Service
+  event-scraper:
+    build: ./backend/scraper
+    container_name: event-scraper-service
     ports:
       - "3007:3001"
       - "9225:9223"
@@ -12,26 +13,32 @@ services:
       - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
       - PROXY_SERVER=${PROXY_SERVER:-}
-      - DATABASE_URL=postgresql://rauser:rapassword@postgres:5432/raevents
+      - DATABASE_URL=postgresql://eventuser:eventpass@postgres:5432/socialevents
+      # For migration script
+      - PGHOST=postgres
+      - PGPORT=5432
+      - PGUSER=eventuser
+      - PGPASSWORD=eventpass
+      - PGDATABASE=socialevents
     depends_on:
       postgres:
         condition: service_healthy
     restart: unless-stopped
 
+  # PostgreSQL Database
   postgres:
     image: postgres:15-alpine
-    container_name: ra-postgres
+    container_name: socialevents-db
     environment:
-      - POSTGRES_USER=rauser
-      - POSTGRES_PASSWORD=rapassword
-      - POSTGRES_DB=raevents
+      - POSTGRES_USER=eventuser
+      - POSTGRES_PASSWORD=eventpass
+      - POSTGRES_DB=socialevents
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
       - "5433:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U rauser -d raevents"]
+      test: ["CMD-SHELL", "pg_isready -U eventuser -d socialevents"]
       interval: 5s
       timeout: 5s
       retries: 5

@@ -1,7 +1,7 @@
 {
-    "name": "ra-scraper-service",
+    "name": "event-scraper-service",
     "version": "1.0.0",
-    "description": "Puppeteer service for scraping RA events",
+    "description": "Event scraper service for Social Events platform",
     "main": "server.js",
     "scripts": {
         "start": "node server.js"

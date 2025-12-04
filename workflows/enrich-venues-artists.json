@@ -1,5 +1,5 @@
 {
-  "name": "RA Enrich Venues & Artists",
+  "name": "Enrich Venues & Artists",
   "nodes": [
     {
       "parameters": {
