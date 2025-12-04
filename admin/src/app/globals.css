@@ -95,3 +95,37 @@ body {
   margin: 0;
   min-width: 250px;
 }
+
+/* Fix leaflet z-index issues */
+.leaflet-container {
+  z-index: 1 !important;
+}
+
+.leaflet-pane {
+  z-index: 1 !important;
+}
+
+.leaflet-top,
+.leaflet-bottom {
+  z-index: 1000 !important;
+}
+
+.leaflet-control {
+  z-index: 1000 !important;
+}
+
+/* Custom cluster styles */
+.custom-cluster-icon {
+  background: transparent !important;
+  border: none !important;
+}
+
+.city-marker {
+  background: transparent !important;
+  border: none !important;
+}
+
+.custom-marker {
+  background: transparent !important;
+  border: none !important;
+}

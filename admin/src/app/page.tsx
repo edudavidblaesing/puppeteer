@@ -489,13 +489,19 @@ export default function AdminDashboard() {
           {(view === 'map' || view === 'split') && (
             <div
               className={clsx(
-                'bg-white rounded-lg shadow overflow-hidden',
+                'bg-white rounded-lg shadow overflow-hidden relative',
                 view === 'map' ? 'h-[calc(100vh-220px)]' : 'h-[600px]',
                 view === 'split' && 'lg:order-2'
               )}
+              style={{ zIndex: 1 }}
             >
               <EventMap
                 events={filteredEvents}
+                selectedCity={cityFilter}
+                onCityChange={(city) => {
+                  setCityFilter(city);
+                  setPage(1);
+                }}
                 onEventClick={(event) => {
                   setSelectedEvent(event);
                   setIsModalOpen(true);
