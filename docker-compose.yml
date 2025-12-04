@@ -6,14 +6,36 @@ services:
     container_name: ra-scraper-service-v2
     ports:
       - "3007:3001"
-      - "9225:9222"
+      - "9225:9223"
     environment:
       - PORT=3001
       - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
-      # Puppeteer specific envs just in case, though Dockerfile sets them
+      - PROXY_SERVER=${PROXY_SERVER:-}
+      - DATABASE_URL=postgresql://rauser:rapassword@postgres:5432/raevents
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
-    # Mount the app directory for easier development (optional, but useful)
-    # volumes:
-    #   - ./:/usr/src/app
-    #   - /usr/src/app/node_modules
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: ra-postgres
+    environment:
+      - POSTGRES_USER=rauser
+      - POSTGRES_PASSWORD=rapassword
+      - POSTGRES_DB=raevents
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rauser -d raevents"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

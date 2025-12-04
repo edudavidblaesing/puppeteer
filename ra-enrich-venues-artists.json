@@ -1,0 +1,309 @@
+{
+  "name": "RA Enrich Venues & Artists",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 6
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Every 6 Hours",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [120, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://pptr.davidblaesing.com/db/enrich/stats",
+        "options": {}
+      },
+      "id": "get-stats",
+      "name": "Check Enrichment Stats",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [340, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "venues-missing",
+              "leftValue": "={{ $json.venues_missing }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-venues-missing",
+      "name": "Venues Missing?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [560, 180]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "artists-missing",
+              "leftValue": "={{ $json.artists_missing }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-artists-missing",
+      "name": "Artists Missing?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [560, 420]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://pptr.davidblaesing.com/db/venues/enrich",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{ \"limit\": 50 }",
+        "options": {}
+      },
+      "id": "enrich-venues",
+      "name": "Enrich Venues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [780, 80]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://pptr.davidblaesing.com/db/artists/enrich",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{ \"limit\": 100 }",
+        "options": {}
+      },
+      "id": "enrich-artists",
+      "name": "Enrich Artists",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [780, 320]
+    },
+    {
+      "parameters": {
+        "url": "http://pptr.davidblaesing.com/db/enrich/stats",
+        "options": {}
+      },
+      "id": "get-final-stats",
+      "name": "Get Final Stats",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1000, 200]
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "results",
+        "include": "allFieldsExcept",
+        "fieldsToExclude": "headers, statusCode, statusMessage"
+      },
+      "id": "aggregate-results",
+      "name": "Aggregate Results",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [1220, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Combine all results into a summary\nconst results = $input.all();\n\nlet venueResults = null;\nlet artistResults = null;\nlet finalStats = null;\n\nfor (const item of results) {\n  const data = item.json.results || [];\n  for (const r of data) {\n    if (r.venues_saved !== undefined && r.fetched === undefined) {\n      finalStats = r;\n    } else if (r.missing !== undefined && r.saved !== undefined) {\n      // It's an enrichment result\n      if (r.notFound !== undefined) {\n        artistResults = r;\n      } else {\n        venueResults = r;\n      }\n    }\n  }\n}\n\nreturn [{\n  json: {\n    timestamp: new Date().toISOString(),\n    venues_enriched: venueResults?.saved || 0,\n    venues_fetched: venueResults?.fetched || 0,\n    artists_enriched: artistResults?.saved || 0,\n    artists_fetched: artistResults?.fetched || 0,\n    artists_not_found: artistResults?.notFound || 0,\n    final_stats: finalStats || {},\n    status: 'completed'\n  }\n}];"
+      },
+      "id": "build-summary",
+      "name": "Build Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1440, 200]
+    },
+    {
+      "parameters": {},
+      "id": "no-venues-needed",
+      "name": "No Venues Needed",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [780, 180]
+    },
+    {
+      "parameters": {},
+      "id": "no-artists-needed",
+      "name": "No Artists Needed",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [780, 420]
+    }
+  ],
+  "connections": {
+    "Every 6 Hours": {
+      "main": [
+        [
+          {
+            "node": "Check Enrichment Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Enrichment Stats": {
+      "main": [
+        [
+          {
+            "node": "Venues Missing?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Artists Missing?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Venues Missing?": {
+      "main": [
+        [
+          {
+            "node": "Enrich Venues",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Venues Needed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Artists Missing?": {
+      "main": [
+        [
+          {
+            "node": "Enrich Artists",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Artists Needed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enrich Venues": {
+      "main": [
+        [
+          {
+            "node": "Get Final Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enrich Artists": {
+      "main": [
+        [
+          {
+            "node": "Get Final Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "No Venues Needed": {
+      "main": [
+        [
+          {
+            "node": "Get Final Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "No Artists Needed": {
+      "main": [
+        [
+          {
+            "node": "Get Final Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Final Stats": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Results": {
+      "main": [
+        [
+          {
+            "node": "Build Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0
+}

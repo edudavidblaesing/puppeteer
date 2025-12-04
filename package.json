@@ -12,6 +12,7 @@
         "puppeteer-extra": "^3.3.6",
         "puppeteer-extra-plugin-stealth": "^2.11.2",
         "node-telegram-bot-api": "^0.64.0",
-        "body-parser": "^1.20.2"
+        "body-parser": "^1.20.2",
+        "pg": "^8.11.3"
     }
 }

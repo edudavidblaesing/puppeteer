@@ -1,0 +1,152 @@
+{
+    "name": "RA Events Scraper - Berlin & Hamburg",
+    "nodes": [
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "ra-city-scraper",
+                "responseMode": "responseNode",
+                "options": {}
+            },
+            "id": "webhook-trigger",
+            "name": "Webhook Trigger",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 2,
+            "position": [
+                -400,
+                300
+            ]
+        },
+        {
+            "parameters": {},
+            "id": "manual-trigger",
+            "name": "Manual Trigger",
+            "type": "n8n-nodes-base.manualTrigger",
+            "typeVersion": 1,
+            "position": [
+                -400,
+                100
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "// Define cities to sync\nconst cities = ['Berlin', 'Hamburg'];\n\nreturn cities.map(city => ({\n  json: {\n    city: city,\n    limit: 100\n  }\n}));"
+            },
+            "id": "set-cities",
+            "name": "Set Cities",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                -200,
+                200
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "https://pptr.davidblaesing.com/db/sync",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ JSON.stringify({ city: $json.city, limit: $json.limit }) }}",
+                "options": {}
+            },
+            "id": "sync-to-database",
+            "name": "Sync to Database",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                0,
+                200
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "// Aggregate results from all cities\nconst results = $input.all().map(item => item.json);\n\nconst summary = {\n  success: true,\n  cities: results.length,\n  totalFetched: results.reduce((sum, r) => sum + (r.fetched || 0), 0),\n  totalInserted: results.reduce((sum, r) => sum + (r.inserted || 0), 0),\n  totalUpdated: results.reduce((sum, r) => sum + (r.updated || 0), 0),\n  details: results\n};\n\nreturn [{ json: summary }];"
+            },
+            "id": "aggregate-results",
+            "name": "Aggregate Results",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                200,
+                200
+            ]
+        },
+        {
+            "parameters": {
+                "respondWith": "json",
+                "responseBody": "={{ JSON.stringify($json) }}",
+                "options": {}
+            },
+            "id": "respond-with-data",
+            "name": "Respond with Data",
+            "type": "n8n-nodes-base.respondToWebhook",
+            "typeVersion": 1,
+            "position": [
+                400,
+                200
+            ]
+        }
+    ],
+    "connections": {
+        "Webhook Trigger": {
+            "main": [
+                [
+                    {
+                        "node": "Set Cities",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Manual Trigger": {
+            "main": [
+                [
+                    {
+                        "node": "Set Cities",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Set Cities": {
+            "main": [
+                [
+                    {
+                        "node": "Sync to Database",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Sync to Database": {
+            "main": [
+                [
+                    {
+                        "node": "Aggregate Results",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Aggregate Results": {
+            "main": [
+                [
+                    {
+                        "node": "Respond with Data",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "settings": {
+        "callerPolicy": "workflowsFromSameOwner",
+        "availableInMCP": false
+    }
+}

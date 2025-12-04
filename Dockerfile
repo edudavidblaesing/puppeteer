@@ -1,8 +1,8 @@
 FROM node:20-slim
 
-# Install chromium and fonts to support major charsets
+# Install chromium, socat (for port forwarding), and fonts
 RUN apt-get update \
-    && apt-get install -y wget gnupg chromium fonts-ipafont-gothic fonts-wqy-zenhei fonts-thai-tlwg fonts-kacst fonts-freefont-ttf libxss1 \
+    && apt-get install -y wget gnupg chromium socat fonts-ipafont-gothic fonts-wqy-zenhei fonts-thai-tlwg fonts-kacst fonts-freefont-ttf libxss1 \
     --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
@@ -24,12 +24,14 @@ RUN npm install
 # Copy source
 COPY . .
 
+# Make entrypoint executable
+RUN chmod +x entrypoint.sh
+
 # Fix permissions for the 'node' user
 RUN chown -R node:node /usr/src/app
 
-USER node
-
 EXPOSE 3001
 EXPOSE 9222
+EXPOSE 9223
 
-CMD [ "node", "server.js" ]
+CMD [ "./entrypoint.sh" ]
