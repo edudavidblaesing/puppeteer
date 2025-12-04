@@ -4,6 +4,11 @@ const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const TelegramBot = require('node-telegram-bot-api');
 const bodyParser = require('body-parser');
 const { Pool } = require('pg');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+
+// JWT Secret
+const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
 
 // Configure stealth plugin with all evasions
 const stealth = StealthPlugin();
@@ -48,6 +53,180 @@ function requireApiKey(req, res, next) {
 
 // Apply API key auth to all /db/* routes
 app.use('/db', requireApiKey);
+
+// ============================================
+// AUTHENTICATION ENDPOINTS
+// ============================================
+
+// Initialize default admin user if none exists
+async function initializeDefaultAdmin() {
+    try {
+        // Check if admin_users table exists
+        const tableExists = await pool.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'admin_users'
+            );
+        `);
+        
+        if (!tableExists.rows[0].exists) {
+            // Create admin_users table
+            await pool.query(`
+                CREATE TABLE admin_users (
+                    id SERIAL PRIMARY KEY,
+                    username VARCHAR(255) UNIQUE NOT NULL,
+                    password_hash VARCHAR(255) NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            `);
+            console.log('Created admin_users table');
+        }
+        
+        // Check if any admin users exist
+        const userCount = await pool.query('SELECT COUNT(*) FROM admin_users');
+        
+        if (parseInt(userCount.rows[0].count) === 0) {
+            // Create default admin user
+            const defaultPassword = 'TheKey4u';
+            const passwordHash = await bcrypt.hash(defaultPassword, 10);
+            
+            await pool.query(
+                'INSERT INTO admin_users (username, password_hash) VALUES ($1, $2)',
+                ['admin', passwordHash]
+            );
+            console.log('Created default admin user (username: admin)');
+        }
+    } catch (error) {
+        console.error('Error initializing default admin:', error.message);
+    }
+}
+
+// Call init on startup
+initializeDefaultAdmin();
+
+// JWT token verification middleware
+function verifyToken(req, res, next) {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+    
+    if (!token) {
+        return res.status(401).json({ error: 'No token provided' });
+    }
+    
+    try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        req.user = decoded;
+        next();
+    } catch (error) {
+        return res.status(403).json({ error: 'Invalid or expired token' });
+    }
+}
+
+// Login endpoint
+app.post('/auth/login', async (req, res) => {
+    try {
+        const { username, password } = req.body;
+        
+        if (!username || !password) {
+            return res.status(400).json({ error: 'Username and password are required' });
+        }
+        
+        // Find user
+        const result = await pool.query(
+            'SELECT id, username, password_hash FROM admin_users WHERE username = $1',
+            [username]
+        );
+        
+        if (result.rows.length === 0) {
+            return res.status(401).json({ error: 'Invalid credentials' });
+        }
+        
+        const user = result.rows[0];
+        
+        // Verify password
+        const validPassword = await bcrypt.compare(password, user.password_hash);
+        
+        if (!validPassword) {
+            return res.status(401).json({ error: 'Invalid credentials' });
+        }
+        
+        // Generate JWT token
+        const token = jwt.sign(
+            { id: user.id, username: user.username },
+            JWT_SECRET,
+            { expiresIn: '24h' }
+        );
+        
+        res.json({
+            success: true,
+            token,
+            user: { id: user.id, username: user.username }
+        });
+    } catch (error) {
+        console.error('Login error:', error);
+        res.status(500).json({ error: 'Login failed' });
+    }
+});
+
+// Check auth status endpoint
+app.get('/auth/check', verifyToken, (req, res) => {
+    res.json({
+        success: true,
+        user: { id: req.user.id, username: req.user.username }
+    });
+});
+
+// Logout endpoint (client-side token removal, but we can log it)
+app.post('/auth/logout', verifyToken, (req, res) => {
+    // In a more complete implementation, you might want to blacklist the token
+    res.json({ success: true, message: 'Logged out successfully' });
+});
+
+// Change password endpoint
+app.post('/auth/change-password', verifyToken, async (req, res) => {
+    try {
+        const { currentPassword, newPassword } = req.body;
+        
+        if (!currentPassword || !newPassword) {
+            return res.status(400).json({ error: 'Current and new password are required' });
+        }
+        
+        if (newPassword.length < 6) {
+            return res.status(400).json({ error: 'New password must be at least 6 characters' });
+        }
+        
+        // Get current user
+        const result = await pool.query(
+            'SELECT password_hash FROM admin_users WHERE id = $1',
+            [req.user.id]
+        );
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        
+        // Verify current password
+        const validPassword = await bcrypt.compare(currentPassword, result.rows[0].password_hash);
+        
+        if (!validPassword) {
+            return res.status(401).json({ error: 'Current password is incorrect' });
+        }
+        
+        // Hash new password and update
+        const newHash = await bcrypt.hash(newPassword, 10);
+        
+        await pool.query(
+            'UPDATE admin_users SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+            [newHash, req.user.id]
+        );
+        
+        res.json({ success: true, message: 'Password changed successfully' });
+    } catch (error) {
+        console.error('Change password error:', error);
+        res.status(500).json({ error: 'Failed to change password' });
+    }
+});
 
 // Database connection
 const pool = new Pool({

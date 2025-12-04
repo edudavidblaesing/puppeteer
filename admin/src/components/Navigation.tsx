@@ -8,8 +8,11 @@ import {
   Building2,
   Globe,
   CloudDownload,
+  LogOut,
+  User,
 } from 'lucide-react';
 import clsx from 'clsx';
+import { useAuth } from '@/contexts/AuthContext';
 
 const navItems = [
   { href: '/events', label: 'Events', icon: Calendar },
@@ -21,11 +24,17 @@ const navItems = [
 
 export function Navigation() {
   const pathname = usePathname();
+  const { user, logout } = useAuth();
+
+  // Don't show navigation on login page
+  if (pathname === '/login') {
+    return null;
+  }
 
   return (
     <nav className="bg-white border-b px-4 py-2">
       <div className="flex items-center gap-1">
-        <Link href="/" className="font-bold text-lg text-indigo-600 mr-6">
+        <Link href="/events" className="font-bold text-lg text-indigo-600 mr-6">
           Event Admin
         </Link>
         {navItems.map((item) => {
@@ -47,6 +56,27 @@ export function Navigation() {
             </Link>
           );
         })}
+        
+        {/* Spacer */}
+        <div className="flex-1" />
+        
+        {/* User info and logout */}
+        {user && (
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <User className="w-4 h-4" />
+              <span>{user.username}</span>
+            </div>
+            <button
+              onClick={logout}
+              className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-600 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors"
+              title="Sign out"
+            >
+              <LogOut className="w-4 h-4" />
+              Logout
+            </button>
+          </div>
+        )}
       </div>
     </nav>
   );

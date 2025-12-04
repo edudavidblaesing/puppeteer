@@ -71,11 +71,12 @@ import { MiniBarChart, MiniAreaChart, StatCard, RecentActivity } from '@/compone
 type ActiveTab = 'events' | 'artists' | 'venues' | 'cities' | 'scrape';
 type DataSource = 'main' | 'scraped';
 
-interface AdminDashboardProps {
+export interface AdminDashboardProps {
   initialTab?: ActiveTab;
 }
 
-export default function AdminDashboard({ initialTab }: AdminDashboardProps = {}) {
+export default function AdminDashboard(props: AdminDashboardProps) {
+  const { initialTab } = props;
   const router = useRouter();
   const pathname = usePathname();
   
