@@ -12,6 +12,28 @@ puppeteer.use(stealth);
 const app = express();
 app.use(bodyParser.json());
 
+// CORS middleware - allow admin dashboard
+app.use((req, res, next) => {
+    const allowedOrigins = [
+        'https://eventadmin.davidblaesing.com',
+        'http://localhost:3000',
+        'http://localhost:3008'
+    ];
+    const origin = req.headers.origin;
+    if (allowedOrigins.includes(origin)) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+    }
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-api-key, Authorization');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    
+    // Handle preflight requests
+    if (req.method === 'OPTIONS') {
+        return res.status(200).end();
+    }
+    next();
+});
+
 // API Key authentication middleware
 const API_KEY = process.env.API_KEY || 'default-dev-key-change-in-production';
 
