@@ -39,7 +39,11 @@ export async function updateEvent(id: string, data: Partial<Event>) {
     headers,
     body: JSON.stringify(data),
   });
-  if (!response.ok) throw new Error('Failed to update event');
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    console.error('Update event error:', response.status, errorData);
+    throw new Error(errorData.error || `Failed to update event (${response.status})`);
+  }
   return response.json();
 }
 
@@ -58,7 +62,11 @@ export async function publishEvents(ids: string[], publish: boolean) {
     headers,
     body: JSON.stringify({ ids, publish }),
   });
-  if (!response.ok) throw new Error('Failed to update publish status');
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    console.error('Publish events error:', response.status, errorData);
+    throw new Error(errorData.error || `Failed to update publish status (${response.status})`);
+  }
   return response.json();
 }
 
