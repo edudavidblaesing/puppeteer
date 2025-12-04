@@ -3823,7 +3823,7 @@ async function refreshUnifiedArtist(unifiedId) {
 
 // Match scraped events to unified events or create new ones
 async function matchAndLinkEvents(options = {}) {
-    const { dryRun = false, minConfidence = 0.7 } = options;
+    const { dryRun = false, minConfidence = 0.6 } = options;
     
     // Get unlinked scraped events
     const unlinkedResult = await pool.query(`
@@ -3836,23 +3836,27 @@ async function matchAndLinkEvents(options = {}) {
     `);
     
     const unlinked = unlinkedResult.rows;
-    let matched = 0, created = 0;
+    let matched = 0, created = 0, merged = 0;
     const results = [];
     
     for (const scraped of unlinked) {
-        // Try to find matching unified event
+        // Try to find matching unified event - use broader matching criteria
         const potentialMatches = await pool.query(`
             SELECT ue.*, 
                    (SELECT array_agg(se.source_code) FROM event_source_links esl 
                     JOIN scraped_events se ON se.id = esl.scraped_event_id 
-                    WHERE esl.unified_event_id = ue.id) as existing_sources
+                    WHERE esl.unified_event_id = ue.id) as existing_sources,
+                   (SELECT array_agg(se.title) FROM event_source_links esl 
+                    JOIN scraped_events se ON se.id = esl.scraped_event_id 
+                    WHERE esl.unified_event_id = ue.id) as source_titles
             FROM unified_events ue
             WHERE ue.date = $1
             AND (
                 LOWER(ue.venue_city) = LOWER($2) 
                 OR LOWER(ue.venue_name) ILIKE $3
+                OR LOWER($4) ILIKE '%' || LOWER(SUBSTRING(ue.venue_name, 1, 10)) || '%'
             )
-        `, [scraped.date, scraped.venue_city, `%${scraped.venue_name}%`]);
+        `, [scraped.date, scraped.venue_city, `%${scraped.venue_name?.substring(0, 15) || ''}%`, scraped.venue_name || '']);
         
         let bestMatch = null;
         let bestScore = 0;
@@ -3861,16 +3865,50 @@ async function matchAndLinkEvents(options = {}) {
             // Skip if already linked from same source
             if (potential.existing_sources?.includes(scraped.source_code)) continue;
             
-            // Calculate match score
-            const titleScore = stringSimilarity(scraped.title, potential.title);
-            const venueScore = stringSimilarity(scraped.venue_name, potential.venue_name);
+            // Calculate match score - check against unified title AND all source titles
+            let titleScore = stringSimilarity(scraped.title || '', potential.title || '');
             
-            // Weighted average
-            const score = (titleScore * 0.6) + (venueScore * 0.4);
+            // Also check against source titles for better matching
+            if (potential.source_titles) {
+                for (const srcTitle of potential.source_titles) {
+                    const srcScore = stringSimilarity(scraped.title || '', srcTitle || '');
+                    if (srcScore > titleScore) titleScore = srcScore;
+                }
+            }
+            
+            const venueScore = stringSimilarity(scraped.venue_name || '', potential.venue_name || '');
+            
+            // Weighted average - title is more important
+            const score = (titleScore * 0.7) + (venueScore * 0.3);
             
             if (score > bestScore && score >= minConfidence) {
                 bestScore = score;
                 bestMatch = potential;
+            }
+        }
+        
+        // If no unified match, check other scraped events (already linked) for potential duplicate
+        if (!bestMatch) {
+            const similarScraped = await pool.query(`
+                SELECT se.*, esl.unified_event_id
+                FROM scraped_events se
+                JOIN event_source_links esl ON esl.scraped_event_id = se.id
+                WHERE se.date = $1
+                AND se.id != $2
+                AND (LOWER(se.venue_city) = LOWER($3) OR LOWER(se.venue_name) ILIKE $4)
+                LIMIT 50
+            `, [scraped.date, scraped.id, scraped.venue_city, `%${scraped.venue_name?.substring(0, 15) || ''}%`]);
+            
+            for (const other of similarScraped.rows) {
+                const titleScore = stringSimilarity(scraped.title || '', other.title || '');
+                const venueScore = stringSimilarity(scraped.venue_name || '', other.venue_name || '');
+                const score = (titleScore * 0.7) + (venueScore * 0.3);
+                
+                if (score >= minConfidence && score > bestScore) {
+                    // Found a matching scraped event - link to same unified event
+                    bestScore = score;
+                    bestMatch = { id: other.unified_event_id, title: other.title };
+                }
             }
         }
         
@@ -3935,7 +3973,58 @@ async function matchAndLinkEvents(options = {}) {
         }
     }
     
-    return { processed: unlinked.length, matched, created, results: results.slice(0, 20) };
+    // After matching, deduplicate unified events that look similar
+    if (!dryRun) {
+        const dedupeResult = await deduplicateUnifiedEvents();
+        merged = dedupeResult.merged;
+    }
+    
+    return { processed: unlinked.length, matched, created, merged, results: results.slice(0, 20) };
+}
+
+// Deduplicate unified events that have the same date/venue and similar titles
+async function deduplicateUnifiedEvents() {
+    let merged = 0;
+    
+    // Find potential duplicates
+    const duplicates = await pool.query(`
+        SELECT ue1.id as id1, ue2.id as id2, ue1.title as title1, ue2.title as title2,
+               ue1.venue_name, ue1.date
+        FROM unified_events ue1
+        JOIN unified_events ue2 ON ue1.date = ue2.date 
+            AND LOWER(ue1.venue_city) = LOWER(ue2.venue_city)
+            AND ue1.id < ue2.id
+        WHERE (
+            LOWER(ue1.venue_name) = LOWER(ue2.venue_name)
+            OR similarity(LOWER(ue1.venue_name), LOWER(ue2.venue_name)) > 0.6
+        )
+        LIMIT 100
+    `);
+    
+    for (const dup of duplicates.rows) {
+        const titleSim = stringSimilarity(dup.title1 || '', dup.title2 || '');
+        
+        if (titleSim >= 0.6) {
+            // Merge: move all links from id2 to id1, delete id2
+            console.log(`Merging duplicate events: "${dup.title1}" and "${dup.title2}" (similarity: ${titleSim.toFixed(2)})`);
+            
+            // Update links to point to id1
+            await pool.query(`
+                UPDATE event_source_links 
+                SET unified_event_id = $1 
+                WHERE unified_event_id = $2
+            `, [dup.id1, dup.id2]);
+            
+            // Delete the duplicate unified event
+            await pool.query(`DELETE FROM unified_events WHERE id = $1`, [dup.id2]);
+            
+            // Refresh the surviving unified event
+            await refreshUnifiedEvent(dup.id1);
+            merged++;
+        }
+    }
+    
+    return { merged };
 }
 
 // Match scraped venues to unified venues
@@ -4102,7 +4191,7 @@ app.post('/scrape/ticketmaster', async (req, res) => {
 // Run matching algorithm
 app.post('/scrape/match', async (req, res) => {
     try {
-        const { dryRun = false, minConfidence = 0.7 } = req.body;
+        const { dryRun = false, minConfidence = 0.6 } = req.body;
         
         const eventResult = await matchAndLinkEvents({ dryRun, minConfidence });
         const venueResult = await matchAndLinkVenues({ dryRun, minConfidence: 0.8 });
@@ -4115,6 +4204,21 @@ app.post('/scrape/match', async (req, res) => {
         });
     } catch (error) {
         console.error('Match error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Deduplicate unified events manually
+app.post('/scrape/deduplicate', async (req, res) => {
+    try {
+        const result = await deduplicateUnifiedEvents();
+        res.json({
+            success: true,
+            merged: result.merged,
+            message: `Merged ${result.merged} duplicate events`
+        });
+    } catch (error) {
+        console.error('Deduplication error:', error);
         res.status(500).json({ error: error.message });
     }
 });
