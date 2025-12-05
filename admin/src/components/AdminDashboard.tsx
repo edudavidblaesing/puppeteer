@@ -28,6 +28,7 @@ import {
   CheckCircle,
   XCircle,
   Clock,
+  RotateCcw,
   AlertTriangle,
   Ticket,
 } from 'lucide-react';
@@ -1757,163 +1758,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
 
                 <div className="flex-1 overflow-y-auto p-4 space-y-4">
                   {/* Source References Section - show linked scraped sources */}
-                  {editingItem && activeTab === 'events' && (
-                    <div className="bg-indigo-50 dark:bg-gray-800/50 rounded-lg p-4 border-2 border-indigo-200 dark:border-gray-700">
-                      <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
-                        <Layers className="w-4 h-4 text-indigo-600 dark:text-gray-400" />
-                        Linked Sources ({sourceReferences.length})
-                      </h3>
-                      {sourceReferences.length === 0 ? (
-                        <p className="text-sm text-gray-500 italic">No linked scraped sources found for this event.</p>
-                      ) : (
-                        <>
-                          {/* Sources with badge + Use all button inline */}
-                          {(() => {
-                            // Group by source_code, keeping unique content_urls
-                            const groupedSources = sourceReferences.reduce((acc: Record<string, any[]>, source: any) => {
-                              const key = source.source_code || 'unknown';
-                              if (!acc[key]) acc[key] = [];
-                              // Only add if content_url is unique within this source
-                              const isDuplicate = acc[key].some((s: any) => s.content_url === source.content_url);
-                              if (!isDuplicate) acc[key].push(source);
-                              return acc;
-                            }, {} as Record<string, any[]>);
 
-                            return (
-                              <div className="space-y-2">
-                                {Object.entries(groupedSources).map(([sourceCode, sources]) => (
-                                  <div key={sourceCode} className="flex items-center gap-2 flex-wrap">
-                                    {/* Source links */}
-                                    {sources.map((source: any, idx: number) => (
-                                      <a
-                                        key={`${sourceCode}-${idx}`}
-                                        href={source.content_url}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className={clsx(
-                                          'px-2 py-1 rounded text-xs font-medium inline-flex items-center gap-1 hover:opacity-80 transition-opacity',
-                                          sourceCode === 'original' ? 'bg-green-100 text-green-700' :
-                                            (sourceCode !== 'ra' && sourceCode !== 'ticketmaster') ? 'bg-gray-100 text-gray-700' : ''
-                                        )}
-                                      >
-                                        {sourceCode === 'ra' ? (
-                                          <img src="/ra-logo.jpg" alt="RA" className="h-4 w-auto rounded-sm" />
-                                        ) : sourceCode === 'ticketmaster' ? (
-                                          <img src="/ticketmaster-logo.png" alt="TM" className="h-4 w-auto rounded-sm" />
-                                        ) : (
-                                          sourceCode?.toUpperCase()
-                                        )}
-                                        {source.title && <span className="opacity-70">: {source.title?.substring(0, 20)}{source.title?.length > 20 ? '...' : ''}</span>}
-                                        <ExternalLink className="w-3 h-3" />
-                                      </a>
-                                    ))}
-                                    {/* Use all button for this source */}
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        const source = sources[0]; // Use first source of this type
-                                        const sourceData = { ...source };
-                                        delete sourceData.id;
-                                        delete sourceData.source_code;
-                                        delete sourceData.source_event_id;
-                                        delete sourceData.confidence;
-                                        delete sourceData.is_primary;
-                                        delete sourceData.raw_data;
-                                        delete sourceData.created_at;
-                                        delete sourceData.updated_at;
-                                        const updates: Record<string, any> = {};
-                                        Object.entries(sourceData).forEach(([key, value]) => {
-                                          if (value !== null && value !== undefined && value !== '') {
-                                            // Format date to YYYY-MM-DD for form input
-                                            if (key === 'date' && value) {
-                                              const d = new Date(value as string | number | Date);
-                                              if (!isNaN(d.getTime())) {
-                                                updates[key] = d.toISOString().split('T')[0];
-                                              }
-                                              // Format start_time to HH:MM for form input
-                                            } else if (key === 'start_time' && typeof value === 'string') {
-                                              if (value.includes('T')) {
-                                                const timePart = value.split('T')[1];
-                                                updates[key] = timePart ? timePart.substring(0, 5) : '';
-                                              } else {
-                                                updates[key] = value.substring(0, 5);
-                                              }
-                                            } else {
-                                              updates[key] = value;
-                                            }
-                                          }
-                                        });
-                                        setEditForm({ ...editForm, ...updates });
-                                      }}
-                                      className={clsx(
-                                        'px-2 py-1 rounded text-xs font-medium border',
-                                        sourceCode === 'ra' ? 'border-red-300 text-red-700 hover:bg-red-50' :
-                                          sourceCode === 'ticketmaster' ? 'border-blue-300 text-blue-700 hover:bg-blue-50' :
-                                            'border-gray-300 text-gray-700 hover:bg-gray-50'
-                                      )}
-                                    >
-                                      Use all from
-                                      {sourceCode === 'ra' ? (
-                                        <img src="/ra-logo.jpg" alt="RA" className="h-3 w-auto rounded-sm inline-block ml-1" />
-                                      ) : sourceCode === 'ticketmaster' ? (
-                                        <img src="/ticketmaster-logo.png" alt="TM" className="h-3 w-auto rounded-sm inline-block ml-1" />
-                                      ) : (
-                                        sourceCode?.toUpperCase()
-                                      )}
-                                    </button>
-                                  </div>
-                                ))}
-                              </div>
-                            );
-                          })()}
-
-                          {/* Field-level source options */}
-                          <div className="space-y-2 max-h-48 overflow-auto mt-4">
-                            {['title', 'description', 'venue_name', 'flyer_front', 'content_url'].map((field) => {
-                              const sources = sourceReferences.filter((s: any) => s[field] && s[field] !== editForm[field]);
-                              if (sources.length === 0) return null;
-
-                              return (
-                                <div key={field} className="bg-white rounded p-2 border">
-                                  <div className="text-xs font-medium text-gray-500 mb-1.5 capitalize">{field.replace(/_/g, ' ')}</div>
-                                  <div className="space-y-1">
-                                    {sources.map((source: any, sidx: number) => (
-                                      <div key={sidx} className="flex items-start gap-2 text-xs">
-                                        {source.source_code === 'ra' ? (
-                                          <img src="/ra-logo.jpg" alt="RA" className="h-4 w-auto rounded-sm flex-shrink-0 mt-0.5" title="Resident Advisor" />
-                                        ) : source.source_code === 'ticketmaster' ? (
-                                          <img src="/ticketmaster-logo.png" alt="TM" className="h-4 w-auto rounded-sm flex-shrink-0 mt-0.5" title="Ticketmaster" />
-                                        ) : (
-                                          <span className={clsx(
-                                            'px-1 py-0.5 rounded font-medium uppercase flex-shrink-0 mt-0.5',
-                                            'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300'
-                                          )}>
-                                            {source.source_code?.substring(0, 2).toUpperCase()}
-                                          </span>
-                                        )}
-                                        <span className="text-gray-700 flex-1 break-words line-clamp-2">
-                                          {field === 'flyer_front' || field === 'content_url'
-                                            ? <a href={source[field]} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline truncate block">{source[field]?.substring(0, 40)}...</a>
-                                            : source[field]?.substring(0, 80)}{source[field]?.length > 80 ? '...' : ''}
-                                        </span>
-                                        <button
-                                          type="button"
-                                          onClick={() => setEditForm({ ...editForm, [field]: source[field] })}
-                                          className="text-indigo-600 hover:text-indigo-800 font-medium flex-shrink-0"
-                                        >
-                                          Use
-                                        </button>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  )}
 
                   {/* Event form */}
                   {activeTab === 'events' && (
@@ -1995,6 +1840,44 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                           onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
                           className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
                         />
+                        {/* Inline source suggestions for Title */}
+                        {sourceReferences.length > 0 && (
+                          <div className="mt-1 flex flex-wrap gap-2">
+                            {sourceReferences
+                              .filter((s: any) => s.title && s.title !== editForm.title)
+                              .map((source: any, idx: number) => (
+                                <button
+                                  key={`title-${idx}`}
+                                  type="button"
+                                  onClick={() => setEditForm({ ...editForm, title: source.title })}
+                                  className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-700 rounded text-xs text-left transition-colors group max-w-full"
+                                  title={`Use title from ${source.source_code?.toUpperCase()}`}
+                                >
+                                  {source.source_code === 'ra' ? (
+                                    <img src="/ra-logo.jpg" alt="RA" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                  ) : source.source_code === 'ticketmaster' ? (
+                                    <img src="/ticketmaster-logo.png" alt="TM" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                  ) : (
+                                    <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
+                                  )}
+                                  <span className="truncate max-w-[200px] text-gray-600 dark:text-gray-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
+                                    {source.title}
+                                  </span>
+                                </button>
+                              ))}
+                            {/* Reset to original if changed */}
+                            {editingItem && editingItem.title !== editForm.title && (
+                              <button
+                                type="button"
+                                onClick={() => setEditForm({ ...editForm, title: editingItem.title })}
+                                className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded text-xs text-gray-500 transition-colors"
+                              >
+                                <RotateCcw className="w-3 h-3" />
+                                Reset
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
                       <div className="grid grid-cols-2 gap-3">
                         <div>
@@ -2005,6 +1888,51 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                             onChange={(e) => setEditForm({ ...editForm, date: e.target.value })}
                             className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
                           />
+                          {/* Inline source suggestions for Date */}
+                          {sourceReferences.length > 0 && (
+                            <div className="mt-1 flex flex-wrap gap-2">
+                              {sourceReferences
+                                .filter((s: any) => s.date && s.date !== editForm.date)
+                                .map((source: any, idx: number) => {
+                                  // Format source date to YYYY-MM-DD
+                                  let dateStr = '';
+                                  try {
+                                    if (source.date) dateStr = new Date(source.date).toISOString().split('T')[0];
+                                  } catch (e) { return null; }
+
+                                  if (!dateStr || dateStr === editForm.date) return null;
+
+                                  return (
+                                    <button
+                                      key={`date-${idx}`}
+                                      type="button"
+                                      onClick={() => setEditForm({ ...editForm, date: dateStr })}
+                                      className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-700 rounded text-xs text-left transition-colors group"
+                                    >
+                                      {source.source_code === 'ra' ? (
+                                        <img src="/ra-logo.jpg" alt="RA" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                      ) : source.source_code === 'ticketmaster' ? (
+                                        <img src="/ticketmaster-logo.png" alt="TM" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                      ) : (
+                                        <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
+                                      )}
+                                      <span className="text-gray-600 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
+                                        {dateStr}
+                                      </span>
+                                    </button>
+                                  );
+                                })}
+                              {editingItem && editingItem.date !== editForm.date && (
+                                <button
+                                  type="button"
+                                  onClick={() => setEditForm({ ...editForm, date: editingItem.date })}
+                                  className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded text-xs text-gray-500 transition-colors"
+                                >
+                                  <RotateCcw className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
+                          )}
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Start Time</label>
@@ -2014,6 +1942,54 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                             onChange={(e) => setEditForm({ ...editForm, start_time: e.target.value })}
                             className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
                           />
+                          {/* Inline source suggestions for Time */}
+                          {sourceReferences.length > 0 && (
+                            <div className="mt-1 flex flex-wrap gap-2">
+                              {sourceReferences
+                                .filter((s: any) => {
+                                  if (!s.start_time) return false;
+                                  // Normalize time format
+                                  let timeStr = s.start_time;
+                                  if (timeStr.includes('T')) timeStr = timeStr.split('T')[1];
+                                  timeStr = timeStr.substring(0, 5);
+                                  return timeStr !== editForm.start_time;
+                                })
+                                .map((source: any, idx: number) => {
+                                  let timeStr = source.start_time;
+                                  if (timeStr.includes('T')) timeStr = timeStr.split('T')[1];
+                                  timeStr = timeStr.substring(0, 5);
+
+                                  return (
+                                    <button
+                                      key={`time-${idx}`}
+                                      type="button"
+                                      onClick={() => setEditForm({ ...editForm, start_time: timeStr })}
+                                      className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-700 rounded text-xs text-left transition-colors group"
+                                    >
+                                      {source.source_code === 'ra' ? (
+                                        <img src="/ra-logo.jpg" alt="RA" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                      ) : source.source_code === 'ticketmaster' ? (
+                                        <img src="/ticketmaster-logo.png" alt="TM" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                      ) : (
+                                        <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
+                                      )}
+                                      <span className="text-gray-600 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
+                                        {timeStr}
+                                      </span>
+                                    </button>
+                                  );
+                                })}
+                              {editingItem && editingItem.start_time !== editForm.start_time && (
+                                <button
+                                  type="button"
+                                  onClick={() => setEditForm({ ...editForm, start_time: editingItem.start_time })}
+                                  className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded text-xs text-gray-500 transition-colors"
+                                >
+                                  <RotateCcw className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
                       <div>
@@ -2071,6 +2047,42 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                                 </div>
                               </button>
                             ))}
+                          </div>
+                        )}
+                        {/* Inline source suggestions for Venue Name */}
+                        {sourceReferences.length > 0 && (
+                          <div className="mt-1 flex flex-wrap gap-2">
+                            {sourceReferences
+                              .filter((s: any) => s.venue_name && s.venue_name !== editForm.venue_name)
+                              .map((source: any, idx: number) => (
+                                <button
+                                  key={`venue-${idx}`}
+                                  type="button"
+                                  onClick={() => setEditForm({ ...editForm, venue_name: source.venue_name })}
+                                  className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-700 rounded text-xs text-left transition-colors group max-w-full"
+                                >
+                                  {source.source_code === 'ra' ? (
+                                    <img src="/ra-logo.jpg" alt="RA" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                  ) : source.source_code === 'ticketmaster' ? (
+                                    <img src="/ticketmaster-logo.png" alt="TM" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                  ) : (
+                                    <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
+                                  )}
+                                  <span className="truncate max-w-[200px] text-gray-600 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
+                                    {source.venue_name}
+                                  </span>
+                                </button>
+                              ))}
+                            {editingItem && editingItem.venue_name !== editForm.venue_name && (
+                              <button
+                                type="button"
+                                onClick={() => setEditForm({ ...editForm, venue_name: editingItem.venue_name })}
+                                className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded text-xs text-gray-500 transition-colors"
+                              >
+                                <RotateCcw className="w-3 h-3" />
+                                Reset
+                              </button>
+                            )}
                           </div>
                         )}
                       </div>
@@ -2195,6 +2207,42 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                           rows={3}
                           className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
                         />
+                        {/* Inline source suggestions for Description */}
+                        {sourceReferences.length > 0 && (
+                          <div className="mt-1 flex flex-wrap gap-2">
+                            {sourceReferences
+                              .filter((s: any) => s.description && s.description !== editForm.description)
+                              .map((source: any, idx: number) => (
+                                <button
+                                  key={`desc-${idx}`}
+                                  type="button"
+                                  onClick={() => setEditForm({ ...editForm, description: source.description })}
+                                  className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-700 rounded text-xs text-left transition-colors group max-w-full"
+                                >
+                                  {source.source_code === 'ra' ? (
+                                    <img src="/ra-logo.jpg" alt="RA" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                  ) : source.source_code === 'ticketmaster' ? (
+                                    <img src="/ticketmaster-logo.png" alt="TM" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                  ) : (
+                                    <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
+                                  )}
+                                  <span className="truncate max-w-[300px] text-gray-600 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
+                                    {source.description?.substring(0, 50)}...
+                                  </span>
+                                </button>
+                              ))}
+                            {editingItem && editingItem.description !== editForm.description && (
+                              <button
+                                type="button"
+                                onClick={() => setEditForm({ ...editForm, description: editingItem.description })}
+                                className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded text-xs text-gray-500 transition-colors"
+                              >
+                                <RotateCcw className="w-3 h-3" />
+                                Reset
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Event URL</label>
@@ -2204,6 +2252,42 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                           onChange={(e) => setEditForm({ ...editForm, content_url: e.target.value })}
                           className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
                         />
+                        {/* Inline source suggestions for URL */}
+                        {sourceReferences.length > 0 && (
+                          <div className="mt-1 flex flex-wrap gap-2">
+                            {sourceReferences
+                              .filter((s: any) => s.content_url && s.content_url !== editForm.content_url)
+                              .map((source: any, idx: number) => (
+                                <button
+                                  key={`url-${idx}`}
+                                  type="button"
+                                  onClick={() => setEditForm({ ...editForm, content_url: source.content_url })}
+                                  className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-700 rounded text-xs text-left transition-colors group max-w-full"
+                                >
+                                  {source.source_code === 'ra' ? (
+                                    <img src="/ra-logo.jpg" alt="RA" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                  ) : source.source_code === 'ticketmaster' ? (
+                                    <img src="/ticketmaster-logo.png" alt="TM" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                  ) : (
+                                    <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
+                                  )}
+                                  <span className="truncate max-w-[200px] text-gray-600 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
+                                    Link
+                                  </span>
+                                </button>
+                              ))}
+                            {editingItem && editingItem.content_url !== editForm.content_url && (
+                              <button
+                                type="button"
+                                onClick={() => setEditForm({ ...editForm, content_url: editingItem.content_url })}
+                                className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded text-xs text-gray-500 transition-colors"
+                              >
+                                <RotateCcw className="w-3 h-3" />
+                                Reset
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Flyer URL</label>
@@ -2213,6 +2297,42 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                           onChange={(e) => setEditForm({ ...editForm, flyer_front: e.target.value })}
                           className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
                         />
+                        {/* Inline source suggestions for Flyer */}
+                        {sourceReferences.length > 0 && (
+                          <div className="mt-1 flex flex-wrap gap-2">
+                            {sourceReferences
+                              .filter((s: any) => s.flyer_front && s.flyer_front !== editForm.flyer_front)
+                              .map((source: any, idx: number) => (
+                                <button
+                                  key={`flyer-${idx}`}
+                                  type="button"
+                                  onClick={() => setEditForm({ ...editForm, flyer_front: source.flyer_front })}
+                                  className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-700 rounded text-xs text-left transition-colors group"
+                                >
+                                  {source.source_code === 'ra' ? (
+                                    <img src="/ra-logo.jpg" alt="RA" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                  ) : source.source_code === 'ticketmaster' ? (
+                                    <img src="/ticketmaster-logo.png" alt="TM" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                  ) : (
+                                    <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
+                                  )}
+                                  <span className="text-gray-600 dark:text-gray-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
+                                    Use Image
+                                  </span>
+                                </button>
+                              ))}
+                            {editingItem && editingItem.flyer_front !== editForm.flyer_front && (
+                              <button
+                                type="button"
+                                onClick={() => setEditForm({ ...editForm, flyer_front: editingItem.flyer_front })}
+                                className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded text-xs text-gray-500 transition-colors"
+                              >
+                                <RotateCcw className="w-3 h-3" />
+                                Reset
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </>
                   )}
@@ -2226,7 +2346,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                           type="text"
                           value={editForm.name || ''}
                           onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
                         />
                       </div>
                       <div>
@@ -2235,7 +2355,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                           type="text"
                           value={editForm.country || ''}
                           onChange={(e) => setEditForm({ ...editForm, country: e.target.value })}
-                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
                         />
                       </div>
                       <div>
@@ -2244,7 +2364,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                           type="url"
                           value={editForm.content_url || ''}
                           onChange={(e) => setEditForm({ ...editForm, content_url: e.target.value })}
-                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
                         />
                       </div>
                       <div>
@@ -2253,7 +2373,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                           type="url"
                           value={editForm.image_url || ''}
                           onChange={(e) => setEditForm({ ...editForm, image_url: e.target.value })}
-                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
                         />
                       </div>
                     </>
@@ -2268,7 +2388,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                           type="text"
                           value={editForm.name || ''}
                           onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
                         />
                       </div>
                       <div>
@@ -2277,7 +2397,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                           type="text"
                           value={editForm.address || ''}
                           onChange={(e) => setEditForm({ ...editForm, address: e.target.value })}
-                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
                         />
                       </div>
                       <div className="grid grid-cols-2 gap-3">
@@ -2286,7 +2406,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                           <select
                             value={editForm.city || ''}
                             onChange={(e) => setEditForm({ ...editForm, city: e.target.value })}
-                            className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                            className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
                           >
                             <option value="">Select city...</option>
                             {citiesDropdown.map((city) => (
@@ -2304,7 +2424,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                           <select
                             value={editForm.country || ''}
                             onChange={(e) => setEditForm({ ...editForm, country: e.target.value })}
-                            className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                            className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
                           >
                             <option value="">Select country...</option>
                             {countriesDropdown.map((country) => (
@@ -2326,7 +2446,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                             step="any"
                             value={editForm.latitude || ''}
                             onChange={(e) => setEditForm({ ...editForm, latitude: e.target.value })}
-                            className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                            className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
                           />
                         </div>
                         <div>
@@ -2336,7 +2456,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                             step="any"
                             value={editForm.longitude || ''}
                             onChange={(e) => setEditForm({ ...editForm, longitude: e.target.value })}
-                            className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                            className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
                           />
                         </div>
                       </div>
@@ -2346,7 +2466,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                           type="url"
                           value={editForm.content_url || ''}
                           onChange={(e) => setEditForm({ ...editForm, content_url: e.target.value })}
-                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
                         />
                       </div>
                     </>
@@ -2361,7 +2481,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                           type="text"
                           value={editForm.name || ''}
                           onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
                         />
                       </div>
                       <div>
@@ -2370,7 +2490,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                           type="text"
                           value={editForm.country || ''}
                           onChange={(e) => setEditForm({ ...editForm, country: e.target.value })}
-                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
                         />
                       </div>
                       <div className="grid grid-cols-2 gap-3">
@@ -2381,7 +2501,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                             step="any"
                             value={editForm.latitude || ''}
                             onChange={(e) => setEditForm({ ...editForm, latitude: e.target.value })}
-                            className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                            className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
                           />
                         </div>
                         <div>
@@ -2391,7 +2511,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                             step="any"
                             value={editForm.longitude || ''}
                             onChange={(e) => setEditForm({ ...editForm, longitude: e.target.value })}
-                            className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                            className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
                           />
                         </div>
                       </div>
@@ -2401,7 +2521,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                           type="text"
                           value={editForm.timezone || ''}
                           onChange={(e) => setEditForm({ ...editForm, timezone: e.target.value })}
-                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
                           placeholder="Europe/Berlin"
                         />
                       </div>
@@ -2451,7 +2571,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                 />
               </div>
             ) : (
-              <div className="flex-1 bg-gray-50 flex items-center justify-center">
+              <div className="flex-1 bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
                 <div className="text-center text-gray-500">
                   <Calendar className="w-12 h-12 mx-auto mb-4 opacity-50" />
                   <p>Select an item to view details</p>
