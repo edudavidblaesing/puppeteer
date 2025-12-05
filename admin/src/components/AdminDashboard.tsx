@@ -228,17 +228,39 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
 
   // Update dropdown positions when showing
   useEffect(() => {
-    if (showVenueDropdown && venueInputRef.current) {
-      const rect = venueInputRef.current.getBoundingClientRect();
-      setVenueDropdownPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
-    }
+    const updateVenuePos = () => {
+      if (showVenueDropdown && venueInputRef.current) {
+        const rect = venueInputRef.current.getBoundingClientRect();
+        setVenueDropdownPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+      }
+    };
+
+    updateVenuePos();
+    window.addEventListener('scroll', updateVenuePos, true);
+    window.addEventListener('resize', updateVenuePos);
+
+    return () => {
+      window.removeEventListener('scroll', updateVenuePos, true);
+      window.removeEventListener('resize', updateVenuePos);
+    };
   }, [showVenueDropdown]);
 
   useEffect(() => {
-    if (showArtistDropdown && artistInputRef.current) {
-      const rect = artistInputRef.current.getBoundingClientRect();
-      setArtistDropdownPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
-    }
+    const updateArtistPos = () => {
+      if (showArtistDropdown && artistInputRef.current) {
+        const rect = artistInputRef.current.getBoundingClientRect();
+        setArtistDropdownPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+      }
+    };
+
+    updateArtistPos();
+    window.addEventListener('scroll', updateArtistPos, true);
+    window.addEventListener('resize', updateArtistPos);
+
+    return () => {
+      window.removeEventListener('scroll', updateArtistPos, true);
+      window.removeEventListener('resize', updateArtistPos);
+    };
   }, [showArtistDropdown]);
 
   // Load events data
@@ -2216,10 +2238,10 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                             className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-gray-500 bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
                             placeholder="Type to search venues..."
                           />
-                          {showVenueDropdown && venueSuggestions.length > 0 && (
+                          {showVenueDropdown && venueSuggestions.length > 0 && venueDropdownPos.width > 0 && (
                             <div 
                               className="fixed z-[9999] bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-lg shadow-lg max-h-48 overflow-auto"
-                              style={{ top: venueDropdownPos.top, left: venueDropdownPos.left, width: venueDropdownPos.width }}
+                              style={{ top: `${venueDropdownPos.top}px`, left: `${venueDropdownPos.left}px`, width: `${venueDropdownPos.width}px` }}
                             >
                               {venueSuggestions.map((venue: any) => (
                                 <button
@@ -2434,10 +2456,10 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                               className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-gray-500 bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
                               placeholder="Type to search artists..."
                             />
-                            {showArtistDropdown && artistSuggestions.length > 0 && (
+                            {showArtistDropdown && artistSuggestions.length > 0 && artistDropdownPos.width > 0 && (
                               <div 
                                 className="fixed z-[9999] bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-lg shadow-lg max-h-48 overflow-auto"
-                                style={{ top: artistDropdownPos.top, left: artistDropdownPos.left, width: artistDropdownPos.width }}
+                                style={{ top: `${artistDropdownPos.top}px`, left: `${artistDropdownPos.left}px`, width: `${artistDropdownPos.width}px` }}
                               >
                                 {artistSuggestions.map((artist: any) => (
                                   <button
