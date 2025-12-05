@@ -1564,7 +1564,12 @@ app.get('/db/events', async (req, res) => {
             paramIndex++;
         }
         
-        query += ` ORDER BY date ASC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+        // Order by: today/upcoming events first (by date ASC), then past events (by date DESC)
+        query += ` ORDER BY 
+            CASE WHEN date >= CURRENT_DATE THEN 0 ELSE 1 END,
+            CASE WHEN date >= CURRENT_DATE THEN date END ASC,
+            CASE WHEN date < CURRENT_DATE THEN date END DESC
+            LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
         params.push(parseInt(limit), parseInt(offset));
         
         const result = await pool.query(query, params);
@@ -2361,38 +2366,8 @@ app.get('/db/artists/:id', async (req, res) => {
     }
 });
 
-// List all venues from database
-app.get('/db/venues', async (req, res) => {
-    try {
-        const { city, limit = 100 } = req.query;
-        let query = 'SELECT * FROM venues';
-        const params = [];
-        
-        if (city) {
-            query += ' WHERE LOWER(city) = LOWER($1)';
-            params.push(city);
-        }
-        
-        query += ' ORDER BY name LIMIT $' + (params.length + 1);
-        params.push(parseInt(limit));
-        
-        const result = await pool.query(query, params);
-        res.json({ data: result.rows, total: result.rows.length });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// List all artists from database
-app.get('/db/artists', async (req, res) => {
-    try {
-        const { limit = 100 } = req.query;
-        const result = await pool.query('SELECT * FROM artists ORDER BY name LIMIT $1', [parseInt(limit)]);
-        res.json({ data: result.rows, total: result.rows.length });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
+// NOTE: venues list endpoint moved to VENUES CRUD API section below
+// NOTE: artists list endpoint moved to ARTISTS CRUD API section below
 
 // Enrich venues - fetch missing venues from RA API and save to database
 app.post('/db/venues/enrich', async (req, res) => {
@@ -4376,6 +4351,23 @@ async function refreshMainEvent(eventId) {
     console.log(`[Refresh] Updated main event ${eventId} with merged data from ${sourcesResult.rows.length} sources`);
 }
 
+// Auto-reject past events that are still pending
+async function autoRejectPastEvents() {
+    const result = await pool.query(`
+        UPDATE events 
+        SET publish_status = 'rejected', updated_at = CURRENT_TIMESTAMP
+        WHERE date < CURRENT_DATE 
+        AND publish_status = 'pending'
+        RETURNING id, title, date
+    `);
+    
+    if (result.rows.length > 0) {
+        console.log(`[Auto-Reject] Rejected ${result.rows.length} past events`);
+    }
+    
+    return { rejected: result.rows.length, events: result.rows.slice(0, 10) };
+}
+
 // Match scraped events to main events or create new ones
 // Uses main 'events' table with 'event_scraped_links' for source tracking
 async function matchAndLinkEvents(options = {}) {
@@ -4535,9 +4527,12 @@ async function matchAndLinkEvents(options = {}) {
         }
     }
     
-    console.log(`[Match] Processed ${unlinked.length}: ${created} created, ${matched} matched`);
+    // Auto-reject past events after processing
+    const autoRejectResult = await autoRejectPastEvents();
     
-    return { processed: unlinked.length, matched, created, results: results.slice(0, 20) };
+    console.log(`[Match] Processed ${unlinked.length}: ${created} created, ${matched} matched, ${autoRejectResult.rejected} auto-rejected`);
+    
+    return { processed: unlinked.length, matched, created, autoRejected: autoRejectResult.rejected, results: results.slice(0, 20) };
 }
 
 // Deduplicate main events that have the same date/venue and similar titles
@@ -4769,6 +4764,20 @@ app.post('/scrape/match', async (req, res) => {
         });
     } catch (error) {
         console.error('Match error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Manually trigger auto-reject of past events
+app.post('/scrape/auto-reject', async (req, res) => {
+    try {
+        const result = await autoRejectPastEvents();
+        res.json({
+            success: true,
+            ...result
+        });
+    } catch (error) {
+        console.error('Auto-reject error:', error);
         res.status(500).json({ error: error.message });
     }
 });
