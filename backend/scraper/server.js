@@ -1541,7 +1541,7 @@ app.post('/db/events', async (req, res) => {
 // Get events from database
 app.get('/db/events', async (req, res) => {
     try {
-        const { city, search, limit = 100, offset = 0, from, to, status } = req.query;
+        const { city, search, limit = 100, offset = 0, from, to, status, showPast } = req.query;
 
         let query = `
             SELECT e.*, 
@@ -1596,21 +1596,25 @@ app.get('/db/events', async (req, res) => {
             paramIndex++;
         }
 
+        if (showPast !== 'true') {
+            query += ` AND e.date >= CURRENT_DATE - INTERVAL '3 days'`;
+        }
+
         // Order by: 
-        // 1. Date: today first, then upcoming, then past
-        // 2. Status: pending > approved > rejected (pending first for review)
-        // 3. Within each group: upcoming by date ASC, past by date DESC
+        // 1. Date Group: Live (Today) > Upcoming > Past
+        // 2. Status: Approved > Pending > Rejected
+        // 3. Within Date Group: Upcoming ASC, Past DESC
         query += ` ORDER BY 
-            CASE e.publish_status
-                WHEN 'pending' THEN 0
-                WHEN 'approved' THEN 1
-                WHEN 'rejected' THEN 2
-                ELSE 3
-            END,
             CASE 
                 WHEN e.date::date = CURRENT_DATE THEN 0
                 WHEN e.date::date > CURRENT_DATE THEN 1
                 ELSE 2
+            END,
+            CASE e.publish_status
+                WHEN 'approved' THEN 0
+                WHEN 'pending' THEN 1
+                WHEN 'rejected' THEN 2
+                ELSE 3
             END,
             CASE WHEN e.date::date >= CURRENT_DATE THEN e.date END ASC,
             CASE WHEN e.date::date < CURRENT_DATE THEN e.date END DESC
@@ -1792,6 +1796,94 @@ app.get('/db/events/:id', async (req, res) => {
     } catch (error) {
         console.error('Database error:', error);
         res.status(500).json({ error: error.message });
+    }
+});
+
+// Get recently updated events (updated_at > created_at + 1 minute, within last 7 days)
+app.get('/db/events/recent-updates', async (req, res) => {
+    try {
+        const { limit = 50 } = req.query;
+
+        const result = await pool.query(`
+            SELECT e.*, 
+                   COALESCE(
+                       (SELECT json_agg(json_build_object(
+                           'id', se.id,
+                           'source_code', se.source_code,
+                           'title', se.title,
+                           'confidence', esl.match_confidence
+                       ))
+                       FROM event_scraped_links esl
+                       JOIN scraped_events se ON se.id = esl.scraped_event_id
+                       WHERE esl.event_id = e.id),
+                       '[]'
+                   ) as source_references
+            FROM events e
+            WHERE e.updated_at > e.created_at + INTERVAL '1 minute'
+              AND e.updated_at > NOW() - INTERVAL '7 days'
+              AND e.date >= CURRENT_DATE
+            ORDER BY e.updated_at DESC
+            LIMIT $1
+        `, [parseInt(limit)]);
+
+        res.json({
+            data: result.rows,
+            total: result.rows.length
+        });
+    } catch (error) {
+        console.error('Error fetching recent updates:', error);
+        res.json({ data: [], total: 0 });
+    }
+});
+
+// Get all events for map (minimal data, no pagination limit)
+app.get('/db/events/map', async (req, res) => {
+    try {
+        const { city, status, showPast } = req.query;
+
+        let query = `
+            SELECT e.id, e.title, e.date, e.start_time, e.end_time,
+                   e.venue_name, e.venue_city, e.venue_country,
+                   e.latitude, e.longitude, e.publish_status, e.flyer_front,
+                   COALESCE(
+                       (SELECT json_agg(json_build_object(
+                           'source_code', se.source_code
+                       ))
+                       FROM event_scraped_links esl
+                       JOIN scraped_events se ON se.id = esl.scraped_event_id
+                       WHERE esl.event_id = e.id),
+                       '[]'
+                   ) as source_references
+            FROM events e
+            WHERE 1=1`;
+        const params = [];
+        let paramIndex = 1;
+
+        if (city) {
+            query += ` AND LOWER(e.venue_city) = LOWER($${paramIndex})`;
+            params.push(city);
+            paramIndex++;
+        }
+        if (status && status !== 'all') {
+            query += ` AND e.publish_status = $${paramIndex}`;
+            params.push(status);
+            paramIndex++;
+        }
+        if (showPast !== 'true') {
+            query += ` AND e.date >= CURRENT_DATE - INTERVAL '1 day'`;
+        }
+
+        query += ` ORDER BY e.date ASC LIMIT 2000`;
+
+        const result = await pool.query(query, params);
+
+        res.json({
+            data: result.rows,
+            total: result.rows.length
+        });
+    } catch (error) {
+        console.error('Error fetching map events:', error);
+        res.json({ data: [], total: 0 });
     }
 });
 
@@ -3673,10 +3765,20 @@ app.get('/db/venues', async (req, res) => {
 // Create venue (goes through unified flow)
 app.post('/db/venues', async (req, res) => {
     try {
-        const { name, address, city, country, blurb, content_url, latitude, longitude, capacity } = req.body;
+        let { name, address, city, country, blurb, content_url, latitude, longitude, capacity } = req.body;
 
         if (!name) {
             return res.status(400).json({ error: 'Name is required' });
+        }
+
+        // Geocode if address is present but coordinates are missing
+        if ((!latitude || !longitude) && address) {
+            console.log(`[Create Venue] Missing coordinates for "${name}", attempting to geocode address: ${address}`);
+            const coords = await geocodeAddress(address, city, country);
+            if (coords) {
+                latitude = coords.latitude;
+                longitude = coords.longitude;
+            }
         }
 
         // Save as 'original' source entry
@@ -3723,11 +3825,38 @@ app.patch('/db/venues/:id', async (req, res) => {
         if (isUUID) {
             // Get the original source entry for this unified venue
             const originalLink = await pool.query(`
-                SELECT sv.id as scraped_id, sv.source_venue_id 
+                SELECT sv.id as scraped_id, sv.source_venue_id, sv.address, sv.city, sv.country, sv.latitude, sv.longitude
                 FROM venue_source_links vsl
                 JOIN scraped_venues sv ON sv.id = vsl.scraped_venue_id
                 WHERE vsl.unified_venue_id = $1 AND sv.source_code = 'original'
             `, [id]);
+
+            // Geocode if needed
+            if (originalLink.rows.length > 0) {
+                const current = originalLink.rows[0];
+                const effectiveAddress = updates.address || current.address;
+                const effectiveCity = updates.city || current.city;
+                const effectiveCountry = updates.country || current.country;
+
+                const hasCoords = (updates.latitude && updates.longitude) || (current.latitude && current.longitude);
+                const addressChanged = updates.address && updates.address !== current.address;
+
+                if ((!hasCoords || addressChanged) && effectiveAddress) {
+                    console.log(`[Update Venue] Resolving coordinates for unified venue ${id}`);
+                    const coords = await geocodeAddress(effectiveAddress, effectiveCity, effectiveCountry);
+                    if (coords) {
+                        updates.latitude = coords.latitude;
+                        updates.longitude = coords.longitude;
+                    }
+                }
+            } else if (updates.address && (!updates.latitude || !updates.longitude)) {
+                // New original entry being created, but missing coords
+                const coords = await geocodeAddress(updates.address, updates.city, updates.country);
+                if (coords) {
+                    updates.latitude = coords.latitude;
+                    updates.longitude = coords.longitude;
+                }
+            }
 
             let scrapedId;
             if (originalLink.rows.length > 0) {
@@ -3778,6 +3907,28 @@ app.patch('/db/venues/:id', async (req, res) => {
             res.json({ success: true, venue: result.rows[0] });
         } else {
             // Legacy: update old venues table directly
+
+            // Fetch current venue to check for missing coordinates
+            const currentVenueRes = await pool.query('SELECT * FROM venues WHERE id = $1', [id]);
+            if (currentVenueRes.rows.length > 0) {
+                const current = currentVenueRes.rows[0];
+                const effectiveAddress = updates.address || current.address;
+                const effectiveCity = updates.city || current.city;
+                const effectiveCountry = updates.country || current.country;
+
+                const hasCoords = (updates.latitude && updates.longitude) || (current.latitude && current.longitude);
+                const addressChanged = updates.address && updates.address !== current.address;
+
+                if ((!hasCoords || addressChanged) && effectiveAddress) {
+                    console.log(`[Update Venue] Resolving coordinates for legacy venue ${id}`);
+                    const coords = await geocodeAddress(effectiveAddress, effectiveCity, effectiveCountry);
+                    if (coords) {
+                        updates.latitude = coords.latitude;
+                        updates.longitude = coords.longitude;
+                    }
+                }
+            }
+
             const allowedFields = ['name', 'address', 'city', 'country', 'blurb', 'content_url', 'latitude', 'longitude'];
             const setClauses = [];
             const values = [];

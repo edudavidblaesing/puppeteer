@@ -178,7 +178,15 @@ export default function EventMap({
 
     L.control.zoom({ position: 'bottomright' }).addTo(map);
 
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+    // Detect dark mode and use appropriate tile layer
+    const isDarkMode = document.documentElement.classList.contains('dark') || 
+                       window.matchMedia('(prefers-color-scheme: dark)').matches;
+    
+    const tileUrl = isDarkMode 
+      ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+      : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+
+    L.tileLayer(tileUrl, {
       attribution: '© OSM © CARTO',
       subdomains: 'abcd',
       maxZoom: 19,

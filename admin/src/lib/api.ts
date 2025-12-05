@@ -16,6 +16,7 @@ export async function fetchEvents(params?: {
   offset?: number;
   from?: string;
   to?: string;
+  showPast?: boolean;
 }) {
   const searchParams = new URLSearchParams();
   if (params?.city) searchParams.set('city', params.city);
@@ -25,6 +26,7 @@ export async function fetchEvents(params?: {
   if (params?.offset) searchParams.set('offset', params.offset.toString());
   if (params?.from) searchParams.set('from', params.from);
   if (params?.to) searchParams.set('to', params.to);
+  if (params?.showPast) searchParams.set('showPast', 'true');
 
   const response = await fetch(`${API_URL}/db/events?${searchParams}`, { headers });
   if (!response.ok) throw new Error('Failed to fetch events');
@@ -90,6 +92,29 @@ export async function setPublishStatus(ids: string[], status: 'pending' | 'appro
 // Legacy function for backwards compatibility
 export async function publishEvents(ids: string[], publish: boolean) {
   return setPublishStatus(ids, publish ? 'approved' : 'pending');
+}
+
+// Fetch recently updated events
+export async function fetchRecentlyUpdatedEvents(limit: number = 50) {
+  const response = await fetch(`${API_URL}/db/events/recent-updates?limit=${limit}`, { headers });
+  if (!response.ok) throw new Error('Failed to fetch recent updates');
+  return response.json();
+}
+
+// Fetch all events for map (no pagination)
+export async function fetchMapEvents(params?: {
+  city?: string;
+  status?: string;
+  showPast?: boolean;
+}) {
+  const searchParams = new URLSearchParams();
+  if (params?.city) searchParams.set('city', params.city);
+  if (params?.status) searchParams.set('status', params.status);
+  if (params?.showPast) searchParams.set('showPast', 'true');
+
+  const response = await fetch(`${API_URL}/db/events/map?${searchParams}`, { headers });
+  if (!response.ok) throw new Error('Failed to fetch map events');
+  return response.json();
 }
 
 export async function syncEvents(city: string, limit: number = 100) {
@@ -163,7 +188,7 @@ export async function fetchCountries() {
 export async function fetchCitiesDropdown(country?: string) {
   const searchParams = new URLSearchParams();
   if (country) searchParams.set('country', country);
-  
+
   const response = await fetch(`${API_URL}/db/cities/dropdown?${searchParams}`, { headers });
   if (!response.ok) throw new Error('Failed to fetch cities dropdown');
   const result = await response.json();
@@ -173,10 +198,10 @@ export async function fetchCitiesDropdown(country?: string) {
 // Autocomplete search for venues
 export async function searchVenues(query: string, city?: string) {
   if (!query || query.length < 2) return [];
-  
+
   const searchParams = new URLSearchParams({ q: query });
   if (city) searchParams.set('city', city);
-  
+
   const response = await fetch(`${API_URL}/db/venues/search?${searchParams}`, { headers });
   if (!response.ok) throw new Error('Failed to search venues');
   const result = await response.json();
@@ -186,9 +211,9 @@ export async function searchVenues(query: string, city?: string) {
 // Autocomplete search for artists
 export async function searchArtists(query: string) {
   if (!query || query.length < 2) return [];
-  
+
   const searchParams = new URLSearchParams({ q: query });
-  
+
   const response = await fetch(`${API_URL}/db/artists/search?${searchParams}`, { headers });
   if (!response.ok) throw new Error('Failed to search artists');
   const result = await response.json();

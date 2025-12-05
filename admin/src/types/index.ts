@@ -21,6 +21,14 @@ export const EVENT_TYPES: { value: EventType; label: string; icon: string; color
   { value: 'listening', label: 'Listening', icon: '🎵', color: 'cyan' },
 ];
 
+// Source reference from scraped events
+export interface SourceReference {
+  id: string;
+  source_code: string;
+  title: string;
+  confidence?: number;
+}
+
 export interface Event {
   id: string;
   source_code: string;
@@ -46,6 +54,7 @@ export interface Event {
   longitude: number | null;
   created_at: string;
   updated_at: string;
+  source_references?: SourceReference[];
 }
 
 export interface Venue {
@@ -143,13 +152,13 @@ export interface DashboardStats {
 // Helper function to parse time from either "HH:mm:ss" or ISO timestamp format
 function parseTime(timeStr: string | null | undefined): [number, number] {
   if (!timeStr) return [0, 0];
-  
+
   // Check if it's an ISO timestamp (contains 'T')
   if (timeStr.includes('T')) {
     const date = new Date(timeStr);
     return [date.getHours(), date.getMinutes()];
   }
-  
+
   // Otherwise treat as "HH:mm" or "HH:mm:ss" format
   const parts = timeStr.split(':').map(Number);
   return [parts[0] || 0, parts[1] || 0];
@@ -161,24 +170,24 @@ export function getEventTiming(event: Event): EventTiming {
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const eventDate = new Date(event.date);
   const eventDateOnly = new Date(eventDate.getFullYear(), eventDate.getMonth(), eventDate.getDate());
-  
+
   // Parse start and end times if available
   const startTime = parseTime(event.start_time);
   const endTime = event.end_time ? parseTime(event.end_time) : [23, 59] as [number, number];
-  
+
   const eventStart = new Date(eventDateOnly);
   eventStart.setHours(startTime[0], startTime[1]);
-  
+
   const eventEnd = new Date(eventDateOnly);
   eventEnd.setHours(endTime[0], endTime[1]);
   // If end time is before start time, event ends next day
   if (endTime[0] < startTime[0]) {
     eventEnd.setDate(eventEnd.getDate() + 1);
   }
-  
+
   const threeDaysAgo = new Date(today);
   threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
-  
+
   if (now >= eventStart && now <= eventEnd) {
     return 'ongoing';
   } else if (eventDateOnly > today) {
@@ -198,24 +207,24 @@ export function sortEventsSmart(events: Event[]): Event[] {
     'recent': 2,
     'expired': 3
   };
-  
+
   const statusOrder: Record<PublishStatus, number> = {
-    'pending': 0,  // Needs review first
-    'approved': 1,
+    'approved': 0,
+    'pending': 1,
     'rejected': 2
   };
-  
+
   return [...events].sort((a, b) => {
-    // First sort by publish status
-    const statusA = statusOrder[a.publish_status || 'pending'];
-    const statusB = statusOrder[b.publish_status || 'pending'];
-    if (statusA !== statusB) return statusA - statusB;
-    
-    // Then by timing
+    // First sort by timing
     const timingA = timingOrder[getEventTiming(a)];
     const timingB = timingOrder[getEventTiming(b)];
     if (timingA !== timingB) return timingA - timingB;
-    
+
+    // Then by publish status
+    const statusA = statusOrder[a.publish_status || 'pending'];
+    const statusB = statusOrder[b.publish_status || 'pending'];
+    if (statusA !== statusB) return statusA - statusB;
+
     // Finally by date (ascending for upcoming, descending for past)
     const dateA = new Date(a.date).getTime();
     const dateB = new Date(b.date).getTime();
