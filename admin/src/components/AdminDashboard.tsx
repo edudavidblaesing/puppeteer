@@ -1923,7 +1923,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
 
               {/* Edit Panel */}
               {showEditPanel ? (
-                <div className="flex-1 bg-white dark:bg-gray-900 border-l dark:border-gray-800 flex flex-col h-full max-h-full overflow-hidden">
+                <div className="flex-1 bg-white dark:bg-gray-900 border-l dark:border-gray-800 flex flex-col h-full max-h-full">
                   <div className="bg-white dark:bg-gray-900 border-b dark:border-gray-800 px-4 py-3 flex items-center justify-between flex-shrink-0">
                     <h2 className="font-semibold text-gray-900 dark:text-gray-100">
                       {editingItem ? `Edit ${activeTab.slice(0, -1)}` : `New ${activeTab.slice(0, -1)}`}
