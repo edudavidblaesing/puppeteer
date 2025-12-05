@@ -1639,8 +1639,11 @@ app.get('/db/events', async (req, res) => {
 // Get single event with source references
 app.get('/db/events/:id', async (req, res) => {
     try {
+        const eventId = req.params.id;
+        console.log(`[Single Event] Fetching event: ${eventId}`);
+        
         // Get the event
-        const result = await pool.query('SELECT * FROM events WHERE id = $1', [req.params.id]);
+        const result = await pool.query('SELECT * FROM events WHERE id = $1', [eventId]);
         
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Event not found' });
@@ -1650,17 +1653,21 @@ app.get('/db/events/:id', async (req, res) => {
         
         // Get source references from event_scraped_links
         try {
-            const sourceRefs = await pool.query(`
+            const sourceQuery = `
                 SELECT se.id, se.source_code, se.source_event_id, se.title, se.date, 
                        se.start_time, se.content_url, se.flyer_front, se.venue_name, 
-                       se.price_info, esl.match_confidence as confidence, esl.is_primary
+                       se.description, se.price_info, esl.match_confidence as confidence, esl.is_primary
                 FROM event_scraped_links esl
                 JOIN scraped_events se ON se.id = esl.scraped_event_id
                 WHERE esl.event_id = $1
-            `, [req.params.id]);
+            `;
+            console.log(`[Single Event] Source query for event_id: ${eventId}`);
+            const sourceRefs = await pool.query(sourceQuery, [eventId]);
+            console.log(`[Single Event] Found ${sourceRefs.rows.length} source references`);
             
             event.source_references = sourceRefs.rows;
         } catch (e) {
+            console.error(`[Single Event] Error fetching source refs:`, e);
             event.source_references = [];
         }
         
