@@ -1888,18 +1888,23 @@ app.get('/db/cities', async (req, res) => {
     try {
         const { search, limit = 100, offset = 0 } = req.query;
         
-        // First try to get from cities table
-        let query = `SELECT * FROM cities WHERE 1=1`;
+        // Get cities with dynamically calculated event and venue counts
+        let query = `
+            SELECT c.*,
+                   COALESCE((SELECT COUNT(*) FROM events e WHERE LOWER(e.venue_city) = LOWER(c.name)), 0) as event_count,
+                   COALESCE((SELECT COUNT(DISTINCT venue_name) FROM events e WHERE LOWER(e.venue_city) = LOWER(c.name)), 0) as venue_count
+            FROM cities c
+            WHERE 1=1`;
         const params = [];
         let paramIdx = 1;
         
         if (search) {
-            query += ` AND (LOWER(name) LIKE $${paramIdx} OR LOWER(country) LIKE $${paramIdx})`;
+            query += ` AND (LOWER(c.name) LIKE $${paramIdx} OR LOWER(c.country) LIKE $${paramIdx})`;
             params.push(`%${search.toLowerCase()}%`);
             paramIdx++;
         }
         
-        query += ` ORDER BY event_count DESC NULLS LAST, name ASC`;
+        query += ` ORDER BY (SELECT COUNT(*) FROM events e WHERE LOWER(e.venue_city) = LOWER(c.name)) DESC NULLS LAST, c.name ASC`;
         query += ` LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`;
         params.push(parseInt(limit), parseInt(offset));
         
@@ -2614,41 +2619,101 @@ app.get('/db/enrich/stats', async (req, res) => {
 // ============================================
 
 // List artists with search and pagination
+// Falls back to scraped_artists if artists table is empty
 app.get('/db/artists', async (req, res) => {
     try {
         const { search, limit = 50, offset = 0, sort = 'name', order = 'asc' } = req.query;
         
-        let query = 'SELECT * FROM artists WHERE 1=1';
-        const params = [];
-        let paramIndex = 1;
+        // First check if artists table has data
+        const artistCountCheck = await pool.query('SELECT COUNT(*) FROM artists');
+        const hasArtists = parseInt(artistCountCheck.rows[0].count) > 0;
         
-        if (search) {
-            query += ` AND (name ILIKE $${paramIndex} OR country ILIKE $${paramIndex})`;
-            params.push(`%${search}%`);
-            paramIndex++;
+        if (hasArtists) {
+            // Use artists table
+            let query = 'SELECT * FROM artists WHERE 1=1';
+            const params = [];
+            let paramIndex = 1;
+            
+            if (search) {
+                query += ` AND (name ILIKE $${paramIndex} OR country ILIKE $${paramIndex})`;
+                params.push(`%${search}%`);
+                paramIndex++;
+            }
+            
+            // Get total count
+            const countQuery = query.replace('SELECT *', 'SELECT COUNT(*)');
+            const countResult = await pool.query(countQuery, params);
+            const total = parseInt(countResult.rows[0].count);
+            
+            // Add sorting and pagination
+            const validSorts = ['name', 'country', 'created_at', 'updated_at'];
+            const sortCol = validSorts.includes(sort) ? sort : 'name';
+            const sortOrder = order.toLowerCase() === 'desc' ? 'DESC' : 'ASC';
+            
+            query += ` ORDER BY ${sortCol} ${sortOrder} LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
+            params.push(parseInt(limit), parseInt(offset));
+            
+            const result = await pool.query(query, params);
+            
+            res.json({
+                data: result.rows,
+                total,
+                limit: parseInt(limit),
+                offset: parseInt(offset)
+            });
+        } else {
+            // Fall back to scraped_artists table
+            let query = `
+                SELECT DISTINCT ON (LOWER(name))
+                    id,
+                    name,
+                    country,
+                    image_url,
+                    content_url,
+                    source_code,
+                    created_at,
+                    updated_at
+                FROM scraped_artists
+                WHERE name IS NOT NULL AND name != ''
+            `;
+            const params = [];
+            let paramIndex = 1;
+            
+            if (search) {
+                query += ` AND (name ILIKE $${paramIndex} OR country ILIKE $${paramIndex})`;
+                params.push(`%${search}%`);
+                paramIndex++;
+            }
+            
+            query += ` ORDER BY LOWER(name), created_at DESC`;
+            
+            // Get total count
+            const countResult = await pool.query(`
+                SELECT COUNT(DISTINCT LOWER(name)) FROM scraped_artists 
+                WHERE name IS NOT NULL AND name != ''
+                ${search ? `AND (name ILIKE $1 OR country ILIKE $1)` : ''}
+            `, search ? [`%${search}%`] : []);
+            const total = parseInt(countResult.rows[0].count);
+            
+            // Add pagination to wrapped query
+            const sortOrder = order.toLowerCase() === 'desc' ? 'DESC' : 'ASC';
+            const finalQuery = `
+                SELECT * FROM (${query}) artists
+                ORDER BY name ${sortOrder}
+                LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+            `;
+            params.push(parseInt(limit), parseInt(offset));
+            
+            const result = await pool.query(finalQuery, params);
+            
+            res.json({
+                data: result.rows,
+                total,
+                limit: parseInt(limit),
+                offset: parseInt(offset),
+                source: 'scraped_artists'
+            });
         }
-        
-        // Get total count
-        const countQuery = query.replace('SELECT *', 'SELECT COUNT(*)');
-        const countResult = await pool.query(countQuery, params);
-        const total = parseInt(countResult.rows[0].count);
-        
-        // Add sorting and pagination
-        const validSorts = ['name', 'country', 'created_at', 'updated_at'];
-        const sortCol = validSorts.includes(sort) ? sort : 'name';
-        const sortOrder = order.toLowerCase() === 'desc' ? 'DESC' : 'ASC';
-        
-        query += ` ORDER BY ${sortCol} ${sortOrder} LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
-        params.push(parseInt(limit), parseInt(offset));
-        
-        const result = await pool.query(query, params);
-        
-        res.json({
-            data: result.rows,
-            total,
-            limit: parseInt(limit),
-            offset: parseInt(offset)
-        });
     } catch (error) {
         console.error('Error fetching artists:', error);
         res.status(500).json({ error: error.message });
@@ -2989,47 +3054,130 @@ app.post('/db/cities/refresh-stats', async (req, res) => {
 // ============================================
 
 // List venues with search and pagination
+// Falls back to extracting unique venues from events if venues table is empty
 app.get('/db/venues', async (req, res) => {
     try {
         const { search, city, limit = 50, offset = 0, sort = 'name', order = 'asc' } = req.query;
         
-        let query = 'SELECT * FROM venues WHERE 1=1';
-        const params = [];
-        let paramIndex = 1;
+        // First check if venues table has data
+        const venueCountCheck = await pool.query('SELECT COUNT(*) FROM venues');
+        const hasVenues = parseInt(venueCountCheck.rows[0].count) > 0;
         
-        if (search) {
-            query += ` AND (name ILIKE $${paramIndex} OR address ILIKE $${paramIndex})`;
-            params.push(`%${search}%`);
-            paramIndex++;
+        if (hasVenues) {
+            // Use venues table
+            let query = 'SELECT * FROM venues WHERE 1=1';
+            const params = [];
+            let paramIndex = 1;
+            
+            if (search) {
+                query += ` AND (name ILIKE $${paramIndex} OR address ILIKE $${paramIndex})`;
+                params.push(`%${search}%`);
+                paramIndex++;
+            }
+            
+            if (city) {
+                query += ` AND city ILIKE $${paramIndex}`;
+                params.push(`%${city}%`);
+                paramIndex++;
+            }
+            
+            // Get total count
+            const countQuery = query.replace('SELECT *', 'SELECT COUNT(*)');
+            const countResult = await pool.query(countQuery, params);
+            const total = parseInt(countResult.rows[0].count);
+            
+            // Add sorting and pagination
+            const validSorts = ['name', 'city', 'country', 'created_at', 'updated_at'];
+            const sortCol = validSorts.includes(sort) ? sort : 'name';
+            const sortOrder = order.toLowerCase() === 'desc' ? 'DESC' : 'ASC';
+            
+            query += ` ORDER BY ${sortCol} ${sortOrder} LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
+            params.push(parseInt(limit), parseInt(offset));
+            
+            const result = await pool.query(query, params);
+            
+            res.json({
+                data: result.rows,
+                total,
+                limit: parseInt(limit),
+                offset: parseInt(offset)
+            });
+        } else {
+            // Fall back to extracting unique venues from events table
+            let query = `
+                SELECT DISTINCT ON (LOWER(venue_name), LOWER(venue_city))
+                    venue_name as name,
+                    venue_address as address,
+                    venue_city as city,
+                    venue_country as country,
+                    latitude,
+                    longitude,
+                    COUNT(*) OVER (PARTITION BY LOWER(venue_name), LOWER(venue_city)) as event_count
+                FROM events
+                WHERE venue_name IS NOT NULL AND venue_name != ''
+            `;
+            const params = [];
+            let paramIndex = 1;
+            
+            if (search) {
+                query = `SELECT * FROM (${query}) v WHERE (v.name ILIKE $${paramIndex} OR v.address ILIKE $${paramIndex})`;
+                params.push(`%${search}%`);
+                paramIndex++;
+            }
+            
+            if (city) {
+                if (search) {
+                    query += ` AND v.city ILIKE $${paramIndex}`;
+                } else {
+                    query = `SELECT * FROM (${query}) v WHERE v.city ILIKE $${paramIndex}`;
+                }
+                params.push(`%${city}%`);
+                paramIndex++;
+            }
+            
+            // Wrap for sorting and pagination
+            const baseQuery = search || city ? query : `SELECT * FROM (${query}) v`;
+            const countQuery = `SELECT COUNT(*) FROM (${baseQuery.replace('SELECT *', 'SELECT 1')}) c`;
+            
+            let countParams = [...params];
+            const countResult = await pool.query(`
+                SELECT COUNT(DISTINCT (LOWER(venue_name), LOWER(venue_city))) 
+                FROM events 
+                WHERE venue_name IS NOT NULL AND venue_name != ''
+                ${search ? `AND (venue_name ILIKE $1 OR venue_address ILIKE $1)` : ''}
+                ${city ? `AND venue_city ILIKE $${search ? 2 : 1}` : ''}
+            `, params.slice(0, (search ? 1 : 0) + (city ? 1 : 0)));
+            const total = parseInt(countResult.rows[0].count);
+            
+            const sortOrder = order.toLowerCase() === 'desc' ? 'DESC' : 'ASC';
+            const finalQuery = `
+                SELECT DISTINCT ON (LOWER(venue_name), LOWER(venue_city))
+                    venue_name as name,
+                    venue_address as address,
+                    venue_city as city,
+                    venue_country as country,
+                    latitude,
+                    longitude,
+                    (SELECT COUNT(*) FROM events e2 WHERE LOWER(e2.venue_name) = LOWER(events.venue_name) AND LOWER(e2.venue_city) = LOWER(events.venue_city)) as event_count
+                FROM events
+                WHERE venue_name IS NOT NULL AND venue_name != ''
+                ${search ? `AND (venue_name ILIKE $1 OR venue_address ILIKE $1)` : ''}
+                ${city ? `AND venue_city ILIKE $${search ? 2 : 1}` : ''}
+                ORDER BY LOWER(venue_name), LOWER(venue_city), name ${sortOrder}
+                LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+            `;
+            params.push(parseInt(limit), parseInt(offset));
+            
+            const result = await pool.query(finalQuery, params);
+            
+            res.json({
+                data: result.rows,
+                total,
+                limit: parseInt(limit),
+                offset: parseInt(offset),
+                source: 'events_derived'
+            });
         }
-        
-        if (city) {
-            query += ` AND city ILIKE $${paramIndex}`;
-            params.push(`%${city}%`);
-            paramIndex++;
-        }
-        
-        // Get total count
-        const countQuery = query.replace('SELECT *', 'SELECT COUNT(*)');
-        const countResult = await pool.query(countQuery, params);
-        const total = parseInt(countResult.rows[0].count);
-        
-        // Add sorting and pagination
-        const validSorts = ['name', 'city', 'country', 'created_at', 'updated_at'];
-        const sortCol = validSorts.includes(sort) ? sort : 'name';
-        const sortOrder = order.toLowerCase() === 'desc' ? 'DESC' : 'ASC';
-        
-        query += ` ORDER BY ${sortCol} ${sortOrder} LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
-        params.push(parseInt(limit), parseInt(offset));
-        
-        const result = await pool.query(query, params);
-        
-        res.json({
-            data: result.rows,
-            total,
-            limit: parseInt(limit),
-            offset: parseInt(offset)
-        });
     } catch (error) {
         console.error('Error fetching venues:', error);
         res.status(500).json({ error: error.message });
