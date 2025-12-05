@@ -1610,8 +1610,8 @@ app.get('/db/events', async (req, res) => {
         query += ` ORDER BY 
             CASE 
                 WHEN e.date::date = CURRENT_DATE 
-                     AND (e.start_time IS NULL OR CURRENT_TIME >= e.start_time)
-                     AND (e.end_time IS NULL OR CURRENT_TIME <= e.end_time) THEN 0
+                     AND (e.start_time IS NULL OR CURRENT_TIME >= e.start_time::time)
+                     AND (e.end_time IS NULL OR CURRENT_TIME <= e.end_time::time) THEN 0
                 WHEN e.date::date > CURRENT_DATE THEN 1
                 WHEN e.date::date >= CURRENT_DATE - INTERVAL '3 days' THEN 2
                 ELSE 3

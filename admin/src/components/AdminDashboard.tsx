@@ -431,7 +431,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
     if (activeTab === 'events') {
       loadMapEvents();
     }
-  }, [activeTab, cityFilter, statusFilter, showPastEvents, loadMapEvents]);
+  }, [activeTab, statusFilter, showPastEvents, loadMapEvents]);
 
   // Load dropdown data and check connection on mount
   useEffect(() => {
@@ -3159,33 +3159,59 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                           />
                         </div>
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Country</label>
-                          <input
-                            type="text"
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Country *</label>
+                          <select
                             value={editForm.country || ''}
                             onChange={(e) => setEditForm({ ...editForm, country: e.target.value })}
                             className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
-                          />
+                          >
+                            <option value="">Select country...</option>
+                            <option value="Germany">Germany</option>
+                            <option value="United Kingdom">United Kingdom</option>
+                            <option value="France">France</option>
+                            <option value="Netherlands">Netherlands</option>
+                            <option value="Belgium">Belgium</option>
+                            <option value="Spain">Spain</option>
+                            <option value="Portugal">Portugal</option>
+                            <option value="Italy">Italy</option>
+                            <option value="Austria">Austria</option>
+                            <option value="Switzerland">Switzerland</option>
+                            <option value="Poland">Poland</option>
+                            <option value="Czech Republic">Czech Republic</option>
+                            <option value="Denmark">Denmark</option>
+                            <option value="Sweden">Sweden</option>
+                            <option value="Norway">Norway</option>
+                            <option value="Finland">Finland</option>
+                            <option value="Ireland">Ireland</option>
+                            <option value="Greece">Greece</option>
+                            <option value="Croatia">Croatia</option>
+                            <option value="Romania">Romania</option>
+                            <option value="Hungary">Hungary</option>
+                          </select>
                         </div>
                         <div className="grid grid-cols-2 gap-3">
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Latitude</label>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Latitude *</label>
                             <input
                               type="number"
                               step="any"
                               value={editForm.latitude || ''}
                               onChange={(e) => setEditForm({ ...editForm, latitude: e.target.value })}
                               className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
+                              placeholder="52.5200"
+                              required
                             />
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Longitude</label>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Longitude *</label>
                             <input
                               type="number"
                               step="any"
                               value={editForm.longitude || ''}
                               onChange={(e) => setEditForm({ ...editForm, longitude: e.target.value })}
                               className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
+                              placeholder="13.4050"
+                              required
                             />
                           </div>
                         </div>

@@ -542,19 +542,23 @@ export default function EventMap({
       </div>
 
       {/* Legend */}
-      <div className="absolute bottom-16 left-3 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-2" style={{ zIndex: 1000 }}>
-        <div className="space-y-1">
+      <div className="absolute bottom-16 left-3 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-3" style={{ zIndex: 1000 }}>
+        <div className="space-y-2">
           <div className="flex items-center">
-            <div className="w-3 h-3 rounded bg-emerald-500 mr-2"></div>
-            <span className="text-xs text-gray-600 dark:text-gray-300">All published</span>
+            <div className="w-4 h-4 rounded bg-emerald-500 mr-2 live-marker-pulse"></div>
+            <span className="text-xs text-gray-800 dark:text-gray-200 font-medium">LIVE</span>
           </div>
           <div className="flex items-center">
-            <div className="w-3 h-3 rounded bg-amber-500 mr-2"></div>
-            <span className="text-xs text-gray-600">Some published</span>
+            <div className="w-4 h-4 rounded bg-emerald-500 mr-2"></div>
+            <span className="text-xs text-gray-600 dark:text-gray-300">Published</span>
           </div>
           <div className="flex items-center">
-            <div className="w-3 h-3 rounded bg-gray-500 mr-2"></div>
-            <span className="text-xs text-gray-600 dark:text-gray-300">All draft</span>
+            <div className="w-4 h-4 rounded pending-stripes mr-2 border border-amber-500"></div>
+            <span className="text-xs text-gray-600 dark:text-gray-300">Pending</span>
+          </div>
+          <div className="flex items-center">
+            <div className="w-4 h-4 rounded bg-gray-400/60 mr-2"></div>
+            <span className="text-xs text-gray-600 dark:text-gray-300">Rejected</span>
           </div>
         </div>
       </div>
