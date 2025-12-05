@@ -100,7 +100,9 @@ export default function EventMap({
       name: string;
       events: Event[]; 
       coords: [number, number] | null;
-      publishedCount: number;
+      approvedCount: number;
+      pendingCount: number;
+      rejectedCount: number;
     }> = {};
     
     events.forEach((event) => {
@@ -137,7 +139,9 @@ export default function EventMap({
           name: venueName,
           events: [],
           coords,
-          publishedCount: 0,
+          approvedCount: 0,
+          pendingCount: 0,
+          rejectedCount: 0,
         };
       } else if (!venues[venueName].coords && event.latitude && event.longitude) {
         // Update venue coords if we find an event with coordinates
@@ -145,7 +149,10 @@ export default function EventMap({
       }
       
       venues[venueName].events.push(event);
-      if (event.is_published) venues[venueName].publishedCount++;
+      // Track status counts
+      if (event.publish_status === 'approved') venues[venueName].approvedCount++;
+      else if (event.publish_status === 'pending') venues[venueName].pendingCount++;
+      else venues[venueName].rejectedCount++;
     });
     
     return venues;
@@ -247,17 +254,21 @@ export default function EventMap({
         if (!data.coords) return;
 
         const eventCount = data.events.length;
-        const publishedCount = data.publishedCount;
-        const ratio = publishedCount / eventCount;
+        const { approvedCount, pendingCount, rejectedCount } = data;
         
-        let bgColor = 'bg-gray-500';
-        let borderColor = 'border-gray-400';
-        if (ratio === 1) {
+        // Determine marker color based on status distribution
+        // Priority: All approved = green, any pending = yellow, all rejected = gray transparent
+        let bgColor = 'bg-gray-400/60';
+        let borderColor = 'border-gray-300';
+        if (approvedCount === eventCount) {
           bgColor = 'bg-emerald-500';
           borderColor = 'border-emerald-600';
-        } else if (ratio > 0) {
-          bgColor = 'bg-amber-500';
-          borderColor = 'border-amber-600';
+        } else if (pendingCount > 0) {
+          bgColor = 'bg-amber-400';
+          borderColor = 'border-amber-500';
+        } else if (approvedCount > 0) {
+          bgColor = 'bg-emerald-500';
+          borderColor = 'border-emerald-600';
         }
 
         const icon = L.divIcon({
@@ -299,12 +310,16 @@ export default function EventMap({
           popupContent.className = 'p-3 min-w-[250px] max-w-[300px]';
           popupContent.innerHTML = `
             <h3 class="font-bold text-sm mb-2">${venueName}</h3>
-            <p class="text-xs text-gray-500 mb-2">${eventCount} events • ${publishedCount} published</p>
+            <p class="text-xs text-gray-500 mb-2">${eventCount} events • ${approvedCount} approved, ${pendingCount} pending</p>
             <div class="max-h-[200px] overflow-y-auto space-y-1">
-              ${data.events.map((event, idx) => `
+              ${data.events.map((event, idx) => {
+                const statusColor = event.publish_status === 'approved' ? 'bg-emerald-50 border-emerald-200' :
+                                   event.publish_status === 'pending' ? 'bg-amber-50 border-amber-200' :
+                                   'bg-gray-50 border-gray-200';
+                return `
                 <button 
                   data-event-idx="${idx}" 
-                  class="w-full p-2 bg-gray-50 hover:bg-indigo-50 rounded text-xs text-left transition-colors cursor-pointer border border-transparent hover:border-indigo-200"
+                  class="w-full p-2 ${statusColor} hover:bg-indigo-50 rounded text-xs text-left transition-colors cursor-pointer border hover:border-indigo-200"
                 >
                   <div class="font-medium line-clamp-1">${event.title}</div>
                   <div class="text-gray-500 flex justify-between">
@@ -312,7 +327,7 @@ export default function EventMap({
                     <span class="text-indigo-600">Edit →</span>
                   </div>
                 </button>
-              `).join('')}
+              `}).join('')}
             </div>
           `;
           
@@ -352,12 +367,14 @@ export default function EventMap({
         const eventCount = cityEvents.length;
         if (eventCount === 0) return;
 
-        const publishedCount = cityEvents.filter(e => e.is_published).length;
-        const ratio = publishedCount / eventCount;
+        const approvedCount = cityEvents.filter(e => e.publish_status === 'approved').length;
+        const pendingCount = cityEvents.filter(e => e.publish_status === 'pending').length;
         
-        let borderColor = 'border-gray-400';
-        if (ratio === 1) borderColor = 'border-emerald-500';
-        else if (ratio > 0) borderColor = 'border-amber-500';
+        // Border color based on status: all approved = green, any pending = yellow, else gray
+        let borderColor = 'border-gray-300';
+        if (approvedCount === eventCount) borderColor = 'border-emerald-500';
+        else if (pendingCount > 0) borderColor = 'border-amber-400';
+        else if (approvedCount > 0) borderColor = 'border-emerald-500';
 
         const icon = L.divIcon({
           className: 'city-marker',

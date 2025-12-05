@@ -1406,7 +1406,7 @@ app.get('/api/venues', async (req, res) => {
 // Create a single event
 app.post('/db/events/create', async (req, res) => {
     try {
-        const { title, date, start_time, venue_name, venue_city, venue_country, venue_address, artists, description, content_url, flyer_front, is_published } = req.body;
+        const { title, date, start_time, venue_name, venue_city, venue_country, venue_address, artists, description, content_url, flyer_front, is_published, event_type } = req.body;
         
         if (!title) {
             return res.status(400).json({ error: 'Title is required' });
@@ -1431,8 +1431,8 @@ app.post('/db/events/create', async (req, res) => {
             INSERT INTO events (
                 id, title, date, start_time, venue_id, venue_name, venue_address, 
                 venue_city, venue_country, artists, description, content_url, 
-                flyer_front, is_published, created_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)
+                flyer_front, is_published, event_type, created_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, CURRENT_TIMESTAMP)
             RETURNING *
         `, [
             id,
@@ -1448,7 +1448,8 @@ app.post('/db/events/create', async (req, res) => {
             description || null,
             content_url || null,
             flyer_front || null,
-            is_published || false
+            is_published || false,
+            event_type || 'event'
         ]);
         
         res.json(result.rows[0]);
@@ -1756,7 +1757,7 @@ app.patch('/db/events/:id', async (req, res) => {
             'title', 'date', 'start_time', 'end_time', 'content_url',
             'flyer_front', 'description', 'venue_id', 'venue_name',
             'venue_address', 'venue_city', 'venue_country', 'artists',
-            'is_published', 'latitude', 'longitude'
+            'is_published', 'latitude', 'longitude', 'event_type'
         ];
         
         const setClauses = [];
@@ -1885,6 +1886,44 @@ app.post('/db/events/publish-status', async (req, res) => {
         });
     } catch (error) {
         console.error('Database error setting publish status:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Auto-classify event types
+app.post('/db/events/classify-types', async (req, res) => {
+    try {
+        // Get all events without a specific type (or with default 'event' type)
+        const eventsResult = await pool.query(`
+            SELECT id, title, venue_name, description 
+            FROM events 
+            WHERE event_type IS NULL OR event_type = 'event'
+        `);
+        
+        let updated = 0;
+        const typeUpdates = {};
+        
+        for (const event of eventsResult.rows) {
+            const classifiedType = classifyEventType(event.title, event.venue_name, event.description);
+            
+            if (classifiedType !== 'event') {
+                await pool.query(
+                    'UPDATE events SET event_type = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+                    [classifiedType, event.id]
+                );
+                updated++;
+                typeUpdates[classifiedType] = (typeUpdates[classifiedType] || 0) + 1;
+            }
+        }
+        
+        res.json({
+            success: true,
+            total_checked: eventsResult.rows.length,
+            updated,
+            by_type: typeUpdates
+        });
+    } catch (error) {
+        console.error('Error classifying events:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -2018,8 +2057,333 @@ app.get('/db/cities', async (req, res) => {
             res.json({ data: fallbackResult.rows });
         } catch (fallbackError) {
             console.error('Database error:', fallbackError);
-            res.status(500).json({ error: fallbackError.message });
+            res.status(500).json({ error: fallbackError.message, dbConnected: false });
         }
+    }
+});
+
+// Get all countries for dropdown
+app.get('/db/countries', async (req, res) => {
+    try {
+        // First try the countries table
+        const result = await pool.query(`
+            SELECT * FROM countries WHERE is_active = true ORDER BY name ASC
+        `);
+        
+        if (result.rows.length > 0) {
+            res.json({ data: result.rows });
+        } else {
+            // Fallback: get distinct countries from events and venues
+            const fallbackResult = await pool.query(`
+                SELECT DISTINCT 
+                    COALESCE(venue_country, 'Unknown') as name,
+                    CASE COALESCE(venue_country, 'Unknown')
+                        WHEN 'Germany' THEN 'DE'
+                        WHEN 'United Kingdom' THEN 'GB'
+                        WHEN 'United States' THEN 'US'
+                        WHEN 'Netherlands' THEN 'NL'
+                        WHEN 'France' THEN 'FR'
+                        WHEN 'Spain' THEN 'ES'
+                        ELSE NULL
+                    END as code
+                FROM events 
+                WHERE venue_country IS NOT NULL AND venue_country != ''
+                UNION
+                SELECT DISTINCT 
+                    COALESCE(country, 'Unknown') as name,
+                    NULL as code
+                FROM venues
+                WHERE country IS NOT NULL AND country != ''
+                ORDER BY name ASC
+            `);
+            res.json({ data: fallbackResult.rows });
+        }
+    } catch (error) {
+        console.error('Database error fetching countries:', error);
+        res.status(500).json({ error: error.message, dbConnected: false });
+    }
+});
+
+// Get all cities for dropdown (optimized version)
+app.get('/db/cities/dropdown', async (req, res) => {
+    try {
+        const { country } = req.query;
+        
+        let query = `
+            SELECT DISTINCT 
+                COALESCE(venue_city, '') as name,
+                COALESCE(venue_country, '') as country,
+                COUNT(*) as event_count
+            FROM events 
+            WHERE venue_city IS NOT NULL AND venue_city != ''
+        `;
+        const params = [];
+        
+        if (country) {
+            query += ` AND LOWER(venue_country) = LOWER($1)`;
+            params.push(country);
+        }
+        
+        query += ` GROUP BY venue_city, venue_country ORDER BY event_count DESC, name ASC LIMIT 500`;
+        
+        const result = await pool.query(query, params);
+        res.json({ data: result.rows });
+    } catch (error) {
+        console.error('Database error fetching cities dropdown:', error);
+        res.status(500).json({ error: error.message, dbConnected: false });
+    }
+});
+
+// Autocomplete search for venues
+app.get('/db/venues/search', async (req, res) => {
+    try {
+        const { q, city, limit = 20 } = req.query;
+        
+        if (!q || q.length < 2) {
+            return res.json({ data: [] });
+        }
+        
+        let query = `
+            SELECT id, name, address, city, country, latitude, longitude
+            FROM venues
+            WHERE LOWER(name) LIKE $1
+        `;
+        const params = [`%${q.toLowerCase()}%`];
+        let paramIdx = 2;
+        
+        if (city) {
+            query += ` AND LOWER(city) = LOWER($${paramIdx})`;
+            params.push(city);
+            paramIdx++;
+        }
+        
+        query += ` ORDER BY 
+            CASE WHEN LOWER(name) = LOWER($1) THEN 0
+                 WHEN LOWER(name) LIKE $1 || '%' THEN 1
+                 ELSE 2
+            END,
+            name ASC
+            LIMIT $${paramIdx}`;
+        params[0] = `%${q.toLowerCase()}%`; // restore the LIKE pattern
+        params.push(parseInt(limit));
+        
+        // Fix the ORDER BY reference
+        const result = await pool.query(`
+            SELECT id, name, address, city, country, latitude, longitude
+            FROM venues
+            WHERE LOWER(name) LIKE $1
+            ${city ? 'AND LOWER(city) = LOWER($2)' : ''}
+            ORDER BY 
+                CASE WHEN LOWER(name) = $${city ? '3' : '2'} THEN 0
+                     WHEN LOWER(name) LIKE $${city ? '3' : '2'} || '%' THEN 1
+                     ELSE 2
+                END,
+                name ASC
+            LIMIT $${city ? '4' : '3'}
+        `, city 
+            ? [`%${q.toLowerCase()}%`, city, q.toLowerCase(), parseInt(limit)]
+            : [`%${q.toLowerCase()}%`, q.toLowerCase(), parseInt(limit)]
+        );
+        
+        res.json({ data: result.rows });
+    } catch (error) {
+        console.error('Venue search error:', error);
+        res.status(500).json({ error: error.message, dbConnected: false });
+    }
+});
+
+// Autocomplete search for artists
+app.get('/db/artists/search', async (req, res) => {
+    try {
+        const { q, limit = 20 } = req.query;
+        
+        if (!q || q.length < 2) {
+            return res.json({ data: [] });
+        }
+        
+        const result = await pool.query(`
+            SELECT id, name, country, image_url, genres
+            FROM artists
+            WHERE LOWER(name) LIKE $1
+            ORDER BY 
+                CASE WHEN LOWER(name) = $2 THEN 0
+                     WHEN LOWER(name) LIKE $2 || '%' THEN 1
+                     ELSE 2
+                END,
+                name ASC
+            LIMIT $3
+        `, [`%${q.toLowerCase()}%`, q.toLowerCase(), parseInt(limit)]);
+        
+        res.json({ data: result.rows });
+    } catch (error) {
+        console.error('Artist search error:', error);
+        res.status(500).json({ error: error.message, dbConnected: false });
+    }
+});
+
+// Event-Artist management endpoints
+app.get('/db/events/:id/artists', async (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        const result = await pool.query(`
+            SELECT ea.*, a.name, a.image_url, a.country, a.genres
+            FROM event_artists ea
+            JOIN artists a ON a.id = ea.artist_id
+            WHERE ea.event_id = $1
+            ORDER BY ea.billing_order ASC, a.name ASC
+        `, [id]);
+        
+        res.json({ data: result.rows });
+    } catch (error) {
+        // Table might not exist yet
+        if (error.code === '42P01') {
+            res.json({ data: [], message: 'event_artists table not yet created' });
+        } else {
+            console.error('Get event artists error:', error);
+            res.status(500).json({ error: error.message });
+        }
+    }
+});
+
+// Add artist to event
+app.post('/db/events/:id/artists', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { artist_id, role = 'performer', billing_order = 0 } = req.body;
+        
+        if (!artist_id) {
+            return res.status(400).json({ error: 'artist_id is required' });
+        }
+        
+        const result = await pool.query(`
+            INSERT INTO event_artists (event_id, artist_id, role, billing_order)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT (event_id, artist_id) DO UPDATE SET
+                role = EXCLUDED.role,
+                billing_order = EXCLUDED.billing_order
+            RETURNING *
+        `, [id, artist_id, role, billing_order]);
+        
+        res.json({ success: true, data: result.rows[0] });
+    } catch (error) {
+        console.error('Add event artist error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Remove artist from event
+app.delete('/db/events/:id/artists/:artistId', async (req, res) => {
+    try {
+        const { id, artistId } = req.params;
+        
+        await pool.query(`
+            DELETE FROM event_artists WHERE event_id = $1 AND artist_id = $2
+        `, [id, artistId]);
+        
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Remove event artist error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Sync event_artists from events.artists JSON column
+app.post('/db/events/:id/sync-artists', async (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        // Get the artists JSON from the event
+        const eventResult = await pool.query(`
+            SELECT artists FROM events WHERE id = $1
+        `, [id]);
+        
+        if (eventResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Event not found' });
+        }
+        
+        const artistsJson = eventResult.rows[0].artists;
+        if (!artistsJson) {
+            return res.json({ success: true, synced: 0, message: 'No artists to sync' });
+        }
+        
+        let artists;
+        try {
+            artists = typeof artistsJson === 'string' ? JSON.parse(artistsJson) : artistsJson;
+        } catch {
+            return res.json({ success: true, synced: 0, message: 'Could not parse artists JSON' });
+        }
+        
+        if (!Array.isArray(artists) || artists.length === 0) {
+            return res.json({ success: true, synced: 0, message: 'No artists in array' });
+        }
+        
+        let synced = 0;
+        for (let i = 0; i < artists.length; i++) {
+            const artist = artists[i];
+            const artistName = artist.name || artist;
+            
+            if (!artistName) continue;
+            
+            // Find or create artist
+            let artistResult = await pool.query(`
+                SELECT id FROM artists WHERE LOWER(name) = LOWER($1) LIMIT 1
+            `, [artistName]);
+            
+            let artistId;
+            if (artistResult.rows.length === 0) {
+                // Create artist
+                const newArtist = await pool.query(`
+                    INSERT INTO artists (id, name, created_at)
+                    VALUES ($1, $2, CURRENT_TIMESTAMP)
+                    ON CONFLICT (id) DO NOTHING
+                    RETURNING id
+                `, [`artist_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, artistName]);
+                
+                artistId = newArtist.rows[0]?.id;
+                if (!artistId) {
+                    // Retry fetch if insert had conflict
+                    const retry = await pool.query(`SELECT id FROM artists WHERE LOWER(name) = LOWER($1) LIMIT 1`, [artistName]);
+                    artistId = retry.rows[0]?.id;
+                }
+            } else {
+                artistId = artistResult.rows[0].id;
+            }
+            
+            if (artistId) {
+                // Link to event
+                await pool.query(`
+                    INSERT INTO event_artists (event_id, artist_id, billing_order)
+                    VALUES ($1, $2, $3)
+                    ON CONFLICT (event_id, artist_id) DO NOTHING
+                `, [id, artistId, i]);
+                synced++;
+            }
+        }
+        
+        res.json({ success: true, synced });
+    } catch (error) {
+        console.error('Sync event artists error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Health check endpoint that verifies DB connection
+app.get('/health', async (req, res) => {
+    try {
+        await pool.query('SELECT 1');
+        res.json({ 
+            status: 'ok', 
+            dbConnected: true,
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        res.status(503).json({ 
+            status: 'error', 
+            dbConnected: false,
+            error: error.message,
+            timestamp: new Date().toISOString()
+        });
     }
 });
 
@@ -3895,13 +4259,40 @@ async function scrapeResidentAdvisor(city, options = {}) {
 }
 
 // Save scraped events to database
-async function saveScrapedEvents(events) {
-    let inserted = 0, updated = 0;
+async function saveScrapedEvents(events, options = {}) {
+    const { geocodeMissing = true } = options;
+    let inserted = 0, updated = 0, geocoded = 0;
     const savedVenues = new Set();
     const savedArtists = new Set();
     
     for (const event of events) {
         try {
+            // Geocode if coordinates are missing and we have address info
+            let venueLat = event.venue_latitude;
+            let venueLon = event.venue_longitude;
+            
+            if (geocodeMissing && (!venueLat || !venueLon) && (event.venue_address || event.venue_name)) {
+                try {
+                    const coords = await geocodeAddress(
+                        event.venue_address || event.venue_name,
+                        event.venue_city,
+                        event.venue_country
+                    );
+                    if (coords) {
+                        venueLat = coords.latitude;
+                        venueLon = coords.longitude;
+                        geocoded++;
+                        // Also update venue_raw if exists
+                        if (event.venue_raw) {
+                            event.venue_raw.latitude = venueLat;
+                            event.venue_raw.longitude = venueLon;
+                        }
+                    }
+                } catch (geoErr) {
+                    console.warn(`[Geocode] Failed for ${event.venue_name}: ${geoErr.message}`);
+                }
+            }
+            
             // Save scraped event
             const eventResult = await pool.query(`
                 INSERT INTO scraped_events (
@@ -3943,8 +4334,8 @@ async function saveScrapedEvents(events) {
                 event.venue_address,
                 event.venue_city,
                 event.venue_country,
-                event.venue_latitude,
-                event.venue_longitude,
+                venueLat,
+                venueLon,
                 JSON.stringify(event.artists_json),
                 event.price_info ? JSON.stringify(event.price_info) : null,
                 JSON.stringify(event.raw_data)
@@ -4019,7 +4410,7 @@ async function saveScrapedEvents(events) {
         }
     }
     
-    return { inserted, updated, venues: savedVenues.size, artists: savedArtists.size };
+    return { inserted, updated, venues: savedVenues.size, artists: savedArtists.size, geocoded };
 }
 
 // =====================================================
@@ -4077,6 +4468,34 @@ const SOURCE_PRIORITY = {
 
 function getSourcePriority(sourceCode) {
     return SOURCE_PRIORITY[sourceCode] || 10;
+}
+
+// Event type classification based on keywords
+const EVENT_TYPE_KEYWORDS = {
+    festival: ['festival', 'fest ', 'outdoor', 'camping', 'day festival', 'music festival'],
+    concert: ['concert', 'live music', 'gig', 'performance', 'in concert', 'live at', 'tour'],
+    club: ['club night', 'club ', 'nightclub', 'techno', 'house music', 'dj set', 'afterhours', 'after hours'],
+    rave: ['rave', 'warehouse', 'illegal', 'underground'],
+    party: ['party', 'birthday', 'celebration', 'nye', 'new year', 'halloween', 'christmas party'],
+    exhibition: ['exhibition', 'gallery', 'art show', 'museum', 'display', 'showcase'],
+    workshop: ['workshop', 'class', 'lesson', 'course', 'tutorial', 'learning', 'masterclass'],
+    performance: ['theatre', 'theater', 'dance', 'ballet', 'opera', 'play', 'musical', 'show'],
+    listening: ['listening session', 'album release', 'record release', 'listening party']
+};
+
+function classifyEventType(title, venueName, description) {
+    const text = `${title || ''} ${venueName || ''} ${description || ''}`.toLowerCase();
+    
+    // Check each type's keywords
+    for (const [type, keywords] of Object.entries(EVENT_TYPE_KEYWORDS)) {
+        for (const keyword of keywords) {
+            if (text.includes(keyword)) {
+                return type;
+            }
+        }
+    }
+    
+    return 'event'; // Default type
 }
 
 // Merge data from multiple sources, respecting priority

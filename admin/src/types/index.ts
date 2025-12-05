@@ -4,6 +4,23 @@ export type PublishStatus = 'pending' | 'approved' | 'rejected';
 // Event timing category for display
 export type EventTiming = 'upcoming' | 'ongoing' | 'recent' | 'expired';
 
+// Event type classification
+export type EventType = 'event' | 'club' | 'concert' | 'festival' | 'exhibition' | 'workshop' | 'party' | 'performance' | 'rave' | 'listening';
+
+// Event type display config
+export const EVENT_TYPES: { value: EventType; label: string; icon: string; color: string }[] = [
+  { value: 'event', label: 'Event', icon: '📅', color: 'gray' },
+  { value: 'club', label: 'Club Night', icon: '🎧', color: 'purple' },
+  { value: 'concert', label: 'Concert', icon: '🎸', color: 'red' },
+  { value: 'festival', label: 'Festival', icon: '🎪', color: 'orange' },
+  { value: 'exhibition', label: 'Exhibition', icon: '🎨', color: 'pink' },
+  { value: 'workshop', label: 'Workshop', icon: '🛠️', color: 'blue' },
+  { value: 'party', label: 'Party', icon: '🎉', color: 'yellow' },
+  { value: 'performance', label: 'Performance', icon: '🎭', color: 'indigo' },
+  { value: 'rave', label: 'Rave', icon: '⚡', color: 'green' },
+  { value: 'listening', label: 'Listening', icon: '🎵', color: 'cyan' },
+];
+
 export interface Event {
   id: string;
   source_code: string;
@@ -24,6 +41,7 @@ export interface Event {
   listing_date: string | null;
   publish_status: PublishStatus;
   is_published: boolean; // kept for backwards compatibility
+  event_type: EventType;
   latitude: number | null;
   longitude: number | null;
   created_at: string;
@@ -39,6 +57,9 @@ export interface Venue {
   latitude: number | null;
   longitude: number | null;
   content_url: string | null;
+  venue_type?: string | null;
+  phone?: string | null;
+  email?: string | null;
 }
 
 export interface Artist {
@@ -46,6 +67,34 @@ export interface Artist {
   name: string;
   country: string | null;
   content_url: string | null;
+  image_url?: string | null;
+  genres?: string[] | null;
+  bio?: string | null;
+}
+
+// Event-Artist relationship
+export interface EventArtist {
+  id: number;
+  event_id: string;
+  artist_id: string;
+  role: 'performer' | 'headliner' | 'support' | 'dj' | 'host';
+  billing_order: number;
+  start_time?: string | null;
+  end_time?: string | null;
+  // Joined from artists table
+  name?: string;
+  image_url?: string;
+  country?: string;
+  genres?: string[];
+}
+
+// Country for dropdown
+export interface Country {
+  id?: number;
+  name: string;
+  code?: string;
+  continent?: string;
+  is_active?: boolean;
 }
 
 export interface ApiResponse<T> {

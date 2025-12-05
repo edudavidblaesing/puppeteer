@@ -151,6 +151,100 @@ export async function fetchCities() {
   return result.data || [];
 }
 
+// Fetch countries for dropdown
+export async function fetchCountries() {
+  const response = await fetch(`${API_URL}/db/countries`, { headers });
+  if (!response.ok) throw new Error('Failed to fetch countries');
+  const result = await response.json();
+  return result.data || [];
+}
+
+// Fetch cities for dropdown (optimized)
+export async function fetchCitiesDropdown(country?: string) {
+  const searchParams = new URLSearchParams();
+  if (country) searchParams.set('country', country);
+  
+  const response = await fetch(`${API_URL}/db/cities/dropdown?${searchParams}`, { headers });
+  if (!response.ok) throw new Error('Failed to fetch cities dropdown');
+  const result = await response.json();
+  return result.data || [];
+}
+
+// Autocomplete search for venues
+export async function searchVenues(query: string, city?: string) {
+  if (!query || query.length < 2) return [];
+  
+  const searchParams = new URLSearchParams({ q: query });
+  if (city) searchParams.set('city', city);
+  
+  const response = await fetch(`${API_URL}/db/venues/search?${searchParams}`, { headers });
+  if (!response.ok) throw new Error('Failed to search venues');
+  const result = await response.json();
+  return result.data || [];
+}
+
+// Autocomplete search for artists
+export async function searchArtists(query: string) {
+  if (!query || query.length < 2) return [];
+  
+  const searchParams = new URLSearchParams({ q: query });
+  
+  const response = await fetch(`${API_URL}/db/artists/search?${searchParams}`, { headers });
+  if (!response.ok) throw new Error('Failed to search artists');
+  const result = await response.json();
+  return result.data || [];
+}
+
+// Get artists for an event
+export async function fetchEventArtists(eventId: string) {
+  const response = await fetch(`${API_URL}/db/events/${eventId}/artists`, { headers });
+  if (!response.ok) throw new Error('Failed to fetch event artists');
+  const result = await response.json();
+  return result.data || [];
+}
+
+// Add artist to event
+export async function addEventArtist(eventId: string, artistId: string, role: string = 'performer', billingOrder: number = 0) {
+  const response = await fetch(`${API_URL}/db/events/${eventId}/artists`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ artist_id: artistId, role, billing_order: billingOrder }),
+  });
+  if (!response.ok) throw new Error('Failed to add event artist');
+  return response.json();
+}
+
+// Remove artist from event
+export async function removeEventArtist(eventId: string, artistId: string) {
+  const response = await fetch(`${API_URL}/db/events/${eventId}/artists/${artistId}`, {
+    method: 'DELETE',
+    headers,
+  });
+  if (!response.ok) throw new Error('Failed to remove event artist');
+  return response.json();
+}
+
+// Sync event artists from JSON column
+export async function syncEventArtists(eventId: string) {
+  const response = await fetch(`${API_URL}/db/events/${eventId}/sync-artists`, {
+    method: 'POST',
+    headers,
+  });
+  if (!response.ok) throw new Error('Failed to sync event artists');
+  return response.json();
+}
+
+// Health check
+export async function checkHealth() {
+  try {
+    const response = await fetch(`${API_URL}/health`, { headers });
+    const result = await response.json();
+    return { connected: result.dbConnected ?? response.ok, status: result.status };
+  } catch (error) {
+    return { connected: false, status: 'error', error: (error as Error).message };
+  }
+}
+
 // ============== Admin Artists API ==============
 
 export async function fetchArtists(params?: { search?: string; country?: string; limit?: number; offset?: number }) {

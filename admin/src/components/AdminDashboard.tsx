@@ -28,13 +28,15 @@ import {
   CheckCircle,
   XCircle,
   Clock,
+  AlertTriangle,
+  Ticket,
 } from 'lucide-react';
 
 // Dynamic import for EventMap (Leaflet requires client-side only)
 const EventMap = dynamic(() => import('@/components/EventMap'), { ssr: false });
 import { format } from 'date-fns';
 import clsx from 'clsx';
-import { Event, Stats, City, Venue, Artist, getEventTiming, sortEventsSmart } from '@/types';
+import { Event, Stats, City, Venue, Artist, getEventTiming, sortEventsSmart, EventType, EVENT_TYPES } from '@/types';
 import {
   fetchEvents,
   fetchEvent,
@@ -44,6 +46,14 @@ import {
   createEvent,
   setPublishStatus,
   fetchCities,
+  fetchCountries,
+  fetchCitiesDropdown,
+  searchVenues,
+  searchArtists,
+  fetchEventArtists,
+  addEventArtist,
+  removeEventArtist,
+  checkHealth,
   fetchArtists,
   fetchArtist,
   createArtist,
@@ -131,6 +141,10 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
   // Cities state
   const [adminCities, setAdminCities] = useState<City[]>([]);
   const [citiesTotal, setCitiesTotal] = useState(0);
+  
+  // Dropdown data for city/country
+  const [countriesDropdown, setCountriesDropdown] = useState<{name: string; code?: string}[]>([]);
+  const [citiesDropdown, setCitiesDropdown] = useState<{name: string; country: string}[]>([]);
 
   // Scraped events state (for main/scraped toggle in events tab)
   const [scrapedEventsData, setScrapedEventsData] = useState<any[]>([]);
@@ -161,6 +175,10 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
   const [sqlResult, setSqlResult] = useState<any>(null);
   const [sqlError, setSqlError] = useState<string>('');
   const [isExecutingSql, setIsExecutingSql] = useState(false);
+  
+  // Connection status
+  const [dbConnected, setDbConnected] = useState(true);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
 
   // Filters
   const [cityFilter, setCityFilter] = useState<string>('');
@@ -329,34 +347,88 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
   useEffect(() => {
     loadData();
   }, [loadData]);
-
-  // Autocomplete search for artists
+  
+  // Load dropdown data and check connection on mount
   useEffect(() => {
-    if (artistSearch.length >= 2) {
-      const filtered = artists.filter(a => 
-        a.name?.toLowerCase().includes(artistSearch.toLowerCase())
-      ).slice(0, 8);
-      setArtistSuggestions(filtered);
-      setShowArtistDropdown(filtered.length > 0);
-    } else {
-      setArtistSuggestions([]);
-      setShowArtistDropdown(false);
-    }
+    const initDropdowns = async () => {
+      try {
+        // Check health first
+        const health = await checkHealth();
+        setDbConnected(health.connected);
+        if (!health.connected) {
+          setConnectionError(health.error || 'Database connection failed');
+        } else {
+          setConnectionError(null);
+        }
+        
+        // Load countries and cities for dropdowns
+        const [countriesData, citiesData] = await Promise.all([
+          fetchCountries().catch(() => []),
+          fetchCitiesDropdown().catch(() => []),
+        ]);
+        setCountriesDropdown(countriesData);
+        setCitiesDropdown(citiesData);
+      } catch (error) {
+        console.error('Failed to initialize dropdowns:', error);
+        setDbConnected(false);
+        setConnectionError((error as Error).message);
+      }
+    };
+    
+    initDropdowns();
+  }, []);
+
+  // Autocomplete search for artists (using API)
+  useEffect(() => {
+    const doSearch = async () => {
+      if (artistSearch.length >= 2) {
+        try {
+          const results = await searchArtists(artistSearch);
+          setArtistSuggestions(results.slice(0, 10));
+          setShowArtistDropdown(results.length > 0);
+        } catch {
+          // Fallback to local filter
+          const filtered = artists.filter(a => 
+            a.name?.toLowerCase().includes(artistSearch.toLowerCase())
+          ).slice(0, 8);
+          setArtistSuggestions(filtered);
+          setShowArtistDropdown(filtered.length > 0);
+        }
+      } else {
+        setArtistSuggestions([]);
+        setShowArtistDropdown(false);
+      }
+    };
+    
+    const debounce = setTimeout(doSearch, 200);
+    return () => clearTimeout(debounce);
   }, [artistSearch, artists]);
 
-  // Autocomplete search for venues
+  // Autocomplete search for venues (using API)
   useEffect(() => {
-    if (venueSearch.length >= 2) {
-      const filtered = venues.filter(v => 
-        v.name?.toLowerCase().includes(venueSearch.toLowerCase())
-      ).slice(0, 8);
-      setVenueSuggestions(filtered);
-      setShowVenueDropdown(filtered.length > 0);
-    } else {
-      setVenueSuggestions([]);
-      setShowVenueDropdown(false);
-    }
-  }, [venueSearch, venues]);
+    const doSearch = async () => {
+      if (venueSearch.length >= 2) {
+        try {
+          const results = await searchVenues(venueSearch, editForm?.venue_city);
+          setVenueSuggestions(results.slice(0, 10));
+          setShowVenueDropdown(results.length > 0);
+        } catch {
+          // Fallback to local filter
+          const filtered = venues.filter(v => 
+            v.name?.toLowerCase().includes(venueSearch.toLowerCase())
+          ).slice(0, 8);
+          setVenueSuggestions(filtered);
+          setShowVenueDropdown(filtered.length > 0);
+        }
+      } else {
+        setVenueSuggestions([]);
+        setShowVenueDropdown(false);
+      }
+    };
+    
+    const debounce = setTimeout(doSearch, 200);
+    return () => clearTimeout(debounce);
+  }, [venueSearch, venues, editForm?.venue_city]);
 
   // Reset page when changing tabs or filters
   useEffect(() => {
@@ -469,7 +541,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
     setSourceReferences([]);
     setSelectedSourceFields({});
     if (activeTab === 'events') {
-      setEditForm({ title: '', date: '', venue_name: '', venue_city: '', artists: '', publish_status: 'pending' });
+      setEditForm({ title: '', date: '', venue_name: '', venue_city: '', artists: '', publish_status: 'pending', event_type: 'event' });
     } else if (activeTab === 'artists') {
       setEditForm({ name: '', country: '', content_url: '', image_url: '' });
     } else if (activeTab === 'venues') {
@@ -783,7 +855,14 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
             )}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="font-medium text-sm truncate">{item.title}</p>
+            <div className="flex items-center gap-2">
+              <p className="font-medium text-sm truncate">{item.title}</p>
+              {item.event_type && item.event_type !== 'event' && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 font-medium flex-shrink-0">
+                  {EVENT_TYPES.find(t => t.value === item.event_type)?.icon} {EVENT_TYPES.find(t => t.value === item.event_type)?.label}
+                </span>
+              )}
+            </div>
             <div className="flex items-center gap-2 mt-0.5">
               <p className="text-xs text-gray-500 truncate">{item.venue_name} • {item.venue_city}</p>
             </div>
@@ -922,6 +1001,25 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
 
   return (
     <div className="h-full flex flex-col bg-gray-100">
+      {/* Connection Error Banner */}
+      {!dbConnected && (
+        <div className="bg-red-500 text-white px-4 py-2 flex items-center gap-2 flex-shrink-0">
+          <AlertTriangle className="w-5 h-5" />
+          <span className="font-medium">Database connection error:</span>
+          <span>{connectionError || 'Unable to connect to database'}</span>
+          <button 
+            onClick={async () => {
+              const health = await checkHealth();
+              setDbConnected(health.connected);
+              setConnectionError(health.connected ? null : health.error || 'Connection failed');
+            }}
+            className="ml-auto px-3 py-1 bg-white/20 rounded hover:bg-white/30 text-sm"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+      
       {/* Secondary toolbar */}
       <header className="bg-white border-b flex-shrink-0 z-50">
         <div className="flex items-center px-4 py-2 gap-3 bg-gray-50">
@@ -950,9 +1048,9 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
               className="px-3 py-1.5 text-sm border rounded-lg"
             >
               <option value="">All Cities</option>
-              {cities.map((city) => (
+              {(citiesDropdown.length > 0 ? citiesDropdown : cities).map((city: any) => (
                 <option key={city.id || city.name} value={city.name}>
-                  {city.name} ({city.event_count || 0})
+                  {city.name} {city.event_count ? `(${city.event_count})` : ''}
                 </option>
               ))}
             </select>
@@ -1348,63 +1446,105 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                   </div>
                 </div>
 
-                {/* Stats Overview */}
-                <div className="bg-white rounded-xl shadow-sm p-6">
-                  <h3 className="font-semibold text-lg mb-4">Database Overview</h3>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                    <StatCard
-                      title="Total Events"
-                      value={scrapeStats?.total_main_events || 0}
-                      subValue={`${scrapeStats?.approved_events || 0} approved`}
-                      color="#22c55e"
-                    />
-                    <StatCard
-                      title="Pending Review"
-                      value={scrapeStats?.pending_events || 0}
-                      color="#f59e0b"
-                    />
-                    <StatCard
-                      title="Venues"
-                      value={scrapeStats?.total_main_venues || 0}
-                      color="#6366f1"
-                    />
-                    <StatCard
-                      title="Artists"
-                      value={scrapeStats?.total_main_artists || 0}
-                      color="#ec4899"
-                    />
-                    <StatCard
-                      title="From RA"
-                      value={scrapeStats?.ra_events || 0}
-                      color="#8b5cf6"
-                    />
-                    <StatCard
-                      title="From Ticketmaster"
-                      value={scrapeStats?.ticketmaster_events || 0}
-                      color="#06b6d4"
-                    />
+                {/* Stats Overview - Modern Dashboard Cards */}
+                <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+                  {/* Events Card - Large Feature */}
+                  <div className="col-span-2 lg:col-span-1 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl p-6 text-white shadow-lg">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+                        <Calendar className="w-6 h-6" />
+                      </div>
+                      <span className="text-emerald-200 text-xs font-medium uppercase tracking-wide">Total Events</span>
+                    </div>
+                    <div className="text-4xl font-bold mb-1">{(scrapeStats?.total_main_events || 0).toLocaleString()}</div>
+                    <div className="flex items-center gap-4 text-sm text-emerald-100">
+                      <span className="flex items-center gap-1">
+                        <CheckCircle className="w-4 h-4" />
+                        {scrapeStats?.approved_events || 0} live
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <Clock className="w-4 h-4" />
+                        {scrapeStats?.pending_events || 0} pending
+                      </span>
+                    </div>
+                  </div>
+                  
+                  {/* Pending - Highlight Card */}
+                  <div className="bg-gradient-to-br from-amber-400 to-orange-500 rounded-2xl p-5 text-white shadow-lg">
+                    <div className="flex items-center gap-2 mb-3 text-amber-100 text-xs font-medium uppercase tracking-wide">
+                      <AlertTriangle className="w-4 h-4" />
+                      Needs Review
+                    </div>
+                    <div className="text-3xl font-bold">{scrapeStats?.pending_events || 0}</div>
+                    <div className="text-amber-100 text-sm mt-1">events waiting</div>
+                  </div>
+                  
+                  {/* Venues Card */}
+                  <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+                    <div className="flex items-center gap-2 mb-3 text-gray-400 text-xs font-medium uppercase tracking-wide">
+                      <Building2 className="w-4 h-4" />
+                      Venues
+                    </div>
+                    <div className="text-3xl font-bold text-gray-900">{scrapeStats?.total_main_venues || 0}</div>
+                    <div className="text-gray-500 text-sm mt-1">unique locations</div>
+                  </div>
+                  
+                  {/* Artists Card */}
+                  <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+                    <div className="flex items-center gap-2 mb-3 text-gray-400 text-xs font-medium uppercase tracking-wide">
+                      <Music className="w-4 h-4" />
+                      Artists
+                    </div>
+                    <div className="text-3xl font-bold text-gray-900">{scrapeStats?.total_main_artists || 0}</div>
+                    <div className="text-gray-500 text-sm mt-1">performers</div>
+                  </div>
+                  
+                  {/* RA Source Card */}
+                  <div className="bg-gradient-to-br from-red-500 to-rose-600 rounded-2xl p-5 text-white shadow-lg">
+                    <div className="flex items-center gap-2 mb-3 text-red-200 text-xs font-medium uppercase tracking-wide">
+                      <Globe className="w-4 h-4" />
+                      Resident Advisor
+                    </div>
+                    <div className="text-3xl font-bold">{scrapeStats?.ra_events || 0}</div>
+                    <div className="text-red-100 text-sm mt-1">events scraped</div>
+                  </div>
+                  
+                  {/* Ticketmaster Source Card */}
+                  <div className="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl p-5 text-white shadow-lg">
+                    <div className="flex items-center gap-2 mb-3 text-blue-200 text-xs font-medium uppercase tracking-wide">
+                      <Ticket className="w-4 h-4" />
+                      Ticketmaster
+                    </div>
+                    <div className="text-3xl font-bold">{scrapeStats?.ticketmaster_events || 0}</div>
+                    <div className="text-blue-100 text-sm mt-1">events scraped</div>
                   </div>
                 </div>
 
                 {/* Activity Chart */}
                 {scrapeHistory.length > 0 && (
-                  <div className="bg-white rounded-xl shadow-sm p-6">
-                    <h3 className="font-semibold text-lg mb-4">Scraping Activity (Last 30 Days)</h3>
+                  <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-2xl p-6 text-white shadow-lg">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="font-semibold text-lg flex items-center gap-2">
+                        <Layers className="w-5 h-5 text-indigo-400" />
+                        Activity Timeline
+                      </h3>
+                      <span className="text-xs text-gray-400 uppercase tracking-wide">Last 30 Days</span>
+                    </div>
                     <MiniAreaChart
                       data={scrapeHistory}
                       lines={[
-                        { dataKey: 'events_fetched', color: '#6366f1', label: 'Events Fetched' },
-                        { dataKey: 'events_inserted', color: '#22c55e', label: 'New Events' },
-                        { dataKey: 'venues_created', color: '#f59e0b', label: 'New Venues' },
+                        { dataKey: 'events_fetched', color: '#818cf8', label: 'Fetched' },
+                        { dataKey: 'events_inserted', color: '#34d399', label: 'New' },
+                        { dataKey: 'venues_created', color: '#fbbf24', label: 'Venues' },
                       ]}
-                      height={100}
+                      height={120}
                     />
                   </div>
                 )}
 
                 {/* Recent Activity */}
                 {recentScrapes.length > 0 && (
-                  <div className="bg-white rounded-xl shadow-sm p-6">
+                  <div className="bg-white rounded-2xl shadow-sm p-6 border border-gray-100">
                     <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">
                       <RefreshCw className="w-5 h-5 text-gray-400" />
                       Recent Activity
@@ -1412,108 +1552,6 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                     <RecentActivity activities={recentScrapes} />
                   </div>
                 )}
-
-                {/* SQL Console */}
-                <div className="bg-white rounded-xl shadow-sm p-6">
-                  <button
-                    onClick={() => setShowSqlConsole(!showSqlConsole)}
-                    className="w-full flex items-center justify-between text-left"
-                  >
-                    <h3 className="font-semibold text-lg flex items-center gap-2">
-                      <Database className="w-5 h-5 text-gray-500" />
-                      SQL Console
-                    </h3>
-                    <span className="text-gray-400">{showSqlConsole ? '▼' : '▶'}</span>
-                  </button>
-                  
-                  {showSqlConsole && (
-                    <div className="mt-4 space-y-3">
-                      <textarea
-                        value={sqlQuery}
-                        onChange={(e) => setSqlQuery(e.target.value)}
-                        placeholder="SELECT * FROM events LIMIT 10;"
-                        className="w-full h-32 p-3 text-sm font-mono border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                      />
-                      <div className="flex gap-2">
-                        <button
-                          onClick={async () => {
-                            setIsExecutingSql(true);
-                            setSqlError('');
-                            setSqlResult(null);
-                            try {
-                              const result = await executeSqlQuery(sqlQuery);
-                              setSqlResult(result);
-                            } catch (error: any) {
-                              setSqlError(error.message);
-                            } finally {
-                              setIsExecutingSql(false);
-                            }
-                          }}
-                          disabled={isExecutingSql || !sqlQuery.trim()}
-                          className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2 text-sm"
-                        >
-                          {isExecutingSql ? (
-                            <RefreshCw className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <Database className="w-4 h-4" />
-                          )}
-                          Execute
-                        </button>
-                        <button
-                          onClick={() => {
-                            setSqlQuery('');
-                            setSqlResult(null);
-                            setSqlError('');
-                          }}
-                          className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm"
-                        >
-                          Clear
-                        </button>
-                      </div>
-                      
-                      {sqlError && (
-                        <div className="p-3 bg-red-50 text-red-700 rounded-lg text-sm">
-                          {sqlError}
-                        </div>
-                      )}
-                      
-                      {sqlResult && (
-                        <div className="space-y-2">
-                          <div className="text-xs text-gray-500">
-                            {sqlResult.rowCount} row{sqlResult.rowCount !== 1 ? 's' : ''} returned
-                          </div>
-                          <div className="max-h-64 overflow-auto border rounded-lg">
-                            <table className="w-full text-xs">
-                              <thead className="bg-gray-50 sticky top-0">
-                                <tr>
-                                  {sqlResult.fields?.map((f: any) => (
-                                    <th key={f.name} className="px-2 py-1 text-left font-medium text-gray-700 border-b">
-                                      {f.name}
-                                    </th>
-                                  ))}
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {sqlResult.rows?.slice(0, 100).map((row: any, i: number) => (
-                                  <tr key={i} className="hover:bg-gray-50">
-                                    {sqlResult.fields?.map((f: any) => (
-                                      <td key={f.name} className="px-2 py-1 border-b truncate max-w-xs" title={String(row[f.name])}>
-                                        {row[f.name] === null ? <span className="text-gray-400 italic">null</span> : String(row[f.name]).substring(0, 100)}
-                                      </td>
-                                    ))}
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                          {sqlResult.rows?.length > 100 && (
-                            <div className="text-xs text-gray-500">Showing first 100 rows</div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
               </div>
             </div>
           </div>
@@ -1851,6 +1889,20 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                         />
                       </div>
                     </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Event Type</label>
+                      <select
+                        value={editForm.event_type || 'event'}
+                        onChange={(e) => setEditForm({ ...editForm, event_type: e.target.value as EventType })}
+                        className="w-full px-3 py-2 border rounded-lg"
+                      >
+                        {EVENT_TYPES.map((type) => (
+                          <option key={type.value} value={type.value}>
+                            {type.icon} {type.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                     <div className="relative">
                       <label className="block text-sm font-medium text-gray-700 mb-1">Venue</label>
                       <input
@@ -1898,21 +1950,41 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
-                        <input
-                          type="text"
+                        <select
                           value={editForm.venue_city || ''}
                           onChange={(e) => setEditForm({ ...editForm, venue_city: e.target.value })}
                           className="w-full px-3 py-2 border rounded-lg"
-                        />
+                        >
+                          <option value="">Select city...</option>
+                          {citiesDropdown.map((city) => (
+                            <option key={`${city.name}-${city.country}`} value={city.name}>
+                              {city.name}
+                            </option>
+                          ))}
+                          {/* Allow custom entry if not in list */}
+                          {editForm.venue_city && !citiesDropdown.find(c => c.name === editForm.venue_city) && (
+                            <option value={editForm.venue_city}>{editForm.venue_city} (custom)</option>
+                          )}
+                        </select>
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Country</label>
-                        <input
-                          type="text"
+                        <select
                           value={editForm.venue_country || ''}
                           onChange={(e) => setEditForm({ ...editForm, venue_country: e.target.value })}
                           className="w-full px-3 py-2 border rounded-lg"
-                        />
+                        >
+                          <option value="">Select country...</option>
+                          {countriesDropdown.map((country) => (
+                            <option key={country.name} value={country.name}>
+                              {country.name} {country.code ? `(${country.code})` : ''}
+                            </option>
+                          ))}
+                          {/* Allow custom entry if not in list */}
+                          {editForm.venue_country && !countriesDropdown.find(c => c.name === editForm.venue_country) && (
+                            <option value={editForm.venue_country}>{editForm.venue_country} (custom)</option>
+                          )}
+                        </select>
                       </div>
                     </div>
                     <div>
@@ -2084,21 +2156,39 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
-                        <input
-                          type="text"
+                        <select
                           value={editForm.city || ''}
                           onChange={(e) => setEditForm({ ...editForm, city: e.target.value })}
                           className="w-full px-3 py-2 border rounded-lg"
-                        />
+                        >
+                          <option value="">Select city...</option>
+                          {citiesDropdown.map((city) => (
+                            <option key={`${city.name}-${city.country}`} value={city.name}>
+                              {city.name}
+                            </option>
+                          ))}
+                          {editForm.city && !citiesDropdown.find(c => c.name === editForm.city) && (
+                            <option value={editForm.city}>{editForm.city} (custom)</option>
+                          )}
+                        </select>
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Country</label>
-                        <input
-                          type="text"
+                        <select
                           value={editForm.country || ''}
                           onChange={(e) => setEditForm({ ...editForm, country: e.target.value })}
                           className="w-full px-3 py-2 border rounded-lg"
-                        />
+                        >
+                          <option value="">Select country...</option>
+                          {countriesDropdown.map((country) => (
+                            <option key={country.name} value={country.name}>
+                              {country.name} {country.code ? `(${country.code})` : ''}
+                            </option>
+                          ))}
+                          {editForm.country && !countriesDropdown.find(c => c.name === editForm.country) && (
+                            <option value={editForm.country}>{editForm.country} (custom)</option>
+                          )}
+                        </select>
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
