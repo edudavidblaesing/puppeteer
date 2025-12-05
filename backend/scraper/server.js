@@ -3269,20 +3269,37 @@ app.get('/db/artists', async (req, res) => {
         const hasArtists = parseInt(artistCountCheck.rows[0].count) > 0;
 
         if (hasArtists) {
-            // Use artists table
-            let query = 'SELECT * FROM artists WHERE 1=1';
+            // Use artists table with source references
+            let query = `
+                SELECT a.*,
+                       COALESCE(
+                           (SELECT json_agg(json_build_object(
+                               'id', sa.id,
+                               'source_code', sa.source_code,
+                               'name', sa.name,
+                               'confidence', asl.match_confidence
+                           ))
+                           FROM artist_scraped_links asl
+                           JOIN scraped_artists sa ON sa.id = asl.scraped_artist_id
+                           WHERE asl.artist_id = a.id),
+                           '[]'
+                       ) as source_references
+                FROM artists a
+                WHERE 1=1`;
             const params = [];
             let paramIndex = 1;
 
             if (search) {
-                query += ` AND (name ILIKE $${paramIndex} OR country ILIKE $${paramIndex})`;
+                query += ` AND (a.name ILIKE $${paramIndex} OR a.country ILIKE $${paramIndex})`;
                 params.push(`%${search}%`);
                 paramIndex++;
             }
 
             // Get total count
-            const countQuery = query.replace('SELECT *', 'SELECT COUNT(*)');
-            const countResult = await pool.query(countQuery, params);
+            const countQuery = `SELECT COUNT(*) FROM artists WHERE 1=1` +
+                (search ? ` AND (name ILIKE $1 OR country ILIKE $1)` : '');
+            const countParams = search ? [`%${search}%`] : [];
+            const countResult = await pool.query(countQuery, countParams);
             const total = parseInt(countResult.rows[0].count);
 
             // Add sorting and pagination
@@ -3704,26 +3721,46 @@ app.get('/db/venues', async (req, res) => {
         const hasVenues = parseInt(venueCountCheck.rows[0].count) > 0;
 
         if (hasVenues) {
-            // Use venues table
-            let query = 'SELECT * FROM venues WHERE 1=1';
+            // Use venues table with source references
+            let query = `
+                SELECT v.*,
+                       COALESCE(
+                           (SELECT json_agg(json_build_object(
+                               'id', sv.id,
+                               'source_code', sv.source_code,
+                               'name', sv.name,
+                               'confidence', vsl.match_confidence
+                           ))
+                           FROM venue_scraped_links vsl
+                           JOIN scraped_venues sv ON sv.id = vsl.scraped_venue_id
+                           WHERE vsl.venue_id = v.id),
+                           '[]'
+                       ) as source_references
+                FROM venues v
+                WHERE 1=1`;
             const params = [];
             let paramIndex = 1;
 
             if (search) {
-                query += ` AND (name ILIKE $${paramIndex} OR address ILIKE $${paramIndex})`;
+                query += ` AND (v.name ILIKE $${paramIndex} OR v.address ILIKE $${paramIndex})`;
                 params.push(`%${search}%`);
                 paramIndex++;
             }
 
             if (city) {
-                query += ` AND city ILIKE $${paramIndex}`;
+                query += ` AND v.city ILIKE $${paramIndex}`;
                 params.push(`%${city}%`);
                 paramIndex++;
             }
 
             // Get total count
-            const countQuery = query.replace('SELECT *', 'SELECT COUNT(*)');
-            const countResult = await pool.query(countQuery, params);
+            const countQuery = `SELECT COUNT(*) FROM venues WHERE 1=1` + 
+                (search ? ` AND (name ILIKE $1 OR address ILIKE $1)` : '') +
+                (city && search ? ` AND city ILIKE $2` : city ? ` AND city ILIKE $1` : '');
+            const countParams = [];
+            if (search) countParams.push(`%${search}%`);
+            if (city) countParams.push(`%${city}%`);
+            const countResult = await pool.query(countQuery, countParams);
             const total = parseInt(countResult.rows[0].count);
 
             // Add sorting and pagination
