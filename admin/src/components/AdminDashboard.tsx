@@ -1071,7 +1071,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                             onClick={async (e) => {
                               e.stopPropagation();
                               try {
-                                await setPublishStatus(event.id, 'approved');
+                                await setPublishStatus([event.id], 'approved');
                                 setEvents(events.map(ev => ev.id === event.id ? { ...ev, publish_status: 'approved' } : ev));
                               } catch (err) { console.error(err); }
                             }}
@@ -1084,7 +1084,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                             onClick={async (e) => {
                               e.stopPropagation();
                               try {
-                                await setPublishStatus(event.id, 'rejected');
+                                await setPublishStatus([event.id], 'rejected');
                                 setEvents(events.map(ev => ev.id === event.id ? { ...ev, publish_status: 'rejected' } : ev));
                               } catch (err) { console.error(err); }
                             }}
