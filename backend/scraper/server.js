@@ -2337,47 +2337,49 @@ app.get('/db/venues/search', async (req, res) => {
             return res.json({ data: [] });
         }
 
-        let query = `
-            SELECT id, name, address, city, country, latitude, longitude
-            FROM venues
-            WHERE LOWER(name) LIKE $1
-        `;
-        const params = [`%${q.toLowerCase()}%`];
-        let paramIdx = 2;
+        // Check if venues table has data, otherwise use scraped_venues
+        const venueCountCheck = await pool.query('SELECT COUNT(*) FROM venues');
+        const hasVenues = parseInt(venueCountCheck.rows[0].count) > 0;
 
-        if (city) {
-            query += ` AND LOWER(city) = LOWER($${paramIdx})`;
-            params.push(city);
-            paramIdx++;
+        let result;
+        if (hasVenues) {
+            result = await pool.query(`
+                SELECT id, name, address, city, country, latitude, longitude
+                FROM venues
+                WHERE LOWER(name) LIKE $1
+                ${city ? 'AND LOWER(city) = LOWER($2)' : ''}
+                ORDER BY 
+                    CASE WHEN LOWER(name) = $${city ? '3' : '2'} THEN 0
+                         WHEN LOWER(name) LIKE $${city ? '3' : '2'} || '%' THEN 1
+                         ELSE 2
+                    END,
+                    name ASC
+                LIMIT $${city ? '4' : '3'}
+            `, city
+                ? [`%${q.toLowerCase()}%`, city, q.toLowerCase(), parseInt(limit)]
+                : [`%${q.toLowerCase()}%`, q.toLowerCase(), parseInt(limit)]
+            );
+        } else {
+            // Fallback to scraped_venues
+            result = await pool.query(`
+                SELECT DISTINCT ON (LOWER(name), LOWER(COALESCE(city, '')))
+                    id, name, address, city, country, latitude, longitude
+                FROM scraped_venues
+                WHERE LOWER(name) LIKE $1
+                ${city ? 'AND LOWER(city) = LOWER($2)' : ''}
+                ORDER BY 
+                    LOWER(name), LOWER(COALESCE(city, '')),
+                    CASE WHEN LOWER(name) = $${city ? '3' : '2'} THEN 0
+                         WHEN LOWER(name) LIKE $${city ? '3' : '2'} || '%' THEN 1
+                         ELSE 2
+                    END,
+                    name ASC
+                LIMIT $${city ? '4' : '3'}
+            `, city
+                ? [`%${q.toLowerCase()}%`, city, q.toLowerCase(), parseInt(limit)]
+                : [`%${q.toLowerCase()}%`, q.toLowerCase(), parseInt(limit)]
+            );
         }
-
-        query += ` ORDER BY 
-            CASE WHEN LOWER(name) = LOWER($1) THEN 0
-                 WHEN LOWER(name) LIKE $1 || '%' THEN 1
-                 ELSE 2
-            END,
-            name ASC
-            LIMIT $${paramIdx}`;
-        params[0] = `%${q.toLowerCase()}%`; // restore the LIKE pattern
-        params.push(parseInt(limit));
-
-        // Fix the ORDER BY reference
-        const result = await pool.query(`
-            SELECT id, name, address, city, country, latitude, longitude
-            FROM venues
-            WHERE LOWER(name) LIKE $1
-            ${city ? 'AND LOWER(city) = LOWER($2)' : ''}
-            ORDER BY 
-                CASE WHEN LOWER(name) = $${city ? '3' : '2'} THEN 0
-                     WHEN LOWER(name) LIKE $${city ? '3' : '2'} || '%' THEN 1
-                     ELSE 2
-                END,
-                name ASC
-            LIMIT $${city ? '4' : '3'}
-        `, city
-            ? [`%${q.toLowerCase()}%`, city, q.toLowerCase(), parseInt(limit)]
-            : [`%${q.toLowerCase()}%`, q.toLowerCase(), parseInt(limit)]
-        );
 
         res.json({ data: result.rows });
     } catch (error) {
@@ -2395,18 +2397,41 @@ app.get('/db/artists/search', async (req, res) => {
             return res.json({ data: [] });
         }
 
-        const result = await pool.query(`
-            SELECT id, name, country, image_url, genres
-            FROM artists
-            WHERE LOWER(name) LIKE $1
-            ORDER BY 
-                CASE WHEN LOWER(name) = $2 THEN 0
-                     WHEN LOWER(name) LIKE $2 || '%' THEN 1
-                     ELSE 2
-                END,
-                name ASC
-            LIMIT $3
-        `, [`%${q.toLowerCase()}%`, q.toLowerCase(), parseInt(limit)]);
+        // Check if artists table has data, otherwise use scraped_artists
+        const artistCountCheck = await pool.query('SELECT COUNT(*) FROM artists');
+        const hasArtists = parseInt(artistCountCheck.rows[0].count) > 0;
+
+        let result;
+        if (hasArtists) {
+            result = await pool.query(`
+                SELECT id, name, country, image_url, genres
+                FROM artists
+                WHERE LOWER(name) LIKE $1
+                ORDER BY 
+                    CASE WHEN LOWER(name) = $2 THEN 0
+                         WHEN LOWER(name) LIKE $2 || '%' THEN 1
+                         ELSE 2
+                    END,
+                    name ASC
+                LIMIT $3
+            `, [`%${q.toLowerCase()}%`, q.toLowerCase(), parseInt(limit)]);
+        } else {
+            // Fallback to scraped_artists
+            result = await pool.query(`
+                SELECT DISTINCT ON (LOWER(name))
+                    id, name, image_url, genres
+                FROM scraped_artists
+                WHERE LOWER(name) LIKE $1
+                ORDER BY 
+                    LOWER(name),
+                    CASE WHEN LOWER(name) = $2 THEN 0
+                         WHEN LOWER(name) LIKE $2 || '%' THEN 1
+                         ELSE 2
+                    END,
+                    name ASC
+                LIMIT $3
+            `, [`%${q.toLowerCase()}%`, q.toLowerCase(), parseInt(limit)]);
+        }
 
         res.json({ data: result.rows });
     } catch (error) {

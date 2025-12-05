@@ -249,13 +249,10 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
     const updateArtistPos = () => {
       if (showArtistDropdown && artistInputRef.current) {
         const rect = artistInputRef.current.getBoundingClientRect();
-        const pos = { top: rect.bottom + 4, left: rect.left, width: rect.width };
-        console.log('Updating artist dropdown position:', pos);
-        setArtistDropdownPos(pos);
+        setArtistDropdownPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
       }
     };
 
-    console.log('Artist dropdown state changed:', showArtistDropdown, 'suggestions:', artistSuggestions.length);
     updateArtistPos();
     window.addEventListener('scroll', updateArtistPos, true);
     window.addEventListener('resize', updateArtistPos);
@@ -469,12 +466,9 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
   // Autocomplete search for artists (using API)
   useEffect(() => {
     const doSearch = async () => {
-      console.log('Artist search triggered:', artistSearch, 'length:', artistSearch.length);
       if (artistSearch.length >= 2) {
         try {
-          console.log('Calling searchArtists API...');
           const results = await searchArtists(artistSearch);
-          console.log('Artist search results:', results.length, results);
           setArtistSuggestions(results.slice(0, 10));
           setShowArtistDropdown(results.length > 0);
         } catch (error) {
@@ -483,7 +477,6 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
           const filtered = artists.filter(a =>
             a.name?.toLowerCase().includes(artistSearch.toLowerCase())
           ).slice(0, 8);
-          console.log('Using local fallback, found:', filtered.length);
           setArtistSuggestions(filtered);
           setShowArtistDropdown(filtered.length > 0);
         }
@@ -2464,10 +2457,6 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                               className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-gray-500 bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
                               placeholder="Type to search artists..."
                             />
-                            {(() => {
-                              console.log('Render check - showArtistDropdown:', showArtistDropdown, 'suggestions:', artistSuggestions.length, 'width:', artistDropdownPos.width);
-                              return null;
-                            })()}
                             {showArtistDropdown && artistSuggestions.length > 0 && artistDropdownPos.width > 0 && (
                               <div 
                                 className="fixed z-[9999] bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-lg shadow-lg max-h-48 overflow-auto"
