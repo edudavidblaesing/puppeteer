@@ -527,7 +527,14 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
   // Events are already filtered by the backend, just apply smart sorting
   const filteredEvents = useMemo(() => {
     // Apply smart sorting: timing first (Live > Upcoming > Past), then status
-    return sortEventsSmart(events);
+    const sorted = sortEventsSmart(events);
+    console.log('Sorted events:', sorted.slice(0, 5).map(e => ({ 
+      title: e.title, 
+      date: e.date, 
+      timing: getEventTiming(e),
+      status: e.publish_status 
+    })));
+    return sorted;
   }, [events]);
 
   // Get current total based on tab
@@ -2488,6 +2495,54 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                               </div>
                             )}
                           </div>
+                          {/* Inline source suggestions for Artists */}
+                          {sourceReferences.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {sourceReferences
+                                .filter((s: any) => {
+                                  if (!s.artists) return false;
+                                  const currentArtistsStr = (editForm.artistsList || []).join(', ').toLowerCase();
+                                  return s.artists.toLowerCase() !== currentArtistsStr;
+                                })
+                                .map((source: any, idx: number) => (
+                                  <button
+                                    key={`artists-${idx}`}
+                                    type="button"
+                                    onClick={() => {
+                                      const artistsArray = source.artists.split(',').map((a: string) => a.trim()).filter((a: string) => a);
+                                      setEditForm({ ...editForm, artistsList: artistsArray });
+                                    }}
+                                    className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-700 rounded text-xs text-left transition-colors group max-w-full"
+                                    title={`Use artists from ${source.source_code?.toUpperCase()}`}
+                                  >
+                                    {source.source_code === 'ra' ? (
+                                      <img src="/ra-logo.jpg" alt="RA" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                    ) : source.source_code === 'ticketmaster' ? (
+                                      <img src="/ticketmaster-logo.png" alt="TM" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                    ) : (
+                                      <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
+                                    )}
+                                    <span className="truncate max-w-[200px] text-gray-600 dark:text-gray-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
+                                      {source.artists}
+                                    </span>
+                                  </button>
+                                ))}
+                              {/* Reset to original if changed */}
+                              {editingItem && editingItem.artists !== (editForm.artistsList || []).join(', ') && editingItem.artists && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const artistsArray = editingItem.artists.split(',').map((a: string) => a.trim()).filter((a: string) => a);
+                                    setEditForm({ ...editForm, artistsList: artistsArray });
+                                  }}
+                                  className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded text-xs text-gray-500 transition-colors"
+                                >
+                                  <RotateCcw className="w-3 h-3" />
+                                  Reset
+                                </button>
+                              )}
+                            </div>
+                          )}
                           {/* Selected artists display */}
                           {editForm.artistsList && editForm.artistsList.length > 0 && (
                             <div className="flex flex-wrap gap-2 mt-2">

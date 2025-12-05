@@ -1600,15 +1600,21 @@ app.get('/db/events', async (req, res) => {
             query += ` AND e.date >= CURRENT_DATE - INTERVAL '3 days'`;
         }
 
-        // Order by: 
-        // 1. Date Group: Live (Today) > Upcoming > Past
-        // 2. Status: Approved > Pending > Rejected
-        // 3. Within Date Group: Upcoming ASC, Past DESC
+        // Order by timing priority:
+        // 1. Ongoing (live now) - date is today AND current time is between start_time and end_time
+        // 2. Upcoming - date is in the future
+        // 3. Recent - date is within last 3 days
+        // 4. Expired - date is older than 3 days
+        // Then by status (approved > pending > rejected)
+        // Then by date (upcoming: soonest first, past: most recent first)
         query += ` ORDER BY 
             CASE 
-                WHEN e.date::date = CURRENT_DATE THEN 0
+                WHEN e.date::date = CURRENT_DATE 
+                     AND (e.start_time IS NULL OR CURRENT_TIME >= e.start_time)
+                     AND (e.end_time IS NULL OR CURRENT_TIME <= e.end_time) THEN 0
                 WHEN e.date::date > CURRENT_DATE THEN 1
-                ELSE 2
+                WHEN e.date::date >= CURRENT_DATE - INTERVAL '3 days' THEN 2
+                ELSE 3
             END,
             CASE e.publish_status
                 WHEN 'approved' THEN 0
@@ -1616,8 +1622,12 @@ app.get('/db/events', async (req, res) => {
                 WHEN 'rejected' THEN 2
                 ELSE 3
             END,
-            CASE WHEN e.date::date >= CURRENT_DATE THEN e.date END ASC,
-            CASE WHEN e.date::date < CURRENT_DATE THEN e.date END DESC
+            CASE 
+                WHEN e.date::date >= CURRENT_DATE THEN e.date
+            END ASC,
+            CASE 
+                WHEN e.date::date < CURRENT_DATE THEN e.date
+            END DESC
             LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
         params.push(parseInt(limit), parseInt(offset));
 
