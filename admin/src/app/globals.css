@@ -143,3 +143,24 @@ body {
   background: transparent !important;
   border: none !important;
 }
+
+/* Pending event diagonal stripes */
+.pending-stripes {
+  background: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent 4px,
+    rgba(251, 191, 36, 0.15) 4px,
+    rgba(251, 191, 36, 0.15) 8px
+  );
+}
+
+.dark .pending-stripes {
+  background: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent 4px,
+    rgba(251, 191, 36, 0.1) 4px,
+    rgba(251, 191, 36, 0.1) 8px
+  );
+}

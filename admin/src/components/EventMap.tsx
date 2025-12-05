@@ -73,6 +73,15 @@ export default function EventMap({
   const cityLayerRef = useRef<L.LayerGroup | null>(null);
   const isProgrammaticMove = useRef(false);
   const [currentZoom, setCurrentZoom] = useState(EUROPE_VIEW.zoom);
+  const prevEventsRef = useRef<string>('');
+  const onEventClickRef = useRef(onEventClick);
+  const onCityChangeRef = useRef(onCityChange);
+
+  // Keep callback refs updated without triggering re-renders
+  useEffect(() => {
+    onEventClickRef.current = onEventClick;
+    onCityChangeRef.current = onCityChange;
+  }, [onEventClick, onCityChange]);
 
   // Build city config from dynamic cities
   const cityConfig = useMemo(() => {
@@ -213,12 +222,12 @@ export default function EventMap({
       const center = map.getCenter();
 
       // When user manually zooms out, clear city selection to show all cities
-      if (zoom < 9 && selectedCity && onCityChange) {
-        onCityChange('');
+      if (zoom < 9 && selectedCity && onCityChangeRef.current) {
+        onCityChangeRef.current('');
         return;
       }
 
-      if (zoom >= 10 && onCityChange) {
+      if (zoom >= 10 && onCityChangeRef.current) {
         let closestCity = '';
         let minDist = Infinity;
 
@@ -234,7 +243,7 @@ export default function EventMap({
         }
 
         if (closestCity && closestCity !== selectedCity) {
-          onCityChange(closestCity);
+          onCityChangeRef.current(closestCity);
         }
       }
     });
@@ -245,11 +254,22 @@ export default function EventMap({
       map.remove();
       mapRef.current = null;
     };
-  }, [cityConfig, onCityChange, selectedCity]);
+  }, [cityConfig, selectedCity]);
 
-  // Update markers based on zoom level
+  // Create a stable key for events to detect actual changes
+  const eventsKey = useMemo(() => {
+    return events.map(e => `${e.id}:${e.publish_status}`).sort().join(',');
+  }, [events]);
+
+  // Update markers based on zoom level - only when events actually change
   useEffect(() => {
     if (!mapRef.current || !venueLayerRef.current || !cityLayerRef.current) return;
+
+    // Skip if events haven't actually changed
+    if (prevEventsRef.current === eventsKey && venueLayerRef.current.getLayers().length > 0) {
+      return;
+    }
+    prevEventsRef.current = eventsKey;
 
     venueLayerRef.current.clearLayers();
     cityLayerRef.current.clearLayers();
@@ -300,8 +320,8 @@ export default function EventMap({
         // For single event, click opens edit directly
         if (data.events.length === 1) {
           marker.on('click', () => {
-            if (onEventClick) {
-              onEventClick(data.events[0]);
+            if (onEventClickRef.current) {
+              onEventClickRef.current(data.events[0]);
             }
           });
 
@@ -355,9 +375,9 @@ export default function EventMap({
                     e.stopPropagation();
                     const idx = parseInt((btn as HTMLElement).dataset.eventIdx || '0');
                     const event = data.events[idx];
-                    if (event && onEventClick) {
+                    if (event && onEventClickRef.current) {
                       marker.closePopup();
-                      onEventClick(event);
+                      onEventClickRef.current(event);
                     }
                   });
                 });
@@ -400,13 +420,13 @@ export default function EventMap({
 
         marker.on('click', () => {
           mapRef.current?.setView(config.coords, CITY_ZOOM, { animate: true });
-          if (onCityChange) onCityChange(cityName);
+          if (onCityChangeRef.current) onCityChangeRef.current(cityName);
         });
 
         cityLayerRef.current?.addLayer(marker);
       });
     }
-  }, [events, venueData, cityConfig, currentZoom, onEventClick, onCityChange]);
+  }, [eventsKey, venueData, cityConfig, currentZoom, events]);
 
   // Handle city selection changes
   useEffect(() => {

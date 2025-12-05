@@ -383,6 +383,13 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
     loadData();
   }, [loadData]);
 
+  // Reload map events when filters change (separate from main loadData)
+  useEffect(() => {
+    if (activeTab === 'events') {
+      loadMapEvents();
+    }
+  }, [activeTab, cityFilter, statusFilter, showPastEvents, loadMapEvents]);
+
   // Load dropdown data and check connection on mount
   useEffect(() => {
     const initDropdowns = async () => {
@@ -989,7 +996,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
             'px-4 py-2.5 flex items-center gap-3 cursor-pointer border-b transition-colors relative',
             editingItem?.id === item.id && 'bg-indigo-50 dark:bg-gray-800 border-l-2 border-l-indigo-500 dark:border-l-gray-400',
             isRejected && 'bg-gray-50 dark:bg-gray-900/50',
-            isPending && !editingItem?.id && 'bg-amber-50/50 dark:bg-amber-900/10',
+            isPending && !editingItem?.id && 'pending-stripes',
             !isRejected && !isPending && !editingItem?.id && 'bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800',
             isPast && !isRejected && 'opacity-60'
           )}
@@ -1364,24 +1371,19 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                         <div
                           key={event.id}
                           className={clsx(
-                            "px-4 py-3 flex items-center gap-3 hover:bg-gray-50 dark:hover:bg-gray-800 border-b border-gray-200 dark:border-gray-700 transition-colors group",
+                            "px-4 py-2.5 flex items-center gap-3 border-b border-gray-200 dark:border-gray-700 transition-colors group cursor-pointer pending-stripes hover:bg-amber-50/50 dark:hover:bg-gray-800",
                             isPast && "opacity-60"
                           )}
+                          onClick={() => { setActiveTabState('events'); handleEdit(event); }}
                         >
-                          <div
-                            onClick={() => { setActiveTabState('events'); handleEdit(event); }}
-                            className="w-10 h-10 rounded bg-gray-200 dark:bg-gray-700 flex items-center justify-center flex-shrink-0 overflow-hidden cursor-pointer"
-                          >
+                          <div className="w-10 h-10 rounded bg-gray-200 dark:bg-gray-700 flex items-center justify-center flex-shrink-0 overflow-hidden">
                             {event.flyer_front ? (
                               <img src={event.flyer_front} alt="" className="w-full h-full object-cover" />
                             ) : (
                               <Calendar className="w-5 h-5 text-gray-400 dark:text-gray-500" />
                             )}
                           </div>
-                          <div
-                            onClick={() => { setActiveTabState('events'); handleEdit(event); }}
-                            className="flex-1 min-w-0 cursor-pointer"
-                          >
+                          <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2">
                               <p className="font-medium text-sm truncate text-gray-900 dark:text-gray-100">{event.title}</p>
                               {event.event_type && event.event_type !== 'event' && (
@@ -1390,7 +1392,9 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                                 </span>
                               )}
                             </div>
-                            <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{event.venue_name} • {event.venue_city}</p>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{event.venue_name} • {event.venue_city}</p>
+                            </div>
                             {/* Source badges below venue/city */}
                             {sources.length > 0 && (
                               <div className="flex items-center gap-1 mt-1">
@@ -1421,15 +1425,15 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                               </div>
                             )}
                           </div>
-                          <div className="text-right flex-shrink-0 flex items-center gap-2">
-                            <div className="mr-2">
+                          <div className="text-right flex-shrink-0 self-start pt-0.5 flex items-center gap-2">
+                            <div>
                               {isLive ? (
                                 <div className="flex items-center gap-1.5">
                                   <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
                                   <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">LIVE</span>
                                 </div>
                               ) : (
-                                <p className={clsx('text-xs font-medium', timing.dateClass)}>
+                                <p className={clsx('text-sm font-medium', timing.dateClass)}>
                                   {event.date ? format(new Date(event.date), 'MMM d') : '—'}
                                 </p>
                               )}
@@ -2191,7 +2195,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                             placeholder="Type to search venues..."
                           />
                           {showVenueDropdown && venueSuggestions.length > 0 && (
-                            <div className="absolute z-50 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-auto">
+                            <div className="absolute z-50 w-full mt-1 bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-lg shadow-lg max-h-48 overflow-auto">
                               {venueSuggestions.map((venue: any) => (
                                 <button
                                   key={venue.id}
@@ -2212,8 +2216,8 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                                 >
                                   <Building2 className="w-4 h-4 text-gray-400" />
                                   <div>
-                                    <p className="text-sm font-medium">{venue.name}</p>
-                                    <p className="text-xs text-gray-500">{venue.city}, {venue.country}</p>
+                                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{venue.name}</p>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400">{venue.city}, {venue.country}</p>
                                   </div>
                                 </button>
                               ))}
@@ -2405,7 +2409,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                               placeholder="Type to search artists..."
                             />
                             {showArtistDropdown && artistSuggestions.length > 0 && (
-                              <div className="absolute z-50 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-auto">
+                              <div className="absolute z-50 w-full mt-1 bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-lg shadow-lg max-h-48 overflow-auto">
                                 {artistSuggestions.map((artist: any) => (
                                   <button
                                     key={artist.id}
@@ -2426,7 +2430,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                                     ) : (
                                       <Music className="w-4 h-4 text-gray-400" />
                                     )}
-                                    <span className="text-sm font-medium">{artist.name}</span>
+                                    <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{artist.name}</span>
                                   </button>
                                 ))}
                               </div>
@@ -2625,7 +2629,13 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                                     onClick={() => setEditForm({ ...editForm, name: source.name })}
                                     className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-700 rounded text-xs text-left transition-colors group max-w-full"
                                   >
-                                    <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
+                                    {source.source_code === 'ra' ? (
+                                      <img src="/ra-logo.jpg" alt="RA" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                    ) : source.source_code === 'ticketmaster' ? (
+                                      <img src="/ticketmaster-logo.png" alt="TM" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                    ) : (
+                                      <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
+                                    )}
                                     <span className="truncate max-w-[200px] text-gray-600 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
                                       {source.name}
                                     </span>
@@ -2663,7 +2673,13 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                                     onClick={() => setEditForm({ ...editForm, country: source.country })}
                                     className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-700 rounded text-xs text-left transition-colors group max-w-full"
                                   >
-                                    <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
+                                    {source.source_code === 'ra' ? (
+                                      <img src="/ra-logo.jpg" alt="RA" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                    ) : source.source_code === 'ticketmaster' ? (
+                                      <img src="/ticketmaster-logo.png" alt="TM" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                    ) : (
+                                      <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
+                                    )}
                                     <span className="truncate max-w-[200px] text-gray-600 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
                                       {source.country}
                                     </span>
@@ -2701,7 +2717,13 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                                     onClick={() => setEditForm({ ...editForm, content_url: source.content_url })}
                                     className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-700 rounded text-xs text-left transition-colors group max-w-full"
                                   >
-                                    <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
+                                    {source.source_code === 'ra' ? (
+                                      <img src="/ra-logo.jpg" alt="RA" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                    ) : source.source_code === 'ticketmaster' ? (
+                                      <img src="/ticketmaster-logo.png" alt="TM" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                    ) : (
+                                      <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
+                                    )}
                                     <span className="truncate max-w-[200px] text-gray-600 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
                                       Link
                                     </span>
@@ -2739,7 +2761,13 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                                     onClick={() => setEditForm({ ...editForm, image_url: source.image_url })}
                                     className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-700 rounded text-xs text-left transition-colors group max-w-full"
                                   >
-                                    <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
+                                    {source.source_code === 'ra' ? (
+                                      <img src="/ra-logo.jpg" alt="RA" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                    ) : source.source_code === 'ticketmaster' ? (
+                                      <img src="/ticketmaster-logo.png" alt="TM" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                    ) : (
+                                      <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
+                                    )}
                                     <span className="text-gray-600 dark:text-gray-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
                                       Use Image
                                     </span>
@@ -2783,7 +2811,13 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                                     onClick={() => setEditForm({ ...editForm, name: source.name })}
                                     className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-700 rounded text-xs text-left transition-colors group max-w-full"
                                   >
-                                    <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
+                                    {source.source_code === 'ra' ? (
+                                      <img src="/ra-logo.jpg" alt="RA" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                    ) : source.source_code === 'ticketmaster' ? (
+                                      <img src="/ticketmaster-logo.png" alt="TM" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                    ) : (
+                                      <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
+                                    )}
                                     <span className="truncate max-w-[200px] text-gray-600 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
                                       {source.name}
                                     </span>
@@ -2821,7 +2855,13 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                                     onClick={() => setEditForm({ ...editForm, address: source.address })}
                                     className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-700 rounded text-xs text-left transition-colors group max-w-full"
                                   >
-                                    <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
+                                    {source.source_code === 'ra' ? (
+                                      <img src="/ra-logo.jpg" alt="RA" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                    ) : source.source_code === 'ticketmaster' ? (
+                                      <img src="/ticketmaster-logo.png" alt="TM" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                    ) : (
+                                      <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
+                                    )}
                                     <span className="truncate max-w-[300px] text-gray-600 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
                                       {source.address}
                                     </span>

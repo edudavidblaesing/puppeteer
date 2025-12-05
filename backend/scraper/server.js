@@ -1761,45 +1761,8 @@ app.get('/db/events', async (req, res) => {
     }
 });
 
-// Get single event with source references
-app.get('/db/events/:id', async (req, res) => {
-    try {
-        const eventId = req.params.id;
-
-        // Get the event
-        const result = await pool.query('SELECT * FROM events WHERE id = $1', [eventId]);
-
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Event not found' });
-        }
-
-        const event = result.rows[0];
-
-        // Get source references from event_scraped_links
-        try {
-            const sourceRefs = await pool.query(`
-                SELECT se.id, se.source_code, se.source_event_id, se.title, se.date, 
-                       se.start_time, se.content_url, se.flyer_front, se.venue_name, 
-                       se.description, se.price_info, esl.match_confidence as confidence
-                FROM event_scraped_links esl
-                JOIN scraped_events se ON se.id = esl.scraped_event_id
-                WHERE esl.event_id = $1
-            `, [eventId]);
-
-            event.source_references = sourceRefs.rows;
-        } catch (e) {
-            console.error(`[Single Event] Error fetching source refs:`, e);
-            event.source_references = [];
-        }
-
-        res.json(event);
-    } catch (error) {
-        console.error('Database error:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
 // Get recently updated events (updated_at > created_at + 1 minute, within last 7 days)
+// NOTE: This route MUST come before /db/events/:id to prevent ":id" from matching "recent-updates"
 app.get('/db/events/recent-updates', async (req, res) => {
     try {
         const { limit = 50 } = req.query;
@@ -1837,6 +1800,7 @@ app.get('/db/events/recent-updates', async (req, res) => {
 });
 
 // Get all events for map (minimal data, no pagination limit)
+// NOTE: This route MUST come before /db/events/:id to prevent ":id" from matching "map"
 app.get('/db/events/map', async (req, res) => {
     try {
         const { city, status, showPast } = req.query;
@@ -1884,6 +1848,44 @@ app.get('/db/events/map', async (req, res) => {
     } catch (error) {
         console.error('Error fetching map events:', error);
         res.json({ data: [], total: 0 });
+    }
+});
+
+// Get single event with source references
+app.get('/db/events/:id', async (req, res) => {
+    try {
+        const eventId = req.params.id;
+
+        // Get the event
+        const result = await pool.query('SELECT * FROM events WHERE id = $1', [eventId]);
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Event not found' });
+        }
+
+        const event = result.rows[0];
+
+        // Get source references from event_scraped_links
+        try {
+            const sourceRefs = await pool.query(`
+                SELECT se.id, se.source_code, se.source_event_id, se.title, se.date, 
+                       se.start_time, se.content_url, se.flyer_front, se.venue_name, 
+                       se.description, se.price_info, esl.match_confidence as confidence
+                FROM event_scraped_links esl
+                JOIN scraped_events se ON se.id = esl.scraped_event_id
+                WHERE esl.event_id = $1
+            `, [eventId]);
+
+            event.source_references = sourceRefs.rows;
+        } catch (e) {
+            console.error(`[Single Event] Error fetching source refs:`, e);
+            event.source_references = [];
+        }
+
+        res.json(event);
+    } catch (error) {
+        console.error('Database error:', error);
+        res.status(500).json({ error: error.message });
     }
 });
 
@@ -5381,12 +5383,19 @@ async function matchAndLinkEvents(options = {}) {
                         ? JSON.stringify(scraped.artists_json)
                         : null;
 
+                    // Determine publish status - auto-reject past events
+                    const eventDate = dateStr ? new Date(dateStr) : null;
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    const isPastEvent = eventDate && eventDate < today;
+                    const publishStatus = isPastEvent ? 'rejected' : 'pending';
+
                     await pool.query(`
                         INSERT INTO events (
                             id, source_code, source_id, title, date, start_time, end_time, 
                             description, flyer_front, content_url, venue_name, venue_address, 
                             venue_city, venue_country, artists, is_published, publish_status
-                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, false, 'pending')
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, false, $16)
                         ON CONFLICT (id) DO NOTHING
                     `, [
                         eventId,
@@ -5403,7 +5412,8 @@ async function matchAndLinkEvents(options = {}) {
                         scraped.venue_address,
                         scraped.venue_city,
                         scraped.venue_country,
-                        artistsStr
+                        artistsStr,
+                        publishStatus
                     ]);
 
                     // Link to the new main event
