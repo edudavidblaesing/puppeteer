@@ -5465,7 +5465,8 @@ app.get('/scraped/events', async (req, res) => {
     try {
         const { source, city, linked, limit = 100, offset = 0 } = req.query;
         
-        let query = 'SELECT se.*, EXISTS(SELECT 1 FROM event_source_links esl WHERE esl.scraped_event_id = se.id) as is_linked FROM scraped_events se WHERE 1=1';
+        // Use event_scraped_links (not event_source_links) for link checking
+        let query = 'SELECT se.*, EXISTS(SELECT 1 FROM event_scraped_links esl WHERE esl.scraped_event_id = se.id) as is_linked FROM scraped_events se WHERE 1=1';
         const params = [];
         let paramIndex = 1;
         
@@ -5478,9 +5479,9 @@ app.get('/scraped/events', async (req, res) => {
             params.push(city);
         }
         if (linked === 'true') {
-            query += ` AND EXISTS(SELECT 1 FROM event_source_links esl WHERE esl.scraped_event_id = se.id)`;
+            query += ` AND EXISTS(SELECT 1 FROM event_scraped_links esl WHERE esl.scraped_event_id = se.id)`;
         } else if (linked === 'false') {
-            query += ` AND NOT EXISTS(SELECT 1 FROM event_source_links esl WHERE esl.scraped_event_id = se.id)`;
+            query += ` AND NOT EXISTS(SELECT 1 FROM event_scraped_links esl WHERE esl.scraped_event_id = se.id)`;
         }
         
         query += ` ORDER BY se.date ASC LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
@@ -5492,8 +5493,8 @@ app.get('/scraped/events', async (req, res) => {
         let countQuery = 'SELECT COUNT(*) FROM scraped_events se WHERE 1=1';
         if (source) countQuery += ` AND se.source_code = $1`;
         if (city) countQuery += ` AND LOWER(se.venue_city) = LOWER($${source ? 2 : 1})`;
-        if (linked === 'true') countQuery += ` AND EXISTS(SELECT 1 FROM event_source_links esl WHERE esl.scraped_event_id = se.id)`;
-        else if (linked === 'false') countQuery += ` AND NOT EXISTS(SELECT 1 FROM event_source_links esl WHERE esl.scraped_event_id = se.id)`;
+        if (linked === 'true') countQuery += ` AND EXISTS(SELECT 1 FROM event_scraped_links esl WHERE esl.scraped_event_id = se.id)`;
+        else if (linked === 'false') countQuery += ` AND NOT EXISTS(SELECT 1 FROM event_scraped_links esl WHERE esl.scraped_event_id = se.id)`;
         
         const countParams = params.slice(0, -2);
         const countResult = await pool.query(countQuery, countParams);

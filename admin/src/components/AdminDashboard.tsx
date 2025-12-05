@@ -729,14 +729,14 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
     }
   };
 
-  // Get timing badge styling
-  const getTimingBadge = (event: Event) => {
+  // Get timing styling for date (no label, just color/strikethrough)
+  const getTimingStyle = (event: Event) => {
     const timing = getEventTiming(event);
     const styles = {
-      upcoming: { bg: 'bg-blue-100', text: 'text-blue-700', label: '↗ Upcoming' },
-      ongoing: { bg: 'bg-green-100', text: 'text-green-700', label: '● Live Now' },
-      recent: { bg: 'bg-yellow-100', text: 'text-yellow-700', label: '↙ Recent' },
-      expired: { bg: 'bg-gray-100', text: 'text-gray-500', label: '✓ Past' }
+      upcoming: { dateClass: 'text-gray-900', strikethrough: false },
+      ongoing: { dateClass: 'text-green-600 font-semibold', strikethrough: false },
+      recent: { dateClass: 'text-gray-400', strikethrough: true },
+      expired: { dateClass: 'text-gray-400', strikethrough: true }
     };
     return styles[timing];
   };
@@ -750,14 +750,24 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
         return acc;
       }, [] as string[]) || [];
       
+      const timing = getTimingStyle(item);
+      const isRejected = item.publish_status === 'rejected';
+      const isPending = item.publish_status === 'pending';
+      
       return (
         <div
           key={item.id}
           onClick={() => handleEdit(item)}
           className={clsx(
-            'px-4 py-2.5 flex items-center gap-3 cursor-pointer hover:bg-gray-50 border-b transition-colors',
-            editingItem?.id === item.id && 'bg-indigo-50 border-l-2 border-l-indigo-500'
+            'px-4 py-2.5 flex items-center gap-3 cursor-pointer border-b transition-colors relative',
+            editingItem?.id === item.id && 'bg-indigo-50 border-l-2 border-l-indigo-500',
+            isRejected && 'bg-gray-100',
+            isPending && !editingItem?.id && 'bg-yellow-50',
+            !isRejected && !isPending && !editingItem?.id && 'bg-white hover:bg-gray-50'
           )}
+          style={isRejected ? {
+            backgroundImage: 'repeating-linear-gradient(135deg, transparent, transparent 10px, rgba(0,0,0,0.03) 10px, rgba(0,0,0,0.03) 20px)'
+          } : undefined}
         >
           <input
             type="checkbox"
@@ -797,31 +807,14 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
               </div>
             )}
           </div>
-          <div className="text-right flex-shrink-0 flex flex-col items-end gap-1">
-            <div className="flex items-center gap-1">
-              <p className="text-xs font-medium">{item.date ? format(new Date(item.date), 'MMM d') : '—'}</p>
-              {(() => {
-                const badge = getTimingBadge(item);
-                return (
-                  <span className={clsx('text-[10px] px-1.5 py-0.5 rounded', badge.bg, badge.text)}>
-                    {badge.label}
-                  </span>
-                );
-              })()}
-            </div>
-            <button
-              onClick={(e) => { e.stopPropagation(); handleCycleStatus(item); }}
-              className={clsx(
-                'text-xs px-2 py-0.5 rounded',
-                item.publish_status === 'approved' ? 'bg-green-100 text-green-700' : 
-                item.publish_status === 'rejected' ? 'bg-red-100 text-red-700' : 
-                'bg-yellow-100 text-yellow-700'
-              )}
-            >
-              {item.publish_status === 'approved' ? '✓ Live' : 
-               item.publish_status === 'rejected' ? '✗ Hidden' : 
-               '? Pending'}
-            </button>
+          <div className="text-right flex-shrink-0 self-start pt-0.5">
+            <p className={clsx(
+              'text-sm font-medium',
+              timing.dateClass,
+              timing.strikethrough && 'line-through'
+            )}>
+              {item.date ? format(new Date(item.date), 'MMM d') : '—'}
+            </p>
           </div>
         </div>
       );
@@ -1093,13 +1086,16 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                       </div>
                       <div className="text-right flex-shrink-0 flex items-center gap-2">
                         <div className="mr-2">
-                          <p className="text-xs font-medium">{event.date ? format(new Date(event.date), 'MMM d') : '—'}</p>
                           {(() => {
-                            const badge = getTimingBadge(event);
+                            const timing = getTimingStyle(event);
                             return (
-                              <span className={clsx('text-[10px] px-1.5 py-0.5 rounded', badge.bg, badge.text)}>
-                                {badge.label}
-                              </span>
+                              <p className={clsx(
+                                'text-xs font-medium',
+                                timing.dateClass,
+                                timing.strikethrough && 'line-through'
+                              )}>
+                                {event.date ? format(new Date(event.date), 'MMM d') : '—'}
+                              </p>
                             );
                           })()}
                         </div>
@@ -1674,7 +1670,23 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                                       const updates: Record<string, any> = {};
                                       Object.entries(sourceData).forEach(([key, value]) => {
                                         if (value !== null && value !== undefined && value !== '') {
-                                          updates[key] = value;
+                                          // Format date to YYYY-MM-DD for form input
+                                          if (key === 'date' && value) {
+                                            const d = new Date(value as string | number | Date);
+                                            if (!isNaN(d.getTime())) {
+                                              updates[key] = d.toISOString().split('T')[0];
+                                            }
+                                          // Format start_time to HH:MM for form input
+                                          } else if (key === 'start_time' && typeof value === 'string') {
+                                            if (value.includes('T')) {
+                                              const timePart = value.split('T')[1];
+                                              updates[key] = timePart ? timePart.substring(0, 5) : '';
+                                            } else {
+                                              updates[key] = value.substring(0, 5);
+                                            }
+                                          } else {
+                                            updates[key] = value;
+                                          }
                                         }
                                       });
                                       setEditForm({ ...editForm, ...updates });
