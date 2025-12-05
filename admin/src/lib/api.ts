@@ -10,6 +10,8 @@ const headers = {
 
 export async function fetchEvents(params?: {
   city?: string;
+  search?: string;
+  status?: string;
   limit?: number;
   offset?: number;
   from?: string;
@@ -17,6 +19,8 @@ export async function fetchEvents(params?: {
 }) {
   const searchParams = new URLSearchParams();
   if (params?.city) searchParams.set('city', params.city);
+  if (params?.search) searchParams.set('search', params.search);
+  if (params?.status) searchParams.set('status', params.status);
   if (params?.limit) searchParams.set('limit', params.limit.toString());
   if (params?.offset) searchParams.set('offset', params.offset.toString());
   if (params?.from) searchParams.set('from', params.from);

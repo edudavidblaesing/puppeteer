@@ -34,11 +34,13 @@ export default function RootLayout({
           href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css"
         />
       </head>
-      <body className={inter.className}>
+      <body className={`${inter.className} h-screen overflow-hidden`}>
         <AuthProvider>
-          <div className="min-h-screen flex flex-col bg-gray-50">
-            <Navigation />
-            <main className="flex-1 flex flex-col">
+          <div className="h-full flex flex-col bg-gray-50">
+            <div className="flex-shrink-0">
+              <Navigation />
+            </div>
+            <main className="flex-1 flex flex-col min-h-0 overflow-hidden">
               {children}
             </main>
           </div>

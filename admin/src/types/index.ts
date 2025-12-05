@@ -91,6 +91,21 @@ export interface DashboardStats {
   recent_events: Event[];
 }
 
+// Helper function to parse time from either "HH:mm:ss" or ISO timestamp format
+function parseTime(timeStr: string | null | undefined): [number, number] {
+  if (!timeStr) return [0, 0];
+  
+  // Check if it's an ISO timestamp (contains 'T')
+  if (timeStr.includes('T')) {
+    const date = new Date(timeStr);
+    return [date.getHours(), date.getMinutes()];
+  }
+  
+  // Otherwise treat as "HH:mm" or "HH:mm:ss" format
+  const parts = timeStr.split(':').map(Number);
+  return [parts[0] || 0, parts[1] || 0];
+}
+
 // Helper function to determine event timing category
 export function getEventTiming(event: Event): EventTiming {
   const now = new Date();
@@ -99,8 +114,8 @@ export function getEventTiming(event: Event): EventTiming {
   const eventDateOnly = new Date(eventDate.getFullYear(), eventDate.getMonth(), eventDate.getDate());
   
   // Parse start and end times if available
-  const startTime = event.start_time ? event.start_time.split(':').map(Number) : [0, 0];
-  const endTime = event.end_time ? event.end_time.split(':').map(Number) : [23, 59];
+  const startTime = parseTime(event.start_time);
+  const endTime = event.end_time ? parseTime(event.end_time) : [23, 59] as [number, number];
   
   const eventStart = new Date(eventDateOnly);
   eventStart.setHours(startTime[0], startTime[1]);

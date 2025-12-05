@@ -1540,7 +1540,7 @@ app.post('/db/events', async (req, res) => {
 // Get events from database
 app.get('/db/events', async (req, res) => {
     try {
-        const { city, limit = 100, offset = 0, from, to } = req.query;
+        const { city, search, limit = 100, offset = 0, from, to, status } = req.query;
         
         let query = `
             SELECT e.*, 
@@ -1561,9 +1561,25 @@ app.get('/db/events', async (req, res) => {
         const params = [];
         let paramIndex = 1;
         
+        if (search) {
+            query += ` AND (
+                e.title ILIKE $${paramIndex} 
+                OR e.venue_name ILIKE $${paramIndex} 
+                OR e.artists ILIKE $${paramIndex}
+            )`;
+            params.push(`%${search}%`);
+            paramIndex++;
+        }
+        
         if (city) {
             query += ` AND LOWER(e.venue_city) = LOWER($${paramIndex})`;
             params.push(city);
+            paramIndex++;
+        }
+        
+        if (status && status !== 'all') {
+            query += ` AND e.publish_status = $${paramIndex}`;
+            params.push(status);
             paramIndex++;
         }
         
@@ -1581,19 +1597,19 @@ app.get('/db/events', async (req, res) => {
         
         // Order by: 
         // 1. Date: today first, then upcoming, then past
-        // 2. Status: approved > pending > rejected
+        // 2. Status: pending > approved > rejected (pending first for review)
         // 3. Within each group: upcoming by date ASC, past by date DESC
         query += ` ORDER BY 
+            CASE e.publish_status
+                WHEN 'pending' THEN 0
+                WHEN 'approved' THEN 1
+                WHEN 'rejected' THEN 2
+                ELSE 3
+            END,
             CASE 
                 WHEN e.date::date = CURRENT_DATE THEN 0
                 WHEN e.date::date > CURRENT_DATE THEN 1
                 ELSE 2
-            END,
-            CASE e.publish_status
-                WHEN 'approved' THEN 0
-                WHEN 'pending' THEN 1
-                WHEN 'rejected' THEN 2
-                ELSE 3
             END,
             CASE WHEN e.date::date >= CURRENT_DATE THEN e.date END ASC,
             CASE WHEN e.date::date < CURRENT_DATE THEN e.date END DESC
@@ -1602,14 +1618,24 @@ app.get('/db/events', async (req, res) => {
         
         const result = await pool.query(query, params);
         
-        // Get total count
+        // Get total count with same filters
         let countQuery = 'SELECT COUNT(*) FROM events WHERE 1=1';
         const countParams = [];
         let countParamIndex = 1;
         
+        if (search) {
+            countQuery += ` AND (title ILIKE $${countParamIndex} OR venue_name ILIKE $${countParamIndex} OR artists ILIKE $${countParamIndex})`;
+            countParams.push(`%${search}%`);
+            countParamIndex++;
+        }
         if (city) {
             countQuery += ` AND LOWER(venue_city) = LOWER($${countParamIndex})`;
             countParams.push(city);
+            countParamIndex++;
+        }
+        if (status && status !== 'all') {
+            countQuery += ` AND publish_status = $${countParamIndex}`;
+            countParams.push(status);
             countParamIndex++;
         }
         if (from) {

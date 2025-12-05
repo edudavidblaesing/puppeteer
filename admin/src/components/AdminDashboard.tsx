@@ -191,6 +191,8 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
       const [eventsData, statsData, citiesData, scrapedData] = await Promise.all([
         fetchEvents({
           city: cityFilter || undefined,
+          search: searchQuery || undefined,
+          status: statusFilter !== 'all' ? statusFilter : undefined,
           limit: pageSize,
           offset: (page - 1) * pageSize,
         }),
@@ -211,7 +213,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
     } catch (error) {
       console.error('Failed to load events:', error);
     }
-  }, [cityFilter, page, pageSize]);
+  }, [cityFilter, searchQuery, statusFilter, page, pageSize]);
 
   // Load artists
   const loadArtists = useCallback(async () => {
@@ -364,24 +366,11 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
     setEditingItem(null);
   }, [activeTab, cityFilter, searchQuery, statusFilter]);
 
-  // Filter events locally
+  // Events are already filtered by the backend, just apply smart sorting
   const filteredEvents = useMemo(() => {
-    const sourceEvents = events; // Main events table is THE source
-    const filtered = sourceEvents.filter((event) => {
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase();
-        const matches =
-          event.title?.toLowerCase().includes(query) ||
-          event.venue_name?.toLowerCase().includes(query) ||
-          event.artists?.toLowerCase().includes(query);
-        if (!matches) return false;
-      }
-      if (statusFilter !== 'all' && event.publish_status !== statusFilter) return false;
-      return true;
-    });
     // Apply smart sorting: pending first for review, then by timing
-    return sortEventsSmart(filtered);
-  }, [events, searchQuery, statusFilter]);
+    return sortEventsSmart(events);
+  }, [events]);
 
   // Get current total based on tab
   const currentTotal = useMemo(() => {
@@ -427,8 +416,29 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
       }
       // Format start_time for input type="time" (HH:MM)
       if (formData.start_time && typeof formData.start_time === 'string') {
-        // Handle formats like "23:00:00" or "23:00"
-        formData.start_time = formData.start_time.substring(0, 5);
+        // Handle timestamp format like "2025-12-02T20:00:00.000Z" or time format "23:00:00"
+        if (formData.start_time.includes('T')) {
+          const timePart = formData.start_time.split('T')[1];
+          formData.start_time = timePart ? timePart.substring(0, 5) : '';
+        } else {
+          formData.start_time = formData.start_time.substring(0, 5);
+        }
+      }
+      // Parse artists from JSON string to array of names
+      if (formData.artists && typeof formData.artists === 'string') {
+        try {
+          const artistsArray = JSON.parse(formData.artists);
+          if (Array.isArray(artistsArray)) {
+            formData.artistsList = artistsArray.map((a: any) => a.name || a).filter(Boolean);
+          } else {
+            formData.artistsList = [];
+          }
+        } catch {
+          // If not JSON, treat as comma-separated
+          formData.artistsList = formData.artists.split(',').map((a: string) => a.trim()).filter(Boolean);
+        }
+      } else {
+        formData.artistsList = [];
       }
       setEditForm(formData);
       
@@ -474,11 +484,18 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
     setIsSaving(true);
     try {
       if (activeTab === 'events') {
+        // Convert artistsList back to artists JSON format for the API
+        const saveData = { ...editForm };
+        if (saveData.artistsList) {
+          saveData.artists = JSON.stringify(saveData.artistsList.map((name: string) => ({ name })));
+          delete saveData.artistsList;
+        }
+        
         if (editingItem) {
-          await updateEvent(editingItem.id, editForm);
-          setEvents(events.map(e => e.id === editingItem.id ? { ...e, ...editForm } : e));
+          await updateEvent(editingItem.id, saveData);
+          setEvents(events.map(e => e.id === editingItem.id ? { ...e, ...saveData } : e));
         } else {
-          await createEvent(editForm);
+          await createEvent(saveData);
           await loadEvents();
         }
       } else if (activeTab === 'artists') {
@@ -891,7 +908,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
   }, [activeTab, filteredEvents, artists, venues, adminCities]);
 
   return (
-    <div className="h-screen flex flex-col bg-gray-100">
+    <div className="h-full flex flex-col bg-gray-100">
       {/* Secondary toolbar */}
       <header className="bg-white border-b flex-shrink-0 z-50">
         <div className="flex items-center px-4 py-2 gap-3 bg-gray-50">
@@ -1584,29 +1601,44 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                       <p className="text-sm text-gray-500 italic">No linked scraped sources found for this event.</p>
                     ) : (
                       <>
-                        {/* Source badges */}
-                        <div className="flex flex-wrap gap-2 mb-4">
-                          {sourceReferences.map((source: any, idx: number) => (
-                            <span
-                              key={idx}
-                              className={clsx(
-                                'px-2 py-1 rounded text-xs font-medium inline-flex items-center gap-1',
-                                source.source_code === 'ra' ? 'bg-red-100 text-red-700' :
-                                source.source_code === 'ticketmaster' ? 'bg-blue-100 text-blue-700' :
-                                source.source_code === 'original' ? 'bg-green-100 text-green-700' :
-                                'bg-gray-100 text-gray-700'
-                              )}
-                            >
-                              {source.source_code?.toUpperCase()}
-                              {source.title && <span className="text-xs opacity-70 ml-1">: {source.title?.substring(0, 25)}{source.title?.length > 25 ? '...' : ''}</span>}
-                              {source.content_url && (
-                                <a href={source.content_url} target="_blank" rel="noopener noreferrer" className="ml-1 hover:opacity-70">
-                                  <ExternalLink className="w-3 h-3" />
-                                </a>
-                              )}
-                            </span>
-                          ))}
-                        </div>
+                        {/* Group sources by source_code and show unique ones */}
+                        {(() => {
+                          // Group by source_code, keeping unique content_urls
+                          const groupedSources = sourceReferences.reduce((acc: Record<string, any[]>, source: any) => {
+                            const key = source.source_code || 'unknown';
+                            if (!acc[key]) acc[key] = [];
+                            // Only add if content_url is unique within this source
+                            const isDuplicate = acc[key].some((s: any) => s.content_url === source.content_url);
+                            if (!isDuplicate) acc[key].push(source);
+                            return acc;
+                          }, {} as Record<string, any[]>);
+                          
+                          return (
+                            <div className="flex flex-wrap gap-2 mb-4">
+                              {Object.entries(groupedSources).map(([sourceCode, sources]) => (
+                                sources.map((source: any, idx: number) => (
+                                  <a
+                                    key={`${sourceCode}-${idx}`}
+                                    href={source.content_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className={clsx(
+                                      'px-2 py-1 rounded text-xs font-medium inline-flex items-center gap-1 hover:opacity-80 transition-opacity',
+                                      sourceCode === 'ra' ? 'bg-red-100 text-red-700' :
+                                      sourceCode === 'ticketmaster' ? 'bg-blue-100 text-blue-700' :
+                                      sourceCode === 'original' ? 'bg-green-100 text-green-700' :
+                                      'bg-gray-100 text-gray-700'
+                                    )}
+                                  >
+                                    {sourceCode?.toUpperCase()}
+                                    {source.title && <span className="text-xs opacity-70 ml-1">: {source.title?.substring(0, 25)}{source.title?.length > 25 ? '...' : ''}</span>}
+                                    <ExternalLink className="w-3 h-3 ml-1" />
+                                  </a>
+                                ))
+                              ))}
+                            </div>
+                          );
+                        })()}
 
                         {/* Field-level source options */}
                         <div className="space-y-2 max-h-48 overflow-auto">
@@ -1648,42 +1680,52 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                           })}
                         </div>
 
-                        {/* Quick apply all from source */}
+                        {/* Quick apply all from source - grouped by source_code */}
                         <div className="mt-3 pt-3 border-t border-indigo-200">
                           <div className="text-xs text-gray-500 mb-2">Apply all fields from:</div>
                           <div className="flex flex-wrap gap-2">
-                            {sourceReferences.map((source: any, sidx: number) => (
-                              <button
-                                key={sidx}
-                                type="button"
-                                onClick={() => {
-                                  const sourceData = { ...source };
-                                  delete sourceData.id;
-                                  delete sourceData.source_code;
-                                  delete sourceData.source_event_id;
-                                  delete sourceData.confidence;
-                                  delete sourceData.is_primary;
-                                  delete sourceData.raw_data;
-                                  delete sourceData.created_at;
-                                  delete sourceData.updated_at;
-                                  const updates: Record<string, any> = {};
-                                  Object.entries(sourceData).forEach(([key, value]) => {
-                                    if (value !== null && value !== undefined && value !== '') {
-                                      updates[key] = value;
-                                    }
-                                  });
-                                  setEditForm({ ...editForm, ...updates });
-                                }}
-                                className={clsx(
-                                  'px-2 py-1 rounded text-xs font-medium',
-                                  source.source_code === 'ra' ? 'bg-red-100 text-red-700 hover:bg-red-200' :
-                                  source.source_code === 'ticketmaster' ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' :
-                                  'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                )}
-                              >
-                                Use all from {source.source_code?.toUpperCase()}
-                              </button>
-                            ))}
+                            {(() => {
+                              // Group by source_code and use first (highest priority) from each source
+                              const uniqueSources = sourceReferences.reduce((acc: any[], source: any) => {
+                                if (!acc.find((s: any) => s.source_code === source.source_code)) {
+                                  acc.push(source);
+                                }
+                                return acc;
+                              }, [] as any[]);
+                              
+                              return uniqueSources.map((source: any, sidx: number) => (
+                                <button
+                                  key={sidx}
+                                  type="button"
+                                  onClick={() => {
+                                    const sourceData = { ...source };
+                                    delete sourceData.id;
+                                    delete sourceData.source_code;
+                                    delete sourceData.source_event_id;
+                                    delete sourceData.confidence;
+                                    delete sourceData.is_primary;
+                                    delete sourceData.raw_data;
+                                    delete sourceData.created_at;
+                                    delete sourceData.updated_at;
+                                    const updates: Record<string, any> = {};
+                                    Object.entries(sourceData).forEach(([key, value]) => {
+                                      if (value !== null && value !== undefined && value !== '') {
+                                        updates[key] = value;
+                                      }
+                                    });
+                                    setEditForm({ ...editForm, ...updates });
+                                  }}
+                                  className={clsx(
+                                    'px-2 py-1 rounded text-xs font-medium',
+                                    source.source_code === 'ra' ? 'bg-red-100 text-red-700 hover:bg-red-200' :
+                                    source.source_code === 'ticketmaster' ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' :
+                                    'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                  )}
+                                >
+                                  Use all from {source.source_code?.toUpperCase()}
+                                </button>
+                              ));
+                            })()}
                           </div>
                         </div>
                       </>
@@ -1884,10 +1926,10 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                                 key={artist.id}
                                 type="button"
                                 onClick={() => {
-                                  const currentArtists = editForm.artists ? editForm.artists.split(',').map((a: string) => a.trim()).filter(Boolean) : [];
+                                  const currentArtists = editForm.artistsList || [];
                                   if (!currentArtists.includes(artist.name)) {
-                                    currentArtists.push(artist.name);
-                                    setEditForm({ ...editForm, artists: currentArtists.join(', ') });
+                                    const newArtists = [...currentArtists, artist.name];
+                                    setEditForm({ ...editForm, artistsList: newArtists });
                                   }
                                   setArtistSearch('');
                                   setShowArtistDropdown(false);
@@ -1906,20 +1948,19 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                         )}
                       </div>
                       {/* Selected artists display */}
-                      {editForm.artists && (
-                        <div className="flex flex-wrap gap-1 mt-2">
-                          {editForm.artists.split(',').map((artist: string, idx: number) => artist.trim() && (
+                      {editForm.artistsList && editForm.artistsList.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {editForm.artistsList.map((artistName: string, idx: number) => (
                             <span
                               key={idx}
-                              className="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full text-xs"
+                              className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-100 text-indigo-700 rounded-full text-sm"
                             >
-                              {artist.trim()}
+                              {artistName}
                               <button
                                 type="button"
                                 onClick={() => {
-                                  const currentArtists = editForm.artists.split(',').map((a: string) => a.trim()).filter(Boolean);
-                                  currentArtists.splice(idx, 1);
-                                  setEditForm({ ...editForm, artists: currentArtists.join(', ') });
+                                  const newArtists = editForm.artistsList.filter((_: string, i: number) => i !== idx);
+                                  setEditForm({ ...editForm, artistsList: newArtists });
                                 }}
                                 className="hover:text-indigo-900"
                               >
