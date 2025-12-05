@@ -6225,6 +6225,38 @@ app.get('/scrape/stats', async (req, res) => {
     }
 });
 
+// Debug endpoint to check event_scraped_links
+app.get('/db/debug/links', async (req, res) => {
+    try {
+        const { event_id, limit = 10 } = req.query;
+        
+        let result;
+        if (event_id) {
+            result = await pool.query(`
+                SELECT esl.*, se.title as scraped_title, se.source_code
+                FROM event_scraped_links esl
+                JOIN scraped_events se ON se.id = esl.scraped_event_id
+                WHERE esl.event_id = $1
+            `, [event_id]);
+        } else {
+            result = await pool.query(`
+                SELECT esl.event_id, se.title, se.source_code, esl.match_confidence
+                FROM event_scraped_links esl
+                JOIN scraped_events se ON se.id = esl.scraped_event_id
+                ORDER BY esl.linked_at DESC
+                LIMIT $1
+            `, [parseInt(limit)]);
+        }
+        
+        res.json({
+            count: result.rows.length,
+            data: result.rows
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Get scrape history for charts
 app.get('/scrape/history', async (req, res) => {
     try {
