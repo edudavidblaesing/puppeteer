@@ -2676,11 +2676,11 @@ app.get('/db/artists', async (req, res) => {
                 SELECT DISTINCT ON (LOWER(name))
                     id,
                     name,
-                    country,
                     image_url,
                     content_url,
                     source_code,
-                    created_at,
+                    genres,
+                    scraped_at,
                     updated_at
                 FROM scraped_artists
                 WHERE name IS NOT NULL AND name != ''
@@ -2689,18 +2689,18 @@ app.get('/db/artists', async (req, res) => {
             let paramIndex = 1;
             
             if (search) {
-                query += ` AND (name ILIKE $${paramIndex} OR country ILIKE $${paramIndex})`;
+                query += ` AND name ILIKE $${paramIndex}`;
                 params.push(`%${search}%`);
                 paramIndex++;
             }
             
-            query += ` ORDER BY LOWER(name), created_at DESC`;
+            query += ` ORDER BY LOWER(name), scraped_at DESC`;
             
             // Get total count
             const countResult = await pool.query(`
                 SELECT COUNT(DISTINCT LOWER(name)) FROM scraped_artists 
                 WHERE name IS NOT NULL AND name != ''
-                ${search ? `AND (name ILIKE $1 OR country ILIKE $1)` : ''}
+                ${search ? `AND name ILIKE $1` : ''}
             `, search ? [`%${search}%`] : []);
             const total = parseInt(countResult.rows[0].count);
             
