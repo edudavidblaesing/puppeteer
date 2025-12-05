@@ -27,6 +27,7 @@ import {
   Layers,
   CheckCircle,
   XCircle,
+  Clock,
 } from 'lucide-react';
 
 // Dynamic import for EventMap (Leaflet requires client-side only)
@@ -1572,121 +1573,193 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
               </div>
 
               <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                {/* Source References Section - show linked scraped sources with field-level options */}
-                {sourceReferences.length > 0 && editingItem && activeTab === 'events' && (
+                {/* Source References Section - show linked scraped sources */}
+                {editingItem && activeTab === 'events' && (
                   <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-lg p-4 border border-indigo-100">
                     <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
                       <Layers className="w-4 h-4 text-indigo-600" />
                       Linked Sources ({sourceReferences.length})
                     </h3>
-                    
-                    {/* Source badges */}
-                    <div className="flex flex-wrap gap-2 mb-4">
-                      {sourceReferences.map((source: any, idx: number) => (
-                        <span
-                          key={idx}
-                          className={clsx(
-                            'px-2 py-1 rounded text-xs font-medium inline-flex items-center gap-1',
-                            source.source_code === 'ra' ? 'bg-red-100 text-red-700' :
-                            source.source_code === 'ticketmaster' ? 'bg-blue-100 text-blue-700' :
-                            source.source_code === 'original' ? 'bg-green-100 text-green-700' :
-                            'bg-gray-100 text-gray-700'
-                          )}
-                        >
-                          {source.source_code?.toUpperCase()}
-                          {source.content_url && (
-                            <a href={source.content_url} target="_blank" rel="noopener noreferrer" className="hover:opacity-70">
-                              <ExternalLink className="w-3 h-3" />
-                            </a>
-                          )}
-                        </span>
-                      ))}
-                    </div>
-                    
-                    {/* Field-level source options */}
-                    <div className="space-y-2 max-h-64 overflow-auto">
-                      {['title', 'description', 'venue_name', 'venue_address', 'flyer_front', 'content_url'].map((field) => {
-                        const sources = sourceReferences.filter((s: any) => s[field] && s[field] !== editForm[field]);
-                        if (sources.length === 0) return null;
-                        
-                        return (
-                          <div key={field} className="bg-white rounded p-2 border">
-                            <div className="text-xs font-medium text-gray-500 mb-1.5 capitalize">{field.replace(/_/g, ' ')}</div>
-                            <div className="space-y-1">
-                              {sources.map((source: any, idx: number) => (
-                                <div key={idx} className="flex items-start gap-2 text-xs">
-                                  <span className={clsx(
-                                    'px-1 py-0.5 rounded font-medium uppercase flex-shrink-0 mt-0.5',
-                                    source.source_code === 'ra' ? 'bg-red-100 text-red-700' :
-                                    source.source_code === 'ticketmaster' ? 'bg-blue-100 text-blue-700' :
-                                    'bg-gray-100 text-gray-700'
-                                  )}>
-                                    {source.source_code?.substring(0, 2).toUpperCase()}
-                                  </span>
-                                  <span className="text-gray-700 flex-1 break-words line-clamp-2">
-                                    {field === 'flyer_front' || field === 'content_url' 
-                                      ? <a href={source[field]} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline truncate block">{source[field]?.substring(0, 40)}...</a>
-                                      : source[field]?.substring(0, 100)}{source[field]?.length > 100 && '...'}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={() => setEditForm({ ...editForm, [field]: source[field] })}
-                                    className="text-indigo-600 hover:text-indigo-800 font-medium flex-shrink-0"
-                                  >
-                                    Use
-                                  </button>
+                    {sourceReferences.length === 0 ? (
+                      <p className="text-sm text-gray-500 italic">No linked scraped sources found for this event.</p>
+                    ) : (
+                      <>
+                        {/* Source badges */}
+                        <div className="flex flex-wrap gap-2 mb-4">
+                          {sourceReferences.map((source: any, idx: number) => (
+                            <span
+                              key={idx}
+                              className={clsx(
+                                'px-2 py-1 rounded text-xs font-medium inline-flex items-center gap-1',
+                                source.source_code === 'ra' ? 'bg-red-100 text-red-700' :
+                                source.source_code === 'ticketmaster' ? 'bg-blue-100 text-blue-700' :
+                                source.source_code === 'original' ? 'bg-green-100 text-green-700' :
+                                'bg-gray-100 text-gray-700'
+                              )}
+                            >
+                              {source.source_code?.toUpperCase()}
+                              {source.title && <span className="text-xs opacity-70 ml-1">: {source.title?.substring(0, 25)}{source.title?.length > 25 ? '...' : ''}</span>}
+                              {source.content_url && (
+                                <a href={source.content_url} target="_blank" rel="noopener noreferrer" className="ml-1 hover:opacity-70">
+                                  <ExternalLink className="w-3 h-3" />
+                                </a>
+                              )}
+                            </span>
+                          ))}
+                        </div>
+
+                        {/* Field-level source options */}
+                        <div className="space-y-2 max-h-48 overflow-auto">
+                          {['title', 'description', 'venue_name', 'flyer_front', 'content_url'].map((field) => {
+                            const sources = sourceReferences.filter((s: any) => s[field] && s[field] !== editForm[field]);
+                            if (sources.length === 0) return null;
+                            
+                            return (
+                              <div key={field} className="bg-white rounded p-2 border">
+                                <div className="text-xs font-medium text-gray-500 mb-1.5 capitalize">{field.replace(/_/g, ' ')}</div>
+                                <div className="space-y-1">
+                                  {sources.map((source: any, sidx: number) => (
+                                    <div key={sidx} className="flex items-start gap-2 text-xs">
+                                      <span className={clsx(
+                                        'px-1 py-0.5 rounded font-medium uppercase flex-shrink-0 mt-0.5',
+                                        source.source_code === 'ra' ? 'bg-red-100 text-red-700' :
+                                        source.source_code === 'ticketmaster' ? 'bg-blue-100 text-blue-700' :
+                                        'bg-gray-100 text-gray-700'
+                                      )}>
+                                        {source.source_code?.substring(0, 2).toUpperCase()}
+                                      </span>
+                                      <span className="text-gray-700 flex-1 break-words line-clamp-2">
+                                        {field === 'flyer_front' || field === 'content_url' 
+                                          ? <a href={source[field]} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline truncate block">{source[field]?.substring(0, 40)}...</a>
+                                          : source[field]?.substring(0, 80)}{source[field]?.length > 80 ? '...' : ''}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => setEditForm({ ...editForm, [field]: source[field] })}
+                                        className="text-indigo-600 hover:text-indigo-800 font-medium flex-shrink-0"
+                                      >
+                                        Use
+                                      </button>
+                                    </div>
+                                  ))}
                                 </div>
-                              ))}
-                            </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* Quick apply all from source */}
+                        <div className="mt-3 pt-3 border-t border-indigo-200">
+                          <div className="text-xs text-gray-500 mb-2">Apply all fields from:</div>
+                          <div className="flex flex-wrap gap-2">
+                            {sourceReferences.map((source: any, sidx: number) => (
+                              <button
+                                key={sidx}
+                                type="button"
+                                onClick={() => {
+                                  const sourceData = { ...source };
+                                  delete sourceData.id;
+                                  delete sourceData.source_code;
+                                  delete sourceData.source_event_id;
+                                  delete sourceData.confidence;
+                                  delete sourceData.is_primary;
+                                  delete sourceData.raw_data;
+                                  delete sourceData.created_at;
+                                  delete sourceData.updated_at;
+                                  const updates: Record<string, any> = {};
+                                  Object.entries(sourceData).forEach(([key, value]) => {
+                                    if (value !== null && value !== undefined && value !== '') {
+                                      updates[key] = value;
+                                    }
+                                  });
+                                  setEditForm({ ...editForm, ...updates });
+                                }}
+                                className={clsx(
+                                  'px-2 py-1 rounded text-xs font-medium',
+                                  source.source_code === 'ra' ? 'bg-red-100 text-red-700 hover:bg-red-200' :
+                                  source.source_code === 'ticketmaster' ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' :
+                                  'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                )}
+                              >
+                                Use all from {source.source_code?.toUpperCase()}
+                              </button>
+                            ))}
                           </div>
-                        );
-                      })}
-                    </div>
-                    
-                    {/* Quick apply all from source */}
-                    <div className="mt-3 pt-3 border-t border-indigo-200">
-                      <div className="text-xs text-gray-500 mb-2">Apply all fields from:</div>
-                      <div className="flex flex-wrap gap-2">
-                        {sourceReferences.map((source: any, idx: number) => (
-                          <button
-                            key={idx}
-                            type="button"
-                            onClick={() => {
-                              const sourceData = { ...source };
-                              delete sourceData.id;
-                              delete sourceData.source_code;
-                              delete sourceData.source_event_id;
-                              delete sourceData.confidence;
-                              delete sourceData.is_primary;
-                              delete sourceData.raw_data;
-                              delete sourceData.created_at;
-                              delete sourceData.updated_at;
-                              const updates: Record<string, any> = {};
-                              Object.entries(sourceData).forEach(([key, value]) => {
-                                if (value !== null && value !== undefined && value !== '') {
-                                  updates[key] = value;
-                                }
-                              });
-                              setEditForm({ ...editForm, ...updates });
-                            }}
-                            className={clsx(
-                              'px-2 py-1 rounded text-xs font-medium',
-                              source.source_code === 'ra' ? 'bg-red-100 text-red-700 hover:bg-red-200' :
-                              source.source_code === 'ticketmaster' ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' :
-                              'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                            )}
-                          >
-                            Use all from {source.source_code?.toUpperCase()}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
 
                 {/* Event form */}
                 {activeTab === 'events' && (
                   <>
+                    {/* Approve/Reject Switch */}
+                    {editingItem && (
+                      <div className="bg-white border rounded-lg p-4">
+                        <label className="block text-sm font-medium text-gray-700 mb-3">Publish Status</label>
+                        <div className="flex items-center gap-4">
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              setEditForm({ ...editForm, publish_status: 'approved' });
+                              try {
+                                await setPublishStatus([editingItem.id], 'approved');
+                                setEvents(events.map(ev => ev.id === editingItem.id ? { ...ev, publish_status: 'approved' } : ev));
+                              } catch (e) { console.error(e); }
+                            }}
+                            className={clsx(
+                              'flex-1 px-4 py-3 rounded-lg font-medium flex items-center justify-center gap-2 transition-all',
+                              editForm.publish_status === 'approved'
+                                ? 'bg-green-500 text-white shadow-lg'
+                                : 'bg-gray-100 text-gray-600 hover:bg-green-50 hover:text-green-700'
+                            )}
+                          >
+                            <Check className="w-5 h-5" />
+                            Approve
+                          </button>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              setEditForm({ ...editForm, publish_status: 'pending' });
+                              try {
+                                await setPublishStatus([editingItem.id], 'pending');
+                                setEvents(events.map(ev => ev.id === editingItem.id ? { ...ev, publish_status: 'pending' } : ev));
+                              } catch (e) { console.error(e); }
+                            }}
+                            className={clsx(
+                              'flex-1 px-4 py-3 rounded-lg font-medium flex items-center justify-center gap-2 transition-all',
+                              editForm.publish_status === 'pending'
+                                ? 'bg-amber-500 text-white shadow-lg'
+                                : 'bg-gray-100 text-gray-600 hover:bg-amber-50 hover:text-amber-700'
+                            )}
+                          >
+                            <Clock className="w-5 h-5" />
+                            Pending
+                          </button>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              setEditForm({ ...editForm, publish_status: 'rejected' });
+                              try {
+                                await setPublishStatus([editingItem.id], 'rejected');
+                                setEvents(events.map(ev => ev.id === editingItem.id ? { ...ev, publish_status: 'rejected' } : ev));
+                              } catch (e) { console.error(e); }
+                            }}
+                            className={clsx(
+                              'flex-1 px-4 py-3 rounded-lg font-medium flex items-center justify-center gap-2 transition-all',
+                              editForm.publish_status === 'rejected'
+                                ? 'bg-red-500 text-white shadow-lg'
+                                : 'bg-gray-100 text-gray-600 hover:bg-red-50 hover:text-red-700'
+                            )}
+                          >
+                            <X className="w-5 h-5" />
+                            Reject
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
                     {editForm.flyer_front && (
                       <img src={editForm.flyer_front} alt="" className="w-full h-48 object-cover rounded-lg" />
                     )}
