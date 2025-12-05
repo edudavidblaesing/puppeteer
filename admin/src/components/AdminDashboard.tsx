@@ -1484,11 +1484,11 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
             </div>
           </div>
         ) : (
-          <div className="flex-1 flex">
+          <div className="flex-1 flex overflow-hidden">
             {/* List Panel */}
-            <div className="bg-white border-r flex flex-col w-96">
+            <div className="bg-white border-r flex flex-col w-96 h-full max-h-full">
               {/* List header */}
-              <div className="px-4 py-2 bg-gray-50 border-b flex items-center justify-between sticky top-0 z-10">
+              <div className="px-4 py-2 bg-gray-50 border-b flex items-center justify-between flex-shrink-0">
                 <span className="text-sm text-gray-600">
                   {currentTotal.toLocaleString()} {activeTab}
                 </span>
@@ -1506,7 +1506,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
               </div>
 
               {/* List content */}
-              <div className="flex-1 overflow-auto">
+              <div className="flex-1 overflow-y-auto min-h-0">
                 {isLoading ? (
                   <div className="flex items-center justify-center h-32">
                     <RefreshCw className="w-6 h-6 animate-spin text-gray-400" />
@@ -1520,9 +1520,9 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                 )}
               </div>
 
-              {/* Pagination */}
+              {/* Pagination - always visible at bottom */}
               {totalPages > 1 && (
-                <div className="px-4 py-2 border-t bg-gray-50 flex items-center justify-between">
+                <div className="px-4 py-2 border-t bg-gray-50 flex items-center justify-between flex-shrink-0">
                   <span className="text-xs text-gray-500">
                     Page {page}/{totalPages}
                   </span>
@@ -1548,8 +1548,8 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
 
             {/* Edit Panel */}
             {showEditPanel ? (
-              <div className="flex-1 bg-white border-l overflow-auto">
-                <div className="sticky top-0 bg-white border-b px-4 py-3 flex items-center justify-between z-10">
+              <div className="flex-1 bg-white border-l flex flex-col h-full max-h-full overflow-hidden">
+                <div className="bg-white border-b px-4 py-3 flex items-center justify-between flex-shrink-0">
                 <h2 className="font-semibold">
                   {editingItem ? `Edit ${activeTab.slice(0, -1)}` : `New ${activeTab.slice(0, -1)}`}
                 </h2>
@@ -1571,7 +1571,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                 </div>
               </div>
 
-              <div className="p-4 space-y-4">
+              <div className="flex-1 overflow-y-auto p-4 space-y-4">
                 {/* Source References Section - show linked scraped sources with field-level options */}
                 {sourceReferences.length > 0 && editingItem && activeTab === 'events' && (
                   <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-lg p-4 border border-indigo-100">

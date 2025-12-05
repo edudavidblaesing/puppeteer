@@ -1579,12 +1579,21 @@ app.get('/db/events', async (req, res) => {
             paramIndex++;
         }
         
-        // Order by: today first, then upcoming (closest first), then past (most recent first)
+        // Order by: 
+        // 1. Date: today first, then upcoming, then past
+        // 2. Status: approved > pending > rejected
+        // 3. Within each group: upcoming by date ASC, past by date DESC
         query += ` ORDER BY 
             CASE 
                 WHEN e.date::date = CURRENT_DATE THEN 0
                 WHEN e.date::date > CURRENT_DATE THEN 1
                 ELSE 2
+            END,
+            CASE e.publish_status
+                WHEN 'approved' THEN 0
+                WHEN 'pending' THEN 1
+                WHEN 'rejected' THEN 2
+                ELSE 3
             END,
             CASE WHEN e.date::date >= CURRENT_DATE THEN e.date END ASC,
             CASE WHEN e.date::date < CURRENT_DATE THEN e.date END DESC
