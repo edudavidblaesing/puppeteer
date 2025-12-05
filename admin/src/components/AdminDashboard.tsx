@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import {
@@ -219,6 +219,27 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
   const [venueSuggestions, setVenueSuggestions] = useState<any[]>([]);
   const [showArtistDropdown, setShowArtistDropdown] = useState(false);
   const [showVenueDropdown, setShowVenueDropdown] = useState(false);
+
+  // Refs for dropdown positioning
+  const venueInputRef = useRef<HTMLInputElement>(null);
+  const artistInputRef = useRef<HTMLInputElement>(null);
+  const [venueDropdownPos, setVenueDropdownPos] = useState({ top: 0, left: 0, width: 0 });
+  const [artistDropdownPos, setArtistDropdownPos] = useState({ top: 0, left: 0, width: 0 });
+
+  // Update dropdown positions when showing
+  useEffect(() => {
+    if (showVenueDropdown && venueInputRef.current) {
+      const rect = venueInputRef.current.getBoundingClientRect();
+      setVenueDropdownPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+    }
+  }, [showVenueDropdown]);
+
+  useEffect(() => {
+    if (showArtistDropdown && artistInputRef.current) {
+      const rect = artistInputRef.current.getBoundingClientRect();
+      setArtistDropdownPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+    }
+  }, [showArtistDropdown]);
 
   // Load events data
   const loadEvents = useCallback(async () => {
@@ -994,10 +1015,10 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
           onClick={() => handleEdit(item)}
           className={clsx(
             'px-4 py-2.5 flex items-center gap-3 cursor-pointer border-b transition-colors relative',
-            editingItem?.id === item.id && 'bg-indigo-50 dark:bg-gray-800 border-l-2 border-l-indigo-500 dark:border-l-gray-400',
+            editingItem?.id === item.id && 'border-l-2 border-l-indigo-500 dark:border-l-gray-400',
             isRejected && 'bg-gray-50 dark:bg-gray-900/50',
-            isPending && !editingItem?.id && 'pending-stripes',
-            !isRejected && !isPending && !editingItem?.id && 'bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800',
+            isPending && 'pending-stripes',
+            !isRejected && !isPending && 'bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800',
             isPast && !isRejected && 'opacity-60'
           )}
         >
@@ -2183,6 +2204,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                         <div className="relative">
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Venue</label>
                           <input
+                            ref={venueInputRef}
                             type="text"
                             value={editForm.venue_name || ''}
                             onChange={(e) => {
@@ -2195,7 +2217,10 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                             placeholder="Type to search venues..."
                           />
                           {showVenueDropdown && venueSuggestions.length > 0 && (
-                            <div className="absolute z-50 w-full mt-1 bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-lg shadow-lg max-h-48 overflow-auto">
+                            <div 
+                              className="fixed z-[9999] bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-lg shadow-lg max-h-48 overflow-auto"
+                              style={{ top: venueDropdownPos.top, left: venueDropdownPos.left, width: venueDropdownPos.width }}
+                            >
                               {venueSuggestions.map((venue: any) => (
                                 <button
                                   key={venue.id}
@@ -2400,6 +2425,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Artists</label>
                           <div className="relative">
                             <input
+                              ref={artistInputRef}
                               type="text"
                               value={artistSearch}
                               onChange={(e) => setArtistSearch(e.target.value)}
@@ -2409,7 +2435,10 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                               placeholder="Type to search artists..."
                             />
                             {showArtistDropdown && artistSuggestions.length > 0 && (
-                              <div className="absolute z-50 w-full mt-1 bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-lg shadow-lg max-h-48 overflow-auto">
+                              <div 
+                                className="fixed z-[9999] bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-lg shadow-lg max-h-48 overflow-auto"
+                                style={{ top: artistDropdownPos.top, left: artistDropdownPos.left, width: artistDropdownPos.width }}
+                              >
                                 {artistSuggestions.map((artist: any) => (
                                   <button
                                     key={artist.id}

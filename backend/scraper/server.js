@@ -1481,21 +1481,21 @@ app.post('/db/events', async (req, res) => {
                         venue_address, venue_city, venue_country, artists, listing_date
                     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
                     ON CONFLICT (id) DO UPDATE SET
-                        title = EXCLUDED.title,
-                        date = EXCLUDED.date,
-                        start_time = EXCLUDED.start_time,
-                        end_time = EXCLUDED.end_time,
-                        content_url = EXCLUDED.content_url,
-                        flyer_front = EXCLUDED.flyer_front,
-                        description = EXCLUDED.description,
-                        venue_id = EXCLUDED.venue_id,
-                        venue_name = EXCLUDED.venue_name,
-                        venue_address = EXCLUDED.venue_address,
-                        venue_city = EXCLUDED.venue_city,
-                        venue_country = EXCLUDED.venue_country,
-                        artists = EXCLUDED.artists,
+                        title = CASE WHEN events.publish_status = 'approved' THEN events.title ELSE EXCLUDED.title END,
+                        date = CASE WHEN events.publish_status = 'approved' THEN events.date ELSE EXCLUDED.date END,
+                        start_time = CASE WHEN events.publish_status = 'approved' THEN events.start_time ELSE EXCLUDED.start_time END,
+                        end_time = CASE WHEN events.publish_status = 'approved' THEN events.end_time ELSE EXCLUDED.end_time END,
+                        content_url = CASE WHEN events.publish_status = 'approved' THEN events.content_url ELSE EXCLUDED.content_url END,
+                        flyer_front = CASE WHEN events.publish_status = 'approved' THEN events.flyer_front ELSE EXCLUDED.flyer_front END,
+                        description = CASE WHEN events.publish_status = 'approved' THEN events.description ELSE EXCLUDED.description END,
+                        venue_id = CASE WHEN events.publish_status = 'approved' THEN events.venue_id ELSE EXCLUDED.venue_id END,
+                        venue_name = CASE WHEN events.publish_status = 'approved' THEN events.venue_name ELSE EXCLUDED.venue_name END,
+                        venue_address = CASE WHEN events.publish_status = 'approved' THEN events.venue_address ELSE EXCLUDED.venue_address END,
+                        venue_city = CASE WHEN events.publish_status = 'approved' THEN events.venue_city ELSE EXCLUDED.venue_city END,
+                        venue_country = CASE WHEN events.publish_status = 'approved' THEN events.venue_country ELSE EXCLUDED.venue_country END,
+                        artists = CASE WHEN events.publish_status = 'approved' THEN events.artists ELSE EXCLUDED.artists END,
                         listing_date = EXCLUDED.listing_date,
-                        updated_at = CURRENT_TIMESTAMP
+                        updated_at = CASE WHEN events.publish_status = 'approved' THEN events.updated_at ELSE CURRENT_TIMESTAMP END
                     RETURNING (xmax = 0) AS inserted
                 `, [
                     event.id,
@@ -1767,14 +1767,16 @@ app.get('/db/events/recent-updates', async (req, res) => {
     try {
         const { limit = 50 } = req.query;
 
+        // Get recently updated scraped events that are linked to main events
         const result = await pool.query(`
-            SELECT e.*, 
+            SELECT DISTINCT e.*, 
                    COALESCE(
                        (SELECT json_agg(json_build_object(
                            'id', se.id,
                            'source_code', se.source_code,
                            'title', se.title,
-                           'confidence', esl.match_confidence
+                           'confidence', esl.match_confidence,
+                           'updated_at', se.updated_at
                        ))
                        FROM event_scraped_links esl
                        JOIN scraped_events se ON se.id = esl.scraped_event_id
@@ -1782,10 +1784,12 @@ app.get('/db/events/recent-updates', async (req, res) => {
                        '[]'
                    ) as source_references
             FROM events e
-            WHERE e.updated_at > e.created_at + INTERVAL '1 minute'
-              AND e.updated_at > NOW() - INTERVAL '7 days'
+            JOIN event_scraped_links esl ON esl.event_id = e.id
+            JOIN scraped_events se ON se.id = esl.scraped_event_id
+            WHERE se.updated_at > se.created_at + INTERVAL '1 minute'
+              AND se.updated_at > NOW() - INTERVAL '7 days'
               AND e.date >= CURRENT_DATE
-            ORDER BY e.updated_at DESC
+            ORDER BY se.updated_at DESC
             LIMIT $1
         `, [parseInt(limit)]);
 
@@ -1954,8 +1958,20 @@ app.patch('/db/events/:id', async (req, res) => {
 
         for (const [key, value] of Object.entries(updates)) {
             if (allowedFields.includes(key)) {
-                setClauses.push(`${key} = $${paramIndex++}`);
-                values.push(value);
+                // Handle time fields - convert "HH:MM" to TIME type
+                if ((key === 'start_time' || key === 'end_time') && value && typeof value === 'string') {
+                    // If it's just a time (HH:MM or HH:MM:SS), cast it properly
+                    if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(value)) {
+                        setClauses.push(`${key} = $${paramIndex++}::TIME`);
+                        values.push(value);
+                    } else {
+                        setClauses.push(`${key} = $${paramIndex++}`);
+                        values.push(value);
+                    }
+                } else {
+                    setClauses.push(`${key} = $${paramIndex++}`);
+                    values.push(value);
+                }
             }
         }
 
@@ -2678,23 +2694,23 @@ app.post('/db/sync', async (req, res) => {
                         latitude, longitude
                     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
                     ON CONFLICT (id) DO UPDATE SET
-                        title = EXCLUDED.title,
-                        date = EXCLUDED.date,
-                        start_time = EXCLUDED.start_time,
-                        end_time = EXCLUDED.end_time,
-                        content_url = EXCLUDED.content_url,
-                        flyer_front = EXCLUDED.flyer_front,
-                        description = EXCLUDED.description,
-                        venue_id = EXCLUDED.venue_id,
-                        venue_name = EXCLUDED.venue_name,
-                        venue_address = EXCLUDED.venue_address,
-                        venue_city = EXCLUDED.venue_city,
-                        venue_country = EXCLUDED.venue_country,
-                        artists = EXCLUDED.artists,
+                        title = CASE WHEN events.publish_status = 'approved' THEN events.title ELSE EXCLUDED.title END,
+                        date = CASE WHEN events.publish_status = 'approved' THEN events.date ELSE EXCLUDED.date END,
+                        start_time = CASE WHEN events.publish_status = 'approved' THEN events.start_time ELSE EXCLUDED.start_time END,
+                        end_time = CASE WHEN events.publish_status = 'approved' THEN events.end_time ELSE EXCLUDED.end_time END,
+                        content_url = CASE WHEN events.publish_status = 'approved' THEN events.content_url ELSE EXCLUDED.content_url END,
+                        flyer_front = CASE WHEN events.publish_status = 'approved' THEN events.flyer_front ELSE EXCLUDED.flyer_front END,
+                        description = CASE WHEN events.publish_status = 'approved' THEN events.description ELSE EXCLUDED.description END,
+                        venue_id = CASE WHEN events.publish_status = 'approved' THEN events.venue_id ELSE EXCLUDED.venue_id END,
+                        venue_name = CASE WHEN events.publish_status = 'approved' THEN events.venue_name ELSE EXCLUDED.venue_name END,
+                        venue_address = CASE WHEN events.publish_status = 'approved' THEN events.venue_address ELSE EXCLUDED.venue_address END,
+                        venue_city = CASE WHEN events.publish_status = 'approved' THEN events.venue_city ELSE EXCLUDED.venue_city END,
+                        venue_country = CASE WHEN events.publish_status = 'approved' THEN events.venue_country ELSE EXCLUDED.venue_country END,
+                        artists = CASE WHEN events.publish_status = 'approved' THEN events.artists ELSE EXCLUDED.artists END,
                         listing_date = EXCLUDED.listing_date,
                         latitude = COALESCE(EXCLUDED.latitude, events.latitude),
                         longitude = COALESCE(EXCLUDED.longitude, events.longitude),
-                        updated_at = CURRENT_TIMESTAMP
+                        updated_at = CASE WHEN events.publish_status = 'approved' THEN events.updated_at ELSE CURRENT_TIMESTAMP END
                     RETURNING (xmax = 0) AS inserted
                 `, [
                     e.id,
