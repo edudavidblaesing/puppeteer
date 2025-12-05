@@ -1542,33 +1542,52 @@ app.get('/db/events', async (req, res) => {
     try {
         const { city, limit = 100, offset = 0, from, to } = req.query;
         
-        let query = 'SELECT * FROM events WHERE 1=1';
+        let query = `
+            SELECT e.*, 
+                   COALESCE(
+                       (SELECT json_agg(json_build_object(
+                           'id', se.id,
+                           'source_code', se.source_code,
+                           'title', se.title,
+                           'confidence', esl.match_confidence
+                       ))
+                       FROM event_scraped_links esl
+                       JOIN scraped_events se ON se.id = esl.scraped_event_id
+                       WHERE esl.event_id = e.id),
+                       '[]'
+                   ) as source_references
+            FROM events e
+            WHERE 1=1`;
         const params = [];
         let paramIndex = 1;
         
         if (city) {
-            query += ` AND LOWER(venue_city) = LOWER($${paramIndex})`;
+            query += ` AND LOWER(e.venue_city) = LOWER($${paramIndex})`;
             params.push(city);
             paramIndex++;
         }
         
         if (from) {
-            query += ` AND date >= $${paramIndex}`;
+            query += ` AND e.date >= $${paramIndex}`;
             params.push(from);
             paramIndex++;
         }
         
         if (to) {
-            query += ` AND date <= $${paramIndex}`;
+            query += ` AND e.date <= $${paramIndex}`;
             params.push(to);
             paramIndex++;
         }
         
-        // Order by: today/upcoming events first (by date ASC), then past events (by date DESC)
+        // Order by: today first, then upcoming (closest first), then past (most recent first)
         query += ` ORDER BY 
-            CASE WHEN date >= CURRENT_DATE THEN 0 ELSE 1 END,
-            CASE WHEN date >= CURRENT_DATE THEN date END ASC,
-            CASE WHEN date < CURRENT_DATE THEN date END DESC
+            CASE 
+                WHEN e.date::date = CURRENT_DATE THEN 0
+                WHEN e.date::date > CURRENT_DATE THEN 1
+                ELSE 2
+            END,
+            CASE WHEN e.date::date >= CURRENT_DATE THEN e.date END ASC,
+            CASE WHEN e.date::date < CURRENT_DATE THEN e.date END DESC
             LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
         params.push(parseInt(limit), parseInt(offset));
         
@@ -1795,14 +1814,9 @@ app.post('/db/events/publish-status', async (req, res) => {
             return res.status(400).json({ error: `status must be one of: ${validStatuses.join(', ')}` });
         }
         
-        // Ensure publish_status column exists
-        await pool.query(`
-            ALTER TABLE unified_events ADD COLUMN IF NOT EXISTS publish_status VARCHAR(20) DEFAULT 'pending'
-        `);
-        
-        // Update unified_events
+        // Update main events table
         const result = await pool.query(
-            `UPDATE unified_events 
+            `UPDATE events 
              SET publish_status = $1, 
                  is_published = $2,
                  updated_at = CURRENT_TIMESTAMP 
@@ -1811,13 +1825,10 @@ app.post('/db/events/publish-status', async (req, res) => {
             [status, status === 'approved', ids]
         );
         
-        // Also update events table if it exists
+        // Also try to update unified_events for backwards compatibility
         try {
-            await pool.query(`
-                ALTER TABLE events ADD COLUMN IF NOT EXISTS publish_status VARCHAR(20) DEFAULT 'pending'
-            `);
             await pool.query(
-                `UPDATE events 
+                `UPDATE unified_events 
                  SET publish_status = $1, 
                      is_published = $2,
                      updated_at = CURRENT_TIMESTAMP 
@@ -1825,7 +1836,7 @@ app.post('/db/events/publish-status', async (req, res) => {
                 [status, status === 'approved', ids]
             );
         } catch (e) {
-            // events table might not exist, that's ok
+            // unified_events might not exist, that's ok
         }
         
         res.json({ 
@@ -4467,62 +4478,102 @@ async function matchAndLinkEvents(options = {}) {
                 confidence: bestScore
             });
         } else {
-            // Create new main event
-            if (!dryRun) {
-                const eventId = uuidv4();
-                
-                // Extract date as YYYY-MM-DD string (handles Date objects and ISO strings)
-                let dateStr = null;
-                if (scraped.date) {
-                    const d = scraped.date instanceof Date ? scraped.date : new Date(scraped.date);
-                    dateStr = d.toISOString().split('T')[0];
+            // Before creating a new event, do a stricter check for near-duplicates
+            // This prevents creating multiple events like "DANCÆ x Chlär" on different dates at same venue
+            const nearDuplicateCheck = await pool.query(`
+                SELECT e.id, e.title, e.date, e.venue_name
+                FROM events e
+                WHERE e.date::date = $1::date
+                AND LOWER(e.venue_name) = LOWER($2)
+            `, [scraped.date, scraped.venue_name || '']);
+            
+            let foundNearDuplicate = null;
+            for (const existing of nearDuplicateCheck.rows) {
+                const titleSim = stringSimilarity(scraped.title || '', existing.title || '');
+                // If title is very similar (>0.5) and same date/venue, it's likely the same event
+                if (titleSim >= 0.5) {
+                    foundNearDuplicate = existing;
+                    break;
                 }
-                
-                // Combine date with time for timestamp fields
-                const startTimestamp = dateStr && scraped.start_time 
-                    ? `${dateStr} ${scraped.start_time}` 
-                    : null;
-                const endTimestamp = dateStr && scraped.end_time 
-                    ? `${dateStr} ${scraped.end_time}` 
-                    : null;
-                
-                await pool.query(`
-                    INSERT INTO events (
-                        id, source_code, source_id, title, date, start_time, end_time, 
-                        description, flyer_front, content_url, venue_name, venue_address, 
-                        venue_city, venue_country, is_published, publish_status
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, false, 'pending')
-                    ON CONFLICT (id) DO NOTHING
-                `, [
-                    eventId,
-                    scraped.source_code,
-                    scraped.source_event_id,
-                    scraped.title,
-                    dateStr,
-                    startTimestamp,
-                    endTimestamp,
-                    scraped.description,
-                    scraped.flyer_front,
-                    scraped.content_url,
-                    scraped.venue_name,
-                    scraped.venue_address,
-                    scraped.venue_city,
-                    scraped.venue_country
-                ]);
-                
-                // Link to the new main event
-                await pool.query(`
-                    INSERT INTO event_scraped_links (event_id, scraped_event_id, match_confidence)
-                    VALUES ($1, $2, 1.0)
-                    ON CONFLICT (event_id, scraped_event_id) DO NOTHING
-                `, [eventId, scraped.id]);
-                
-                created++;
+            }
+            
+            if (foundNearDuplicate) {
+                // Link to existing event instead of creating new
+                if (!dryRun) {
+                    await pool.query(`
+                        INSERT INTO event_scraped_links (event_id, scraped_event_id, match_confidence)
+                        VALUES ($1, $2, $3)
+                        ON CONFLICT (event_id, scraped_event_id) DO NOTHING
+                    `, [foundNearDuplicate.id, scraped.id, 0.5]);
+                    
+                    await refreshMainEvent(foundNearDuplicate.id);
+                }
+                matched++;
                 results.push({
-                    action: 'created',
+                    action: 'matched',
                     scraped: { id: scraped.id, title: scraped.title, source: scraped.source_code },
-                    main: { id: eventId, title: scraped.title }
+                    main: { id: foundNearDuplicate.id, title: foundNearDuplicate.title },
+                    confidence: 0.5,
+                    note: 'near-duplicate match'
                 });
+            } else {
+                // Create new main event
+                if (!dryRun) {
+                    const eventId = uuidv4();
+                    
+                    // Extract date as YYYY-MM-DD string (handles Date objects and ISO strings)
+                    let dateStr = null;
+                    if (scraped.date) {
+                        const d = scraped.date instanceof Date ? scraped.date : new Date(scraped.date);
+                        dateStr = d.toISOString().split('T')[0];
+                    }
+                    
+                    // Combine date with time for timestamp fields
+                    const startTimestamp = dateStr && scraped.start_time 
+                        ? `${dateStr} ${scraped.start_time}` 
+                        : null;
+                    const endTimestamp = dateStr && scraped.end_time 
+                        ? `${dateStr} ${scraped.end_time}` 
+                        : null;
+                    
+                    await pool.query(`
+                        INSERT INTO events (
+                            id, source_code, source_id, title, date, start_time, end_time, 
+                            description, flyer_front, content_url, venue_name, venue_address, 
+                            venue_city, venue_country, is_published, publish_status
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, false, 'pending')
+                        ON CONFLICT (id) DO NOTHING
+                    `, [
+                        eventId,
+                        scraped.source_code,
+                        scraped.source_event_id,
+                        scraped.title,
+                        dateStr,
+                        startTimestamp,
+                        endTimestamp,
+                        scraped.description,
+                        scraped.flyer_front,
+                        scraped.content_url,
+                        scraped.venue_name,
+                        scraped.venue_address,
+                        scraped.venue_city,
+                        scraped.venue_country
+                    ]);
+                    
+                    // Link to the new main event
+                    await pool.query(`
+                        INSERT INTO event_scraped_links (event_id, scraped_event_id, match_confidence)
+                        VALUES ($1, $2, 1.0)
+                        ON CONFLICT (event_id, scraped_event_id) DO NOTHING
+                    `, [eventId, scraped.id]);
+                    
+                    created++;
+                    results.push({
+                        action: 'created',
+                        scraped: { id: scraped.id, title: scraped.title, source: scraped.source_code },
+                        main: { id: eventId, title: scraped.title }
+                    });
+                }
             }
         }
     }
@@ -4778,6 +4829,78 @@ app.post('/scrape/auto-reject', async (req, res) => {
         });
     } catch (error) {
         console.error('Auto-reject error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Merge duplicate events (same date, venue, similar title)
+app.post('/scrape/merge-duplicates', async (req, res) => {
+    try {
+        const { dryRun = false } = req.body;
+        
+        // Find potential duplicate events
+        const duplicates = await pool.query(`
+            SELECT e1.id as id1, e2.id as id2, 
+                   e1.title as title1, e2.title as title2,
+                   e1.venue_name, e1.date,
+                   e1.created_at as created1, e2.created_at as created2
+            FROM events e1
+            JOIN events e2 ON e1.date::date = e2.date::date 
+                AND LOWER(COALESCE(e1.venue_name, '')) = LOWER(COALESCE(e2.venue_name, ''))
+                AND e1.id < e2.id
+            WHERE similarity(LOWER(COALESCE(e1.title, '')), LOWER(COALESCE(e2.title, ''))) > 0.5
+            LIMIT 200
+        `);
+        
+        let merged = 0;
+        const mergeResults = [];
+        
+        for (const dup of duplicates.rows) {
+            const titleSim = stringSimilarity(dup.title1 || '', dup.title2 || '');
+            
+            if (titleSim >= 0.5) {
+                // Keep the older event (id1), merge links from id2 to id1
+                if (!dryRun) {
+                    // Move all scraped links from id2 to id1
+                    await pool.query(`
+                        UPDATE event_scraped_links 
+                        SET event_id = $1 
+                        WHERE event_id = $2
+                        AND NOT EXISTS (
+                            SELECT 1 FROM event_scraped_links 
+                            WHERE event_id = $1 AND scraped_event_id = event_scraped_links.scraped_event_id
+                        )
+                    `, [dup.id1, dup.id2]);
+                    
+                    // Delete any remaining links for id2
+                    await pool.query(`DELETE FROM event_scraped_links WHERE event_id = $1`, [dup.id2]);
+                    
+                    // Delete the duplicate event
+                    await pool.query(`DELETE FROM events WHERE id = $1`, [dup.id2]);
+                    
+                    // Refresh the kept event
+                    await refreshMainEvent(dup.id1);
+                }
+                
+                merged++;
+                mergeResults.push({
+                    kept: { id: dup.id1, title: dup.title1 },
+                    removed: { id: dup.id2, title: dup.title2 },
+                    similarity: titleSim.toFixed(2),
+                    venue: dup.venue_name,
+                    date: dup.date
+                });
+            }
+        }
+        
+        res.json({
+            success: true,
+            dryRun,
+            merged,
+            results: mergeResults.slice(0, 50)
+        });
+    } catch (error) {
+        console.error('Merge duplicates error:', error);
         res.status(500).json({ error: error.message });
     }
 });
