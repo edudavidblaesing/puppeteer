@@ -204,16 +204,19 @@ export function RecentActivity({ activities }: RecentActivityProps) {
       {activities.map((activity) => (
         <div
           key={activity.id}
-          className={`flex items-center justify-between p-2 rounded-lg text-sm ${
-            activity.error ? 'bg-red-50' : 'bg-gray-50'
-          }`}
+          className={`flex items-center justify-between p-2 rounded-lg text-sm ${activity.error ? 'bg-red-50' : 'bg-gray-50'
+            }`}
         >
           <div className="flex items-center gap-2">
-            <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
-              activity.source_code === 'ra' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
-            }`}>
-              {activity.source_code?.toUpperCase()}
-            </span>
+            {activity.source_code === 'ra' ? (
+              <img src="/ra-logo.jpg" alt="RA" className="h-4 w-auto rounded-sm" title="Resident Advisor" />
+            ) : activity.source_code === 'ticketmaster' ? (
+              <img src="/ticketmaster-logo.png" alt="TM" className="h-4 w-auto rounded-sm" title="Ticketmaster" />
+            ) : (
+              <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">
+                {activity.source_code?.toUpperCase()}
+              </span>
+            )}
             <span className="font-medium capitalize">{activity.city}</span>
           </div>
           <div className="flex items-center gap-3 text-xs">

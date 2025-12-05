@@ -864,10 +864,10 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
   const getTimingStyle = (event: Event) => {
     const timing = getEventTiming(event);
     const styles = {
-      upcoming: { dateClass: 'text-gray-900', strikethrough: false },
-      ongoing: { dateClass: 'text-green-600 font-semibold', strikethrough: false },
-      recent: { dateClass: 'text-gray-400', strikethrough: true },
-      expired: { dateClass: 'text-gray-400', strikethrough: true }
+      upcoming: { dateClass: 'text-gray-900 dark:text-gray-100', strikethrough: false },
+      ongoing: { dateClass: 'text-green-600 dark:text-green-400 font-semibold', strikethrough: false },
+      recent: { dateClass: 'text-gray-400 dark:text-gray-500', strikethrough: true },
+      expired: { dateClass: 'text-gray-400 dark:text-gray-500', strikethrough: true }
     };
     return styles[timing];
   };
@@ -884,6 +884,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
       const timing = getTimingStyle(item);
       const isRejected = item.publish_status === 'rejected';
       const isPending = item.publish_status === 'pending';
+      const isPassed = timing.strikethrough;
 
       return (
         <div
@@ -894,7 +895,8 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
             editingItem?.id === item.id && 'bg-indigo-50 dark:bg-gray-800 border-l-2 border-l-indigo-500 dark:border-l-gray-400',
             isRejected && 'bg-gray-100 dark:bg-gray-900/50',
             isPending && !editingItem?.id && 'bg-yellow-50 dark:bg-yellow-900/10',
-            !isRejected && !isPending && !editingItem?.id && 'bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800'
+            !isRejected && !isPending && !editingItem?.id && 'bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800',
+            isPassed && 'opacity-60 grayscale-[0.5]'
           )}
           style={isRejected ? {
             backgroundImage: 'repeating-linear-gradient(135deg, transparent, transparent 10px, rgba(0,0,0,0.03) 10px, rgba(0,0,0,0.03) 20px)'
@@ -923,25 +925,35 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
               )}
             </div>
             <div className="flex items-center gap-2 mt-0.5">
-              <p className="text-xs text-gray-500 truncate">{item.venue_name} • {item.venue_city}</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{item.venue_name} • {item.venue_city}</p>
             </div>
             {/* Source badges below venue/city */}
             {sources.length > 0 && (
               <div className="flex items-center gap-1 mt-1">
-                {sources.map((source: string) => (
-                  <span
-                    key={source}
-                    className={clsx(
-                      'text-[10px] px-1.5 py-0.5 rounded font-medium',
-                      source === 'ra' ? 'bg-red-100 text-red-700' :
-                        source === 'ticketmaster' ? 'bg-blue-100 text-blue-700' :
-                          source === 'original' ? 'bg-green-100 text-green-700' :
-                            'bg-gray-100 text-gray-700'
-                    )}
-                  >
-                    {source.toUpperCase()}
-                  </span>
-                ))}
+                {sources.map((source: string) => {
+                  if (source === 'ra') {
+                    return (
+                      <img key={source} src="/ra-logo.jpg" alt="RA" className="h-4 w-auto rounded-sm" title="Resident Advisor" />
+                    );
+                  }
+                  if (source === 'ticketmaster') {
+                    return (
+                      <img key={source} src="/ticketmaster-logo.png" alt="TM" className="h-4 w-auto rounded-sm" title="Ticketmaster" />
+                    );
+                  }
+                  return (
+                    <span
+                      key={source}
+                      className={clsx(
+                        'text-[10px] px-1.5 py-0.5 rounded font-medium',
+                        source === 'original' ? 'bg-green-100 text-green-700' :
+                          'bg-gray-100 text-gray-700'
+                      )}
+                    >
+                      {source.toUpperCase()}
+                    </span>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -1219,75 +1231,79 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                     <p className="text-sm text-gray-400 dark:text-gray-500 text-center mt-1">No pending events to review.</p>
                   </div>
                 ) : (
-                  sortEventsSmart(events.filter(e => e.publish_status === 'pending')).map((event) => (
-                    <div
-                      key={event.id}
-                      className="px-4 py-3 flex items-center gap-3 hover:bg-gray-50 dark:hover:bg-gray-800 border-b border-gray-200 dark:border-gray-700 transition-colors group"
-                    >
+                  sortEventsSmart(events.filter(e => e.publish_status === 'pending')).map((event) => {
+                    const timing = getTimingStyle(event);
+                    const isPassed = timing.strikethrough;
+                    return (
                       <div
-                        onClick={() => { setActiveTabState('events'); handleEdit(event); }}
-                        className="w-10 h-10 rounded bg-gray-200 dark:bg-gray-700 flex items-center justify-center flex-shrink-0 overflow-hidden cursor-pointer"
-                      >
-                        {event.flyer_front ? (
-                          <img src={event.flyer_front} alt="" className="w-full h-full object-cover" />
-                        ) : (
-                          <Calendar className="w-5 h-5 text-gray-400 dark:text-gray-500" />
+                        key={event.id}
+                        className={clsx(
+                          "px-4 py-3 flex items-center gap-3 hover:bg-gray-50 dark:hover:bg-gray-800 border-b border-gray-200 dark:border-gray-700 transition-colors group",
+                          isPassed && "opacity-60 grayscale-[0.5]"
                         )}
-                      </div>
-                      <div
-                        onClick={() => { setActiveTabState('events'); handleEdit(event); }}
-                        className="flex-1 min-w-0 cursor-pointer"
                       >
-                        <p className="font-medium text-sm truncate text-gray-900 dark:text-gray-100">{event.title}</p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{event.venue_name} • {event.venue_city}</p>
-                      </div>
-                      <div className="text-right flex-shrink-0 flex items-center gap-2">
-                        <div className="mr-2">
-                          {(() => {
-                            const timing = getTimingStyle(event);
-                            return (
-                              <p className={clsx(
-                                'text-xs font-medium',
-                                timing.dateClass,
-                                timing.strikethrough && 'line-through'
-                              )}>
-                                {event.date ? format(new Date(event.date), 'MMM d') : '—'}
-                              </p>
-                            );
-                          })()}
+                        <div
+                          onClick={() => { setActiveTabState('events'); handleEdit(event); }}
+                          className="w-10 h-10 rounded bg-gray-200 dark:bg-gray-700 flex items-center justify-center flex-shrink-0 overflow-hidden cursor-pointer"
+                        >
+                          {event.flyer_front ? (
+                            <img src={event.flyer_front} alt="" className="w-full h-full object-cover" />
+                          ) : (
+                            <Calendar className="w-5 h-5 text-gray-400 dark:text-gray-500" />
+                          )}
                         </div>
-                        {/* Approve/Decline buttons */}
-                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button
-                            onClick={async (e) => {
-                              e.stopPropagation();
-                              try {
-                                await setPublishStatus([event.id], 'approved');
-                                setEvents(events.map(ev => ev.id === event.id ? { ...ev, publish_status: 'approved' } : ev));
-                              } catch (err) { console.error(err); }
-                            }}
-                            className="p-1.5 bg-green-100 dark:bg-green-900/30 hover:bg-green-200 dark:hover:bg-green-900/50 text-green-700 dark:text-green-400 rounded border border-green-200 dark:border-green-700"
-                            title="Approve"
-                          >
-                            <CheckCircle className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={async (e) => {
-                              e.stopPropagation();
-                              try {
-                                await setPublishStatus([event.id], 'rejected');
-                                setEvents(events.map(ev => ev.id === event.id ? { ...ev, publish_status: 'rejected' } : ev));
-                              } catch (err) { console.error(err); }
-                            }}
-                            className="p-1.5 bg-red-100 dark:bg-red-900/30 hover:bg-red-200 dark:hover:bg-red-900/50 text-red-700 dark:text-red-400 rounded border border-red-200 dark:border-red-700"
-                            title="Reject"
-                          >
-                            <XCircle className="w-4 h-4" />
-                          </button>
+                        <div
+                          onClick={() => { setActiveTabState('events'); handleEdit(event); }}
+                          className="flex-1 min-w-0 cursor-pointer"
+                        >
+                          <p className="font-medium text-sm truncate text-gray-900 dark:text-gray-100">{event.title}</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{event.venue_name} • {event.venue_city}</p>
+                        </div>
+                        <div className="text-right flex-shrink-0 flex items-center gap-2">
+                          <div className="mr-2">
+                            <p className={clsx(
+                              'text-xs font-medium',
+                              timing.dateClass,
+                              timing.strikethrough && 'line-through'
+                            )}>
+                              {event.date ? format(new Date(event.date), 'MMM d') : '—'}
+                            </p>
+                          </div>
+                          {/* Approve/Decline buttons - only if not passed */}
+                          {!isPassed && (
+                            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  try {
+                                    await setPublishStatus([event.id], 'approved');
+                                    setEvents(events.map(ev => ev.id === event.id ? { ...ev, publish_status: 'approved' } : ev));
+                                  } catch (err) { console.error(err); }
+                                }}
+                                className="p-1.5 bg-green-100 dark:bg-green-900/30 hover:bg-green-200 dark:hover:bg-green-900/50 text-green-700 dark:text-green-400 rounded border border-green-200 dark:border-green-700"
+                                title="Approve"
+                              >
+                                <CheckCircle className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  try {
+                                    await setPublishStatus([event.id], 'rejected');
+                                    setEvents(events.map(ev => ev.id === event.id ? { ...ev, publish_status: 'rejected' } : ev));
+                                  } catch (err) { console.error(err); }
+                                }}
+                                className="p-1.5 bg-red-100 dark:bg-red-900/30 hover:bg-red-200 dark:hover:bg-red-900/50 text-red-700 dark:text-red-400 rounded border border-red-200 dark:border-red-700"
+                                title="Reject"
+                              >
+                                <XCircle className="w-4 h-4" />
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
 
@@ -1319,14 +1335,18 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                   <div className="max-h-48 overflow-auto">
                     {scrapedEvents.slice(0, 10).map((event) => (
                       <div key={event.id} className="px-4 py-2 border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 flex items-center gap-3">
-                        <span className={clsx(
-                          'px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0 border',
-                          event.source_code === 'ra'
-                            ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-700'
-                            : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-700'
-                        )}>
-                          {event.source_code?.toUpperCase()}
-                        </span>
+                        {event.source_code === 'ra' ? (
+                          <img src="/ra-logo.jpg" alt="RA" className="h-4 w-auto rounded-sm flex-shrink-0" title="Resident Advisor" />
+                        ) : event.source_code === 'ticketmaster' ? (
+                          <img src="/ticketmaster-logo.png" alt="TM" className="h-4 w-auto rounded-sm flex-shrink-0" title="Ticketmaster" />
+                        ) : (
+                          <span className={clsx(
+                            'px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0 border',
+                            'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-700'
+                          )}>
+                            {event.source_code?.toUpperCase()}
+                          </span>
+                        )}
                         <span className="text-xs truncate flex-1 text-gray-900 dark:text-gray-100">{event.title}</span>
                         <span className="text-[10px] text-gray-400 dark:text-gray-500">{event.date ? format(new Date(event.date), 'MMM d') : ''}</span>
                         {event.content_url && (
@@ -1385,12 +1405,15 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                             <span className="text-gray-500 dark:text-gray-400"> • {scrapeStats.last_scraped_city}</span>
                           )}
                           {scrapeStats.last_scraped_source && (
-                            <span className={`ml-2 px-1.5 py-0.5 rounded text-xs font-medium border ${scrapeStats.last_scraped_source === 'ra'
-                              ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-700'
-                              : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-700'
-                              }`}>
-                              {scrapeStats.last_scraped_source.toUpperCase()}
-                            </span>
+                            scrapeStats.last_scraped_source === 'ra' ? (
+                              <img src="/ra-logo.jpg" alt="RA" className="ml-2 h-4 w-auto rounded-sm inline-block" title="Resident Advisor" />
+                            ) : scrapeStats.last_scraped_source === 'ticketmaster' ? (
+                              <img src="/ticketmaster-logo.png" alt="TM" className="ml-2 h-4 w-auto rounded-sm inline-block" title="Ticketmaster" />
+                            ) : (
+                              <span className={`ml-2 px-1.5 py-0.5 rounded text-xs font-medium border bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-700`}>
+                                {scrapeStats.last_scraped_source.toUpperCase()}
+                              </span>
+                            )
                           )}
                         </span>
                       </div>
@@ -1684,21 +1707,21 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
               {/* Pagination - always visible at bottom */}
               {totalPages > 1 && (
                 <div className="px-4 py-2 border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-800 flex items-center justify-between flex-shrink-0">
-                  <span className="text-xs text-gray-500">
+                  <span className="text-xs text-gray-500 dark:text-gray-400">
                     Page {page}/{totalPages}
                   </span>
                   <div className="flex gap-1">
                     <button
                       onClick={() => setPage(p => Math.max(1, p - 1))}
                       disabled={page === 1}
-                      className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50"
+                      className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 text-gray-600 dark:text-gray-300"
                     >
                       <ChevronLeft className="w-4 h-4" />
                     </button>
                     <button
                       onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                       disabled={page >= totalPages}
-                      className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50"
+                      className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 text-gray-600 dark:text-gray-300"
                     >
                       <ChevronRight className="w-4 h-4" />
                     </button>
@@ -1769,13 +1792,17 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                                         rel="noopener noreferrer"
                                         className={clsx(
                                           'px-2 py-1 rounded text-xs font-medium inline-flex items-center gap-1 hover:opacity-80 transition-opacity',
-                                          sourceCode === 'ra' ? 'bg-red-100 text-red-700' :
-                                            sourceCode === 'ticketmaster' ? 'bg-blue-100 text-blue-700' :
-                                              sourceCode === 'original' ? 'bg-green-100 text-green-700' :
-                                                'bg-gray-100 text-gray-700'
+                                          sourceCode === 'original' ? 'bg-green-100 text-green-700' :
+                                            (sourceCode !== 'ra' && sourceCode !== 'ticketmaster') ? 'bg-gray-100 text-gray-700' : ''
                                         )}
                                       >
-                                        {sourceCode?.toUpperCase()}
+                                        {sourceCode === 'ra' ? (
+                                          <img src="/ra-logo.jpg" alt="RA" className="h-4 w-auto rounded-sm" />
+                                        ) : sourceCode === 'ticketmaster' ? (
+                                          <img src="/ticketmaster-logo.png" alt="TM" className="h-4 w-auto rounded-sm" />
+                                        ) : (
+                                          sourceCode?.toUpperCase()
+                                        )}
                                         {source.title && <span className="opacity-70">: {source.title?.substring(0, 20)}{source.title?.length > 20 ? '...' : ''}</span>}
                                         <ExternalLink className="w-3 h-3" />
                                       </a>
@@ -1825,7 +1852,14 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                                             'border-gray-300 text-gray-700 hover:bg-gray-50'
                                       )}
                                     >
-                                      Use all from {sourceCode?.toUpperCase()}
+                                      Use all from
+                                      {sourceCode === 'ra' ? (
+                                        <img src="/ra-logo.jpg" alt="RA" className="h-3 w-auto rounded-sm inline-block ml-1" />
+                                      ) : sourceCode === 'ticketmaster' ? (
+                                        <img src="/ticketmaster-logo.png" alt="TM" className="h-3 w-auto rounded-sm inline-block ml-1" />
+                                      ) : (
+                                        sourceCode?.toUpperCase()
+                                      )}
                                     </button>
                                   </div>
                                 ))}
@@ -1845,14 +1879,18 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                                   <div className="space-y-1">
                                     {sources.map((source: any, sidx: number) => (
                                       <div key={sidx} className="flex items-start gap-2 text-xs">
-                                        <span className={clsx(
-                                          'px-1 py-0.5 rounded font-medium uppercase flex-shrink-0 mt-0.5',
-                                          source.source_code === 'ra' ? 'bg-red-100 text-red-700' :
-                                            source.source_code === 'ticketmaster' ? 'bg-blue-100 text-blue-700' :
-                                              'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300'
-                                        )}>
-                                          {source.source_code?.substring(0, 2).toUpperCase()}
-                                        </span>
+                                        {source.source_code === 'ra' ? (
+                                          <img src="/ra-logo.jpg" alt="RA" className="h-4 w-auto rounded-sm flex-shrink-0 mt-0.5" title="Resident Advisor" />
+                                        ) : source.source_code === 'ticketmaster' ? (
+                                          <img src="/ticketmaster-logo.png" alt="TM" className="h-4 w-auto rounded-sm flex-shrink-0 mt-0.5" title="Ticketmaster" />
+                                        ) : (
+                                          <span className={clsx(
+                                            'px-1 py-0.5 rounded font-medium uppercase flex-shrink-0 mt-0.5',
+                                            'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300'
+                                          )}>
+                                            {source.source_code?.substring(0, 2).toUpperCase()}
+                                          </span>
+                                        )}
                                         <span className="text-gray-700 flex-1 break-words line-clamp-2">
                                           {field === 'flyer_front' || field === 'content_url'
                                             ? <a href={source[field]} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline truncate block">{source[field]?.substring(0, 40)}...</a>
@@ -1955,7 +1993,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                           type="text"
                           value={editForm.title || ''}
                           onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
-                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
                         />
                       </div>
                       <div className="grid grid-cols-2 gap-3">
@@ -1965,7 +2003,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                             type="date"
                             value={editForm.date || ''}
                             onChange={(e) => setEditForm({ ...editForm, date: e.target.value })}
-                            className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                            className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
                           />
                         </div>
                         <div>
@@ -1974,7 +2012,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                             type="time"
                             value={editForm.start_time || ''}
                             onChange={(e) => setEditForm({ ...editForm, start_time: e.target.value })}
-                            className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                            className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
                           />
                         </div>
                       </div>
@@ -1983,7 +2021,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                         <select
                           value={editForm.event_type || 'event'}
                           onChange={(e) => setEditForm({ ...editForm, event_type: e.target.value as EventType })}
-                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
                         >
                           {EVENT_TYPES.map((type) => (
                             <option key={type.value} value={type.value}>
@@ -2003,7 +2041,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                           }}
                           onFocus={() => venueSearch.length >= 2 && setShowVenueDropdown(true)}
                           onBlur={() => setTimeout(() => setShowVenueDropdown(false), 200)}
-                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-gray-500 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-gray-500 bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
                           placeholder="Type to search venues..."
                         />
                         {showVenueDropdown && venueSuggestions.length > 0 && (
@@ -2042,7 +2080,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                           <select
                             value={editForm.venue_city || ''}
                             onChange={(e) => setEditForm({ ...editForm, venue_city: e.target.value })}
-                            className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                            className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
                           >
                             <option value="">Select city...</option>
                             {citiesDropdown.map((city) => (
@@ -2061,7 +2099,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                           <select
                             value={editForm.venue_country || ''}
                             onChange={(e) => setEditForm({ ...editForm, venue_country: e.target.value })}
-                            className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                            className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
                           >
                             <option value="">Select country...</option>
                             {countriesDropdown.map((country) => (
@@ -2082,7 +2120,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                           type="text"
                           value={editForm.venue_address || ''}
                           onChange={(e) => setEditForm({ ...editForm, venue_address: e.target.value })}
-                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
                         />
                       </div>
                       <div className="relative">
@@ -2094,7 +2132,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                             onChange={(e) => setArtistSearch(e.target.value)}
                             onFocus={() => artistSearch.length >= 2 && setShowArtistDropdown(true)}
                             onBlur={() => setTimeout(() => setShowArtistDropdown(false), 200)}
-                            className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-gray-500 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                            className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-gray-500 bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
                             placeholder="Type to search artists..."
                           />
                           {showArtistDropdown && artistSuggestions.length > 0 && (
@@ -2155,7 +2193,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                           value={editForm.description || ''}
                           onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
                           rows={3}
-                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
                         />
                       </div>
                       <div>
@@ -2164,7 +2202,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                           type="url"
                           value={editForm.content_url || ''}
                           onChange={(e) => setEditForm({ ...editForm, content_url: e.target.value })}
-                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
                         />
                       </div>
                       <div>
@@ -2173,7 +2211,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                           type="url"
                           value={editForm.flyer_front || ''}
                           onChange={(e) => setEditForm({ ...editForm, flyer_front: e.target.value })}
-                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
                         />
                       </div>
                     </>
