@@ -4693,12 +4693,17 @@ async function matchAndLinkEvents(options = {}) {
                         ? `${dateStr} ${scraped.end_time}` 
                         : null;
                     
+                    // Convert artists_json to string for events table
+                    const artistsStr = scraped.artists_json && scraped.artists_json.length > 0
+                        ? JSON.stringify(scraped.artists_json)
+                        : null;
+                    
                     await pool.query(`
                         INSERT INTO events (
                             id, source_code, source_id, title, date, start_time, end_time, 
                             description, flyer_front, content_url, venue_name, venue_address, 
-                            venue_city, venue_country, is_published, publish_status
-                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, false, 'pending')
+                            venue_city, venue_country, artists, is_published, publish_status
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, false, 'pending')
                         ON CONFLICT (id) DO NOTHING
                     `, [
                         eventId,
@@ -4714,7 +4719,8 @@ async function matchAndLinkEvents(options = {}) {
                         scraped.venue_name,
                         scraped.venue_address,
                         scraped.venue_city,
-                        scraped.venue_country
+                        scraped.venue_country,
+                        artistsStr
                     ]);
                     
                     // Link to the new main event
@@ -5058,6 +5064,53 @@ app.post('/scrape/merge-duplicates', async (req, res) => {
         });
     } catch (error) {
         console.error('Merge duplicates error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Backfill artists for existing events from their linked scraped events
+app.post('/scrape/backfill-artists', async (req, res) => {
+    try {
+        // Find events with null artists that have linked scraped events with artists
+        const eventsToUpdate = await pool.query(`
+            SELECT DISTINCT e.id, 
+                   (SELECT se.artists_json 
+                    FROM event_scraped_links esl 
+                    JOIN scraped_events se ON se.id = esl.scraped_event_id 
+                    WHERE esl.event_id = e.id 
+                    AND se.artists_json IS NOT NULL 
+                    AND jsonb_array_length(se.artists_json) > 0
+                    ORDER BY esl.match_confidence DESC 
+                    LIMIT 1) as artists_json
+            FROM events e
+            WHERE e.artists IS NULL
+        `);
+        
+        let updated = 0;
+        const results = [];
+        
+        for (const event of eventsToUpdate.rows) {
+            if (event.artists_json && event.artists_json.length > 0) {
+                await pool.query(`
+                    UPDATE events SET artists = $1 WHERE id = $2
+                `, [JSON.stringify(event.artists_json), event.id]);
+                
+                updated++;
+                results.push({
+                    id: event.id,
+                    artists: event.artists_json.map(a => a.name).join(', ')
+                });
+            }
+        }
+        
+        res.json({
+            success: true,
+            updated,
+            total: eventsToUpdate.rows.length,
+            results: results.slice(0, 30)
+        });
+    } catch (error) {
+        console.error('Backfill artists error:', error);
         res.status(500).json({ error: error.message });
     }
 });
