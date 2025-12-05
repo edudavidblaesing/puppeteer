@@ -1968,14 +1968,23 @@ app.patch('/db/events/:id', async (req, res) => {
 
         for (const [key, value] of Object.entries(updates)) {
             if (allowedFields.includes(key)) {
-                // Handle time fields - convert "HH:MM" to TIME type
+                // Handle time fields - convert "HH:MM" to TIMESTAMP by combining with date
                 if ((key === 'start_time' || key === 'end_time') && value && typeof value === 'string') {
-                    // If it's just a time (HH:MM or HH:MM:SS), cast it properly
+                    // If it's just a time (HH:MM or HH:MM:SS), combine with the date
                     if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(value)) {
-                        setClauses.push(`${key} = $${paramIndex++}::TIME`);
-                        values.push(value);
+                        // Get the date value from updates or fetch from database
+                        const dateValue = updates.date || null;
+                        if (dateValue) {
+                            // Combine date with time for timestamp
+                            setClauses.push(`${key} = $${paramIndex++}::TIMESTAMP`);
+                            values.push(`${dateValue} ${value}`);
+                        } else {
+                            // If no date in updates, use a subquery to get existing date
+                            setClauses.push(`${key} = (SELECT date::date || ' ' || $${paramIndex++})::TIMESTAMP`);
+                            values.push(value);
+                        }
                     } else {
-                        setClauses.push(`${key} = $${paramIndex++}`);
+                        setClauses.push(`${key} = $${paramIndex++}::TIMESTAMP`);
                         values.push(value);
                     }
                 } else {

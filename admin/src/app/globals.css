@@ -164,3 +164,19 @@ body {
     rgba(251, 191, 36, 0.1) 8px
   );
 }
+
+/* Live marker pulse animation */
+@keyframes live-pulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+  }
+  50% {
+    transform: scale(1.05);
+    box-shadow: 0 0 0 10px rgba(16, 185, 129, 0);
+  }
+}
+
+.live-marker-pulse {
+  animation: live-pulse 2s ease-in-out infinite;
+}

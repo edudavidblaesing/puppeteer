@@ -384,7 +384,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
   const loadMapEvents = useCallback(async () => {
     try {
       const data = await fetchMapEvents({
-        city: cityFilter || undefined,
+        // Don't pass cityFilter - map should show all cities
         status: statusFilter !== 'all' ? statusFilter : undefined,
         showPast: showPastEvents,
       });
@@ -392,7 +392,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
     } catch (error) {
       console.error('Failed to load map events:', error);
     }
-  }, [cityFilter, statusFilter, showPastEvents]);
+  }, [statusFilter, showPastEvents]);
 
   // Main data loader
   const loadData = useCallback(async () => {

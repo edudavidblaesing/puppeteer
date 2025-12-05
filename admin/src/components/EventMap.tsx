@@ -284,26 +284,39 @@ export default function EventMap({
         const eventCount = data.events.length;
         const { approvedCount, pendingCount, rejectedCount } = data;
 
-        // Determine marker color based on status distribution
-        // Priority: All approved = green, any pending = yellow, all rejected = gray transparent
+        // Check if any events are live (ongoing)
+        const hasLiveEvents = data.events.some(e => {
+          if (!e.date || !e.start_time || !e.end_time) return false;
+          const eventDate = new Date(e.date);
+          const today = new Date();
+          if (eventDate.toDateString() !== today.toDateString()) return false;
+          
+          const startTime = e.start_time.includes('T') ? new Date(e.start_time) : new Date(`${e.date}T${e.start_time}`);
+          const endTime = e.end_time.includes('T') ? new Date(e.end_time) : new Date(`${e.date}T${e.end_time}`);
+          return today >= startTime && today <= endTime;
+        });
+
+        // Determine marker styling based on status and live state
         let bgColor = 'bg-gray-400/60';
         let borderColor = 'border-gray-300';
-        if (approvedCount === eventCount) {
+        let extraClass = '';
+        
+        if (approvedCount === eventCount || (approvedCount > 0 && pendingCount === 0 && rejectedCount === 0)) {
           bgColor = 'bg-emerald-500';
           borderColor = 'border-emerald-600';
+          if (hasLiveEvents) {
+            extraClass = 'live-marker-pulse';
+          }
         } else if (pendingCount > 0) {
-          bgColor = 'bg-amber-400';
+          bgColor = 'pending-stripes';
           borderColor = 'border-amber-500';
-        } else if (approvedCount > 0) {
-          bgColor = 'bg-emerald-500';
-          borderColor = 'border-emerald-600';
         }
 
         const icon = L.divIcon({
           className: 'venue-marker',
           html: `
             <div class="relative group cursor-pointer">
-              <div class="w-10 h-10 ${bgColor} rounded-lg shadow-lg border-2 ${borderColor} flex items-center justify-center text-white font-bold text-sm hover:scale-110 transition-transform">
+              <div class="w-10 h-10 ${bgColor} ${extraClass} rounded-lg shadow-lg border-2 ${borderColor} flex items-center justify-center text-white font-bold text-sm hover:scale-110 transition-transform">
                 ${eventCount}
               </div>
               <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-900 text-white text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
