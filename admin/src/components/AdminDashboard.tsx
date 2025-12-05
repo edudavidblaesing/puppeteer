@@ -744,12 +744,18 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
   // Render list items based on active tab
   const renderListItem = (item: any) => {
     if (activeTab === 'events') {
+      // Get unique sources from source_references
+      const sources = item.source_references?.reduce((acc: string[], ref: any) => {
+        if (ref.source_code && !acc.includes(ref.source_code)) acc.push(ref.source_code);
+        return acc;
+      }, [] as string[]) || [];
+      
       return (
         <div
           key={item.id}
           onClick={() => handleEdit(item)}
           className={clsx(
-            'px-4 py-3 flex items-center gap-3 cursor-pointer hover:bg-gray-50 border-b transition-colors',
+            'px-4 py-2.5 flex items-center gap-3 cursor-pointer hover:bg-gray-50 border-b transition-colors',
             editingItem?.id === item.id && 'bg-indigo-50 border-l-2 border-l-indigo-500'
           )}
         >
@@ -767,15 +773,29 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
             )}
           </div>
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <p className="font-medium text-sm truncate">{item.title}</p>
-              {item.source_references?.length > 0 && (
-                <span className="text-[10px] bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded flex-shrink-0">
-                  {item.source_references.map((s: any) => s.source_code?.toUpperCase()).join(' + ')}
-                </span>
-              )}
+            <p className="font-medium text-sm truncate">{item.title}</p>
+            <div className="flex items-center gap-2 mt-0.5">
+              <p className="text-xs text-gray-500 truncate">{item.venue_name} • {item.venue_city}</p>
             </div>
-            <p className="text-xs text-gray-500 truncate">{item.venue_name} • {item.venue_city}</p>
+            {/* Source badges below venue/city */}
+            {sources.length > 0 && (
+              <div className="flex items-center gap-1 mt-1">
+                {sources.map((source: string) => (
+                  <span
+                    key={source}
+                    className={clsx(
+                      'text-[10px] px-1.5 py-0.5 rounded font-medium',
+                      source === 'ra' ? 'bg-red-100 text-red-700' :
+                      source === 'ticketmaster' ? 'bg-blue-100 text-blue-700' :
+                      source === 'original' ? 'bg-green-100 text-green-700' :
+                      'bg-gray-100 text-gray-700'
+                    )}
+                  >
+                    {source.toUpperCase()}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
           <div className="text-right flex-shrink-0 flex flex-col items-end gap-1">
             <div className="flex items-center gap-1">
@@ -1601,7 +1621,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                       <p className="text-sm text-gray-500 italic">No linked scraped sources found for this event.</p>
                     ) : (
                       <>
-                        {/* Group sources by source_code and show unique ones */}
+                        {/* Sources with badge + Use all button inline */}
                         {(() => {
                           // Group by source_code, keeping unique content_urls
                           const groupedSources = sourceReferences.reduce((acc: Record<string, any[]>, source: any) => {
@@ -1614,34 +1634,68 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                           }, {} as Record<string, any[]>);
                           
                           return (
-                            <div className="flex flex-wrap gap-2 mb-4">
+                            <div className="space-y-2">
                               {Object.entries(groupedSources).map(([sourceCode, sources]) => (
-                                sources.map((source: any, idx: number) => (
-                                  <a
-                                    key={`${sourceCode}-${idx}`}
-                                    href={source.content_url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
+                                <div key={sourceCode} className="flex items-center gap-2 flex-wrap">
+                                  {/* Source links */}
+                                  {sources.map((source: any, idx: number) => (
+                                    <a
+                                      key={`${sourceCode}-${idx}`}
+                                      href={source.content_url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className={clsx(
+                                        'px-2 py-1 rounded text-xs font-medium inline-flex items-center gap-1 hover:opacity-80 transition-opacity',
+                                        sourceCode === 'ra' ? 'bg-red-100 text-red-700' :
+                                        sourceCode === 'ticketmaster' ? 'bg-blue-100 text-blue-700' :
+                                        sourceCode === 'original' ? 'bg-green-100 text-green-700' :
+                                        'bg-gray-100 text-gray-700'
+                                      )}
+                                    >
+                                      {sourceCode?.toUpperCase()}
+                                      {source.title && <span className="opacity-70">: {source.title?.substring(0, 20)}{source.title?.length > 20 ? '...' : ''}</span>}
+                                      <ExternalLink className="w-3 h-3" />
+                                    </a>
+                                  ))}
+                                  {/* Use all button for this source */}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const source = sources[0]; // Use first source of this type
+                                      const sourceData = { ...source };
+                                      delete sourceData.id;
+                                      delete sourceData.source_code;
+                                      delete sourceData.source_event_id;
+                                      delete sourceData.confidence;
+                                      delete sourceData.is_primary;
+                                      delete sourceData.raw_data;
+                                      delete sourceData.created_at;
+                                      delete sourceData.updated_at;
+                                      const updates: Record<string, any> = {};
+                                      Object.entries(sourceData).forEach(([key, value]) => {
+                                        if (value !== null && value !== undefined && value !== '') {
+                                          updates[key] = value;
+                                        }
+                                      });
+                                      setEditForm({ ...editForm, ...updates });
+                                    }}
                                     className={clsx(
-                                      'px-2 py-1 rounded text-xs font-medium inline-flex items-center gap-1 hover:opacity-80 transition-opacity',
-                                      sourceCode === 'ra' ? 'bg-red-100 text-red-700' :
-                                      sourceCode === 'ticketmaster' ? 'bg-blue-100 text-blue-700' :
-                                      sourceCode === 'original' ? 'bg-green-100 text-green-700' :
-                                      'bg-gray-100 text-gray-700'
+                                      'px-2 py-1 rounded text-xs font-medium border',
+                                      sourceCode === 'ra' ? 'border-red-300 text-red-700 hover:bg-red-50' :
+                                      sourceCode === 'ticketmaster' ? 'border-blue-300 text-blue-700 hover:bg-blue-50' :
+                                      'border-gray-300 text-gray-700 hover:bg-gray-50'
                                     )}
                                   >
-                                    {sourceCode?.toUpperCase()}
-                                    {source.title && <span className="text-xs opacity-70 ml-1">: {source.title?.substring(0, 25)}{source.title?.length > 25 ? '...' : ''}</span>}
-                                    <ExternalLink className="w-3 h-3 ml-1" />
-                                  </a>
-                                ))
+                                    Use all from {sourceCode?.toUpperCase()}
+                                  </button>
+                                </div>
                               ))}
                             </div>
                           );
                         })()}
 
                         {/* Field-level source options */}
-                        <div className="space-y-2 max-h-48 overflow-auto">
+                        <div className="space-y-2 max-h-48 overflow-auto mt-4">
                           {['title', 'description', 'venue_name', 'flyer_front', 'content_url'].map((field) => {
                             const sources = sourceReferences.filter((s: any) => s[field] && s[field] !== editForm[field]);
                             if (sources.length === 0) return null;
@@ -1678,55 +1732,6 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                               </div>
                             );
                           })}
-                        </div>
-
-                        {/* Quick apply all from source - grouped by source_code */}
-                        <div className="mt-3 pt-3 border-t border-indigo-200">
-                          <div className="text-xs text-gray-500 mb-2">Apply all fields from:</div>
-                          <div className="flex flex-wrap gap-2">
-                            {(() => {
-                              // Group by source_code and use first (highest priority) from each source
-                              const uniqueSources = sourceReferences.reduce((acc: any[], source: any) => {
-                                if (!acc.find((s: any) => s.source_code === source.source_code)) {
-                                  acc.push(source);
-                                }
-                                return acc;
-                              }, [] as any[]);
-                              
-                              return uniqueSources.map((source: any, sidx: number) => (
-                                <button
-                                  key={sidx}
-                                  type="button"
-                                  onClick={() => {
-                                    const sourceData = { ...source };
-                                    delete sourceData.id;
-                                    delete sourceData.source_code;
-                                    delete sourceData.source_event_id;
-                                    delete sourceData.confidence;
-                                    delete sourceData.is_primary;
-                                    delete sourceData.raw_data;
-                                    delete sourceData.created_at;
-                                    delete sourceData.updated_at;
-                                    const updates: Record<string, any> = {};
-                                    Object.entries(sourceData).forEach(([key, value]) => {
-                                      if (value !== null && value !== undefined && value !== '') {
-                                        updates[key] = value;
-                                      }
-                                    });
-                                    setEditForm({ ...editForm, ...updates });
-                                  }}
-                                  className={clsx(
-                                    'px-2 py-1 rounded text-xs font-medium',
-                                    source.source_code === 'ra' ? 'bg-red-100 text-red-700 hover:bg-red-200' :
-                                    source.source_code === 'ticketmaster' ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' :
-                                    'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                  )}
-                                >
-                                  Use all from {source.source_code?.toUpperCase()}
-                                </button>
-                              ));
-                            })()}
-                          </div>
                         </div>
                       </>
                     )}
