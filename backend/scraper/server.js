@@ -1659,7 +1659,101 @@ app.get('/db/events', async (req, res) => {
         });
     } catch (error) {
         console.error('Database error:', error);
-        res.status(500).json({ error: error.message });
+        // If event_scraped_links doesn't exist, query without it
+        if (error.code === '42P01' && error.message.includes('event_scraped_links')) {
+            try {
+                let query = 'SELECT e.* FROM events e WHERE 1=1';
+                const params = [];
+                let paramIndex = 1;
+                
+                if (search) {
+                    query += ` AND (e.title ILIKE $${paramIndex} OR e.venue_name ILIKE $${paramIndex} OR e.artists ILIKE $${paramIndex})`;
+                    params.push(`%${search}%`);
+                    paramIndex++;
+                }
+                if (city) {
+                    query += ` AND LOWER(e.venue_city) = LOWER($${paramIndex})`;
+                    params.push(city);
+                    paramIndex++;
+                }
+                if (status && status !== 'all') {
+                    query += ` AND e.publish_status = $${paramIndex}`;
+                    params.push(status);
+                    paramIndex++;
+                }
+                if (from) {
+                    query += ` AND e.date >= $${paramIndex}`;
+                    params.push(from);
+                    paramIndex++;
+                }
+                if (to) {
+                    query += ` AND e.date <= $${paramIndex}`;
+                    params.push(to);
+                    paramIndex++;
+                }
+                
+                query += ` ORDER BY 
+                    CASE e.publish_status
+                        WHEN 'pending' THEN 0
+                        WHEN 'approved' THEN 1
+                        WHEN 'rejected' THEN 2
+                        ELSE 3
+                    END,
+                    CASE 
+                        WHEN e.date::date = CURRENT_DATE THEN 0
+                        WHEN e.date::date > CURRENT_DATE THEN 1
+                        ELSE 2
+                    END,
+                    CASE WHEN e.date::date >= CURRENT_DATE THEN e.date END ASC,
+                    CASE WHEN e.date::date < CURRENT_DATE THEN e.date END DESC
+                    LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+                params.push(parseInt(limit), parseInt(offset));
+                
+                const result = await pool.query(query, params);
+                
+                let countQuery = 'SELECT COUNT(*) FROM events WHERE 1=1';
+                const countParams = [];
+                let countParamIndex = 1;
+                
+                if (search) {
+                    countQuery += ` AND (title ILIKE $${countParamIndex} OR venue_name ILIKE $${countParamIndex} OR artists ILIKE $${countParamIndex})`;
+                    countParams.push(`%${search}%`);
+                    countParamIndex++;
+                }
+                if (city) {
+                    countQuery += ` AND LOWER(venue_city) = LOWER($${countParamIndex})`;
+                    countParams.push(city);
+                    countParamIndex++;
+                }
+                if (status && status !== 'all') {
+                    countQuery += ` AND publish_status = $${countParamIndex}`;
+                    countParams.push(status);
+                    countParamIndex++;
+                }
+                if (from) {
+                    countQuery += ` AND date >= $${countParamIndex}`;
+                    countParams.push(from);
+                    countParamIndex++;
+                }
+                if (to) {
+                    countQuery += ` AND date <= $${countParamIndex}`;
+                    countParams.push(to);
+                }
+                
+                const countResult = await pool.query(countQuery, countParams);
+                
+                res.json({
+                    data: result.rows,
+                    total: parseInt(countResult.rows[0].count),
+                    limit: parseInt(limit),
+                    offset: parseInt(offset)
+                });
+            } catch (fallbackError) {
+                res.json({ data: [], total: 0, limit: parseInt(limit), offset: parseInt(offset), error: fallbackError.message });
+            }
+        } else {
+            res.json({ data: [], total: 0, limit: parseInt(limit), offset: parseInt(offset), error: error.message });
+        }
     }
 });
 
@@ -1996,34 +2090,15 @@ app.get('/db/cities', async (req, res) => {
         }
         const countResult = await pool.query(countQuery, countParams);
         
-        if (citiesResult.rows.length > 0) {
-            res.json({ 
-                data: citiesResult.rows, 
-                total: parseInt(countResult.rows[0].count),
-                limit: parseInt(limit),
-                offset: parseInt(offset)
-            });
-        } else {
-            // Fallback: aggregate from venues table (since events may be empty)
-            const fallbackResult = await pool.query(`
-                SELECT 
-                    city as name,
-                    country,
-                    0 as event_count,
-                    COUNT(*) as venue_count
-                FROM venues 
-                WHERE city IS NOT NULL AND city != ''
-                GROUP BY city, country
-                ORDER BY venue_count DESC
-                LIMIT $1 OFFSET $2
-            `, [parseInt(limit), parseInt(offset)]);
-            res.json({ 
-                data: fallbackResult.rows, 
-                total: fallbackResult.rows.length 
-            });
-        }
+        res.json({ 
+            data: citiesResult.rows, 
+            total: parseInt(countResult.rows[0].count),
+            limit: parseInt(limit),
+            offset: parseInt(offset)
+        });
     } catch (error) {
-        // If cities table doesn't exist, use fallback
+        // If cities table doesn't exist, try fallback from events
+        console.log('Cities table error, trying fallback:', error.message);
         try {
             const fallbackResult = await pool.query(`
                 SELECT 
@@ -2031,33 +2106,30 @@ app.get('/db/cities', async (req, res) => {
                     venue_country as country,
                     COUNT(*) as event_count,
                     COUNT(DISTINCT venue_name) as venue_count,
-                    CASE venue_city
-                        WHEN 'Berlin' THEN 52.52
-                        WHEN 'Hamburg' THEN 53.5511
-                        WHEN 'London' THEN 51.5074
-                        WHEN 'Paris' THEN 48.8566
-                        WHEN 'Amsterdam' THEN 52.3676
-                        WHEN 'Barcelona' THEN 41.3851
-                        ELSE NULL
-                    END as latitude,
-                    CASE venue_city
-                        WHEN 'Berlin' THEN 13.405
-                        WHEN 'Hamburg' THEN 9.9937
-                        WHEN 'London' THEN -0.1278
-                        WHEN 'Paris' THEN 2.3522
-                        WHEN 'Amsterdam' THEN 4.9041
-                        WHEN 'Barcelona' THEN 2.1734
-                        ELSE NULL
-                    END as longitude
+                    NULL as latitude,
+                    NULL as longitude
                 FROM events 
                 WHERE venue_city IS NOT NULL AND venue_city != ''
                 GROUP BY venue_city, venue_country
                 ORDER BY event_count DESC
-            `);
-            res.json({ data: fallbackResult.rows });
+                LIMIT $1 OFFSET $2
+            `, [parseInt(limit), parseInt(offset)]);
+            
+            // If no events have cities either, return empty
+            if (fallbackResult.rows.length === 0) {
+                console.log('No cities found in events table, returning empty array');
+                res.json({ data: [], total: 0, limit: parseInt(limit), offset: parseInt(offset) });
+            } else {
+                res.json({ 
+                    data: fallbackResult.rows, 
+                    total: fallbackResult.rows.length,
+                    limit: parseInt(limit),
+                    offset: parseInt(offset)
+                });
+            }
         } catch (fallbackError) {
-            console.error('Database error:', fallbackError);
-            res.status(500).json({ error: fallbackError.message, dbConnected: false });
+            console.error('Database error in fallback:', fallbackError);
+            res.json({ data: [], total: 0, limit: parseInt(limit), offset: parseInt(offset), error: fallbackError.message });
         }
     }
 });
@@ -2066,41 +2138,53 @@ app.get('/db/cities', async (req, res) => {
 app.get('/db/countries', async (req, res) => {
     try {
         // First try the countries table
-        const result = await pool.query(`
-            SELECT * FROM countries WHERE is_active = true ORDER BY name ASC
-        `);
+        let result;
+        try {
+            result = await pool.query(`
+                SELECT * FROM countries WHERE is_active = true ORDER BY name ASC
+            `);
+        } catch (tableError) {
+            // Countries table doesn't exist yet, use fallback
+            console.log('Countries table not found, using fallback query');
+            result = { rows: [] };
+        }
         
         if (result.rows.length > 0) {
             res.json({ data: result.rows });
         } else {
             // Fallback: get distinct countries from events and venues
-            const fallbackResult = await pool.query(`
-                SELECT DISTINCT 
-                    COALESCE(venue_country, 'Unknown') as name,
-                    CASE COALESCE(venue_country, 'Unknown')
-                        WHEN 'Germany' THEN 'DE'
-                        WHEN 'United Kingdom' THEN 'GB'
-                        WHEN 'United States' THEN 'US'
-                        WHEN 'Netherlands' THEN 'NL'
-                        WHEN 'France' THEN 'FR'
-                        WHEN 'Spain' THEN 'ES'
-                        ELSE NULL
-                    END as code
-                FROM events 
-                WHERE venue_country IS NOT NULL AND venue_country != ''
-                UNION
-                SELECT DISTINCT 
-                    COALESCE(country, 'Unknown') as name,
-                    NULL as code
-                FROM venues
-                WHERE country IS NOT NULL AND country != ''
-                ORDER BY name ASC
-            `);
-            res.json({ data: fallbackResult.rows });
+            try {
+                const fallbackResult = await pool.query(`
+                    SELECT DISTINCT 
+                        COALESCE(venue_country, 'Unknown') as name,
+                        CASE COALESCE(venue_country, 'Unknown')
+                            WHEN 'Germany' THEN 'DE'
+                            WHEN 'United Kingdom' THEN 'GB'
+                            WHEN 'United States' THEN 'US'
+                            WHEN 'Netherlands' THEN 'NL'
+                            WHEN 'France' THEN 'FR'
+                            WHEN 'Spain' THEN 'ES'
+                            ELSE NULL
+                        END as code
+                    FROM events 
+                    WHERE venue_country IS NOT NULL AND venue_country != ''
+                    UNION
+                    SELECT DISTINCT 
+                        COALESCE(country, 'Unknown') as name,
+                        NULL as code
+                    FROM venues
+                    WHERE country IS NOT NULL AND country != ''
+                    ORDER BY name ASC
+                `);
+                res.json({ data: fallbackResult.rows });
+            } catch (fallbackError) {
+                console.log('No countries data available:', fallbackError.message);
+                res.json({ data: [] });
+            }
         }
     } catch (error) {
         console.error('Database error fetching countries:', error);
-        res.status(500).json({ error: error.message, dbConnected: false });
+        res.json({ data: [], error: error.message });
     }
 });
 
@@ -2130,7 +2214,7 @@ app.get('/db/cities/dropdown', async (req, res) => {
         res.json({ data: result.rows });
     } catch (error) {
         console.error('Database error fetching cities dropdown:', error);
-        res.status(500).json({ error: error.message, dbConnected: false });
+        res.json({ data: [], error: error.message });
     }
 });
 
@@ -2188,7 +2272,7 @@ app.get('/db/venues/search', async (req, res) => {
         res.json({ data: result.rows });
     } catch (error) {
         console.error('Venue search error:', error);
-        res.status(500).json({ error: error.message, dbConnected: false });
+        res.json({ data: [], error: error.message });
     }
 });
 
@@ -2217,7 +2301,7 @@ app.get('/db/artists/search', async (req, res) => {
         res.json({ data: result.rows });
     } catch (error) {
         console.error('Artist search error:', error);
-        res.status(500).json({ error: error.message, dbConnected: false });
+        res.json({ data: [], error: error.message });
     }
 });
 
@@ -2241,7 +2325,7 @@ app.get('/db/events/:id/artists', async (req, res) => {
             res.json({ data: [], message: 'event_artists table not yet created' });
         } else {
             console.error('Get event artists error:', error);
-            res.status(500).json({ error: error.message });
+            res.json({ data: [], error: error.message });
         }
     }
 });
@@ -5699,7 +5783,23 @@ app.post('/sync/pipeline', async (req, res) => {
             return res.status(400).json({ error: 'At least one city is required' });
         }
         
+        // Check if a sync job is already running
+        if (currentSyncJob && currentSyncJob.status === 'running') {
+            return res.status(409).json({ 
+                error: 'Sync job already in progress',
+                currentJob: {
+                    status: currentSyncJob.status,
+                    currentCity: currentSyncJob.progress.currentCity,
+                    phase: currentSyncJob.progress.phase,
+                    percentComplete: currentSyncJob.progress.percentComplete
+                }
+            });
+        }
+        
         console.log(`[Sync Pipeline] Starting for ${cities.length} cities:`, cities);
+        
+        // Initialize sync job tracking
+        createSyncJob(cities, sources);
         
         const results = {
             scrape: {
@@ -5715,16 +5815,38 @@ app.post('/sync/pipeline', async (req, res) => {
             dedupe: null
         };
         
-        // Process each city with a pause between
-        for (let i = 0; i < cities.length; i++) {
-            const city = cities[i].toLowerCase();
-            console.log(`[Sync Pipeline] Processing city ${i + 1}/${cities.length}: ${city}`);
+        // Send immediate response with job ID
+        res.json({
+            success: true,
+            message: 'Sync job started',
+            jobId: currentSyncJob.id,
+            totalCities: cities.length
+        });
+        
+        // Process each city with a pause between (run async)
+        (async () => {
+            try {
+                for (let i = 0; i < cities.length; i++) {
+                    const city = cities[i].toLowerCase();
+                    console.log(`[Sync Pipeline] Processing city ${i + 1}/${cities.length}: ${city}`);
+                    
+                    // Update progress
+                    updateSyncProgress({
+                        currentCity: city,
+                        currentSource: null,
+                        phase: 'scraping',
+                        citiesProcessed: i,
+                        percentComplete: Math.floor((i / cities.length) * 100)
+                    });
             
             try {
                 const cityResults = {};
                 
                 for (const source of sources) {
                     try {
+                        // Update current source
+                        updateSyncProgress({ currentSource: source });
+                        
                         let events = [];
                         const startTime = Date.now();
                         
@@ -5791,60 +5913,72 @@ app.post('/sync/pipeline', async (req, res) => {
             }
         }
         
-        // Run matching to link scraped events to main events
-        console.log('[Sync Pipeline] Running matching...');
-        try {
-            results.match = await matchAndLinkEvents({ dryRun: false });
-        } catch (matchErr) {
-            console.error('[Sync Pipeline] Matching error:', matchErr.message);
-            results.match = { error: matchErr.message };
-        }
-        
-        // Enrich venues and artists if enabled
-        if (enrichAfter) {
-            console.log('[Sync Pipeline] Enriching venues and artists...');
-            try {
-                const [venueResult, artistResult] = await Promise.all([
-                    enrichMissingVenueData(100),
-                    enrichMissingArtistData(200)
-                ]);
-                results.enrich = {
-                    venues_enriched: venueResult.saved || 0,
-                    artists_enriched: artistResult.saved || 0
-                };
-            } catch (enrichErr) {
-                console.error('[Sync Pipeline] Enrichment error:', enrichErr.message);
-                results.enrich = { error: enrichErr.message };
+                // Update progress after city completion
+                updateSyncProgress({
+                    citiesProcessed: i + 1,
+                    percentComplete: Math.floor(((i + 1) / cities.length) * 100)
+                });
+                
+                // Run matching to link scraped events to main events
+                updateSyncProgress({ phase: 'matching' });
+                console.log('[Sync Pipeline] Running matching...');
+                try {
+                    results.match = await matchAndLinkEvents({ dryRun: false });
+                } catch (matchErr) {
+                    console.error('[Sync Pipeline] Matching error:', matchErr.message);
+                    results.match = { error: matchErr.message };
+                }
+                
+                // Enrich venues and artists if enabled
+                if (enrichAfter) {
+                    updateSyncProgress({ phase: 'enriching' });
+                    console.log('[Sync Pipeline] Enriching venues and artists...');
+                    try {
+                        const [venueResult, artistResult] = await Promise.all([
+                            enrichMissingVenueData(100),
+                            enrichMissingArtistData(200)
+                        ]);
+                        results.enrich = {
+                            venues_enriched: venueResult.saved || 0,
+                            artists_enriched: artistResult.saved || 0
+                        };
+                    } catch (enrichErr) {
+                        console.error('[Sync Pipeline] Enrichment error:', enrichErr.message);
+                        results.enrich = { error: enrichErr.message };
+                    }
+                }
+                
+                // Deduplicate if enabled
+                if (dedupeAfter) {
+                    updateSyncProgress({ phase: 'deduplicating' });
+                    console.log('[Sync Pipeline] Deduplicating...');
+                    try {
+                        const [eventsDeduped, venuesDeduped, artistsDeduped] = await Promise.all([
+                            deduplicateUnifiedEvents(),
+                            deduplicateVenues(),
+                            deduplicateArtists()
+                        ]);
+                        results.dedupe = {
+                            events_merged: eventsDeduped.merged || 0,
+                            venues_merged: venuesDeduped.merged || 0,
+                            artists_merged: artistsDeduped.merged || 0
+                        };
+                    } catch (dedupeErr) {
+                        console.error('[Sync Pipeline] Deduplication error:', dedupeErr.message);
+                        results.dedupe = { error: dedupeErr.message };
+                    }
+                }
+                
+                console.log('[Sync Pipeline] Complete!', results);
+                
+                // Complete the sync job
+                completeSyncJob(results);
+                
+            } catch (error) {
+                console.error('[Sync Pipeline] Fatal error:', error);
+                completeSyncJob(null, error.message);
             }
-        }
-        
-        // Deduplicate if enabled
-        if (dedupeAfter) {
-            console.log('[Sync Pipeline] Deduplicating...');
-            try {
-                const [eventsDeduped, venuesDeduped, artistsDeduped] = await Promise.all([
-                    deduplicateUnifiedEvents(),
-                    deduplicateVenues(),
-                    deduplicateArtists()
-                ]);
-                results.dedupe = {
-                    events_merged: eventsDeduped.merged || 0,
-                    venues_merged: venuesDeduped.merged || 0,
-                    artists_merged: artistsDeduped.merged || 0
-                };
-            } catch (dedupeErr) {
-                console.error('[Sync Pipeline] Deduplication error:', dedupeErr.message);
-                results.dedupe = { error: dedupeErr.message };
-            }
-        }
-        
-        console.log('[Sync Pipeline] Complete!', results);
-        
-        res.json({
-            success: true,
-            timestamp: new Date().toISOString(),
-            ...results
-        });
+        })();
         
     } catch (error) {
         console.error('[Sync Pipeline] Fatal error:', error);
@@ -5926,7 +6060,44 @@ app.get('/scraped/events', async (req, res) => {
         });
     } catch (error) {
         console.error('Scraped events error:', error);
-        res.status(500).json({ error: error.message });
+        // If event_scraped_links doesn't exist, query without it
+        if (error.code === '42P01' && error.message.includes('event_scraped_links')) {
+            try {
+                let query = 'SELECT se.*, false as is_linked FROM scraped_events se WHERE 1=1';
+                const params = [];
+                let paramIndex = 1;
+                
+                if (source) {
+                    query += ` AND se.source_code = $${paramIndex++}`;
+                    params.push(source);
+                }
+                if (city) {
+                    query += ` AND LOWER(se.venue_city) = LOWER($${paramIndex++})`;
+                    params.push(city);
+                }
+                // Skip linked filter if table doesn't exist
+                
+                query += ` ORDER BY se.date ASC LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
+                params.push(parseInt(limit), parseInt(offset));
+                
+                const result = await pool.query(query, params);
+                
+                let countQuery = 'SELECT COUNT(*) FROM scraped_events se WHERE 1=1';
+                const countParams = params.slice(0, -2);
+                const countResult = await pool.query(countQuery, countParams.length > 0 ? countParams : []);
+                
+                res.json({
+                    data: result.rows,
+                    total: parseInt(countResult.rows[0].count),
+                    limit: parseInt(limit),
+                    offset: parseInt(offset)
+                });
+            } catch (fallbackError) {
+                res.json({ data: [], total: 0, limit: parseInt(limit), offset: parseInt(offset), error: fallbackError.message });
+            }
+        } else {
+            res.json({ data: [], total: 0, limit: parseInt(limit), offset: parseInt(offset), error: error.message });
+        }
     }
 });
 
@@ -6663,7 +6834,38 @@ app.get('/scrape/stats', async (req, res) => {
         
         res.json(stats.rows[0]);
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        console.error('Stats error:', error);
+        // If event_scraped_links doesn't exist, return basic stats
+        if (error.code === '42P01') {
+            try {
+                const basicStats = await pool.query(`
+                    SELECT 
+                        (SELECT COUNT(*) FROM scraped_events) as total_scraped_events,
+                        (SELECT COUNT(*) FROM scraped_events WHERE source_code = 'ra') as ra_events,
+                        (SELECT COUNT(*) FROM scraped_events WHERE source_code = 'ticketmaster') as ticketmaster_events,
+                        (SELECT COUNT(*) FROM scraped_venues) as total_scraped_venues,
+                        (SELECT COUNT(*) FROM scraped_artists) as total_scraped_artists,
+                        (SELECT COUNT(*) FROM events) as total_main_events,
+                        (SELECT COUNT(*) FROM events WHERE is_published = true) as published_events,
+                        (SELECT COUNT(*) FROM events WHERE publish_status = 'pending') as pending_events,
+                        (SELECT COUNT(*) FROM events WHERE publish_status = 'approved') as approved_events,
+                        (SELECT COUNT(*) FROM events WHERE publish_status = 'rejected') as rejected_events,
+                        (SELECT COUNT(*) FROM venues) as total_main_venues,
+                        (SELECT COUNT(*) FROM artists) as total_main_artists,
+                        0 as total_event_links,
+                        0 as linked_scraped_events,
+                        (SELECT COUNT(*) FROM scraped_events) as unlinked_scraped_events,
+                        (SELECT MAX(created_at) FROM scrape_history WHERE error IS NULL) as last_scraped_at,
+                        (SELECT city FROM scrape_history WHERE error IS NULL ORDER BY created_at DESC LIMIT 1) as last_scraped_city,
+                        (SELECT source_code FROM scrape_history WHERE error IS NULL ORDER BY created_at DESC LIMIT 1) as last_scraped_source
+                `);
+                res.json(basicStats.rows[0]);
+            } catch (fallbackError) {
+                res.json({ error: fallbackError.message, total_scraped_events: 0, total_main_events: 0 });
+            }
+        } else {
+            res.json({ error: error.message, total_scraped_events: 0, total_main_events: 0 });
+        }
     }
 });
 

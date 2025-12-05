@@ -76,6 +76,7 @@ import {
   fetchScrapedArtists,
   deduplicateData,
   syncEventsPipeline,
+  getSyncStatus,
   fetchScrapeHistory,
   fetchRecentScrapes,
   executeSqlQuery,
@@ -163,6 +164,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<any>(null);
   const [syncProgress, setSyncProgress] = useState<string>('');
+  const [syncJobStatus, setSyncJobStatus] = useState<any>(null);
   
   // Scrape history for charts
   const [scrapeHistory, setScrapeHistory] = useState<any[]>([]);
@@ -677,14 +679,15 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
         const citiesData = await fetchCities();
         citiesToSync = citiesData.map((c: any) => c.name.toLowerCase());
         if (citiesToSync.length === 0) {
-          // Fallback to common cities
-          citiesToSync = ['berlin', 'hamburg', 'munich', 'cologne', 'frankfurt'];
+          setSyncProgress('No cities in database');
+          setIsSyncing(false);
+          return;
         }
       } else {
         citiesToSync = [scrapeCity];
       }
       
-      setSyncProgress(`Syncing ${citiesToSync.length} cities: ${citiesToSync.slice(0, 3).join(', ')}${citiesToSync.length > 3 ? '...' : ''}`);
+      setSyncProgress(`Starting sync for ${citiesToSync.length} cities...`);
       
       const result = await syncEventsPipeline({
         cities: citiesToSync,
@@ -693,25 +696,81 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
         dedupeAfter: true,
       });
       
-      setSyncResult(result);
-      setSyncProgress('Reloading data...');
+      // Job started, will be polled in useEffect
+      console.log('Sync job started:', result);
       
-      // Reload all data after sync completes
-      await Promise.all([
-        loadScrapeData(),
-        loadEvents(),
-        loadArtists(),
-        loadVenues(),
-      ]);
-      setSyncProgress('');
     } catch (error: any) {
       console.error('Sync pipeline failed:', error);
       setSyncResult({ error: error.message });
       setSyncProgress('');
-    } finally {
       setIsSyncing(false);
     }
   };
+
+  // Poll for sync status when syncing
+  useEffect(() => {
+    let pollInterval: NodeJS.Timeout | null = null;
+    
+    const pollSyncStatus = async () => {
+      try {
+        const status = await getSyncStatus();
+        setSyncJobStatus(status);
+        
+        if (status.status === 'running') {
+          setIsSyncing(true);
+          const { currentCity, currentSource, phase, percentComplete } = status.progress || {};
+          let progressText = `${phase || 'Processing'}...`;
+          if (currentCity) progressText += ` ${currentCity}`;
+          if (currentSource) progressText += ` (${currentSource})`;
+          if (percentComplete !== undefined) progressText += ` ${percentComplete}%`;
+          setSyncProgress(progressText);
+        } else if (status.status === 'completed') {
+          setIsSyncing(false);
+          setSyncResult(status.results);
+          setSyncProgress('Sync completed! Reloading data...');
+          
+          // Reload all data
+          await Promise.all([
+            loadScrapeData(),
+            loadEvents(),
+            loadArtists(),
+            loadVenues(),
+          ]);
+          setSyncProgress('');
+          setSyncJobStatus(null);
+          
+          if (pollInterval) clearInterval(pollInterval);
+        } else if (status.status === 'failed') {
+          setIsSyncing(false);
+          setSyncResult({ error: status.error });
+          setSyncProgress('');
+          setSyncJobStatus(null);
+          
+          if (pollInterval) clearInterval(pollInterval);
+        } else if (status.status === 'idle') {
+          // No job running
+          if (isSyncing) {
+            setIsSyncing(false);
+            setSyncProgress('');
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch sync status:', error);
+      }
+    };
+    
+    // Check status on mount (in case we're returning to the page with a job running)
+    pollSyncStatus();
+    
+    // Poll every 2 seconds if syncing
+    if (isSyncing || syncJobStatus?.status === 'running') {
+      pollInterval = setInterval(pollSyncStatus, 2000);
+    }
+    
+    return () => {
+      if (pollInterval) clearInterval(pollInterval);
+    };
+  }, [isSyncing]);
 
   // Legacy: Multi-source scraping (keeping for backwards compatibility)
   const handleScrape = async () => {
@@ -1000,10 +1059,10 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
   }, [activeTab, filteredEvents, artists, venues, adminCities]);
 
   return (
-    <div className="h-full flex flex-col bg-gray-100">
+    <div className="h-full flex flex-col bg-gray-100 dark:bg-gray-950">
       {/* Connection Error Banner */}
       {!dbConnected && (
-        <div className="bg-red-500 text-white px-4 py-2 flex items-center gap-2 flex-shrink-0">
+        <div className="bg-red-500 dark:bg-red-600 text-white px-4 py-2 flex items-center gap-2 flex-shrink-0">
           <AlertTriangle className="w-5 h-5" />
           <span className="font-medium">Database connection error:</span>
           <span>{connectionError || 'Unable to connect to database'}</span>
@@ -1013,7 +1072,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
               setDbConnected(health.connected);
               setConnectionError(health.connected ? null : health.error || 'Connection failed');
             }}
-            className="ml-auto px-3 py-1 bg-white/20 rounded hover:bg-white/30 text-sm"
+            className="ml-auto px-3 py-1 bg-white/20 dark:bg-white/10 rounded hover:bg-white/30 dark:hover:bg-white/20 text-sm"
           >
             Retry
           </button>
@@ -1021,22 +1080,22 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
       )}
       
       {/* Secondary toolbar */}
-      <header className="bg-white border-b flex-shrink-0 z-50">
-        <div className="flex items-center px-4 py-2 gap-3 bg-gray-50">
+      <header className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 flex-shrink-0 z-50">
+        <div className="flex items-center px-4 py-2 gap-3 bg-gray-50 dark:bg-gray-800">
           {/* Refresh button */}
-          <button onClick={loadData} className="p-2 hover:bg-gray-200 rounded-lg" title="Refresh">
+          <button onClick={loadData} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg text-gray-700 dark:text-gray-300" title="Refresh">
             <RefreshCw className={clsx('w-4 h-4', isLoading && 'animate-spin')} />
           </button>
           
           {/* Search */}
           <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
             <input
               type="text"
               placeholder={`Search ${activeTab}...`}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-4 py-1.5 text-sm border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              className="w-full pl-9 pr-4 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 focus:border-indigo-500 dark:focus:border-indigo-400"
             />
           </div>
 
@@ -1045,7 +1104,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
             <select
               value={cityFilter}
               onChange={(e) => setCityFilter(e.target.value)}
-              className="px-3 py-1.5 text-sm border rounded-lg"
+              className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
             >
               <option value="">All Cities</option>
               {(citiesDropdown.length > 0 ? citiesDropdown : cities).map((city: any) => (
@@ -1061,7 +1120,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as any)}
-              className="px-3 py-1.5 text-sm border rounded-lg"
+              className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
             >
               <option value="all">All Status</option>
               <option value="pending">⏳ Pending</option>
@@ -1128,22 +1187,22 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
         {activeTab === 'scrape' ? (
           <div className="flex-1 flex">
             {/* LEFT SIDE - Pending Events TODO List */}
-            <div className="bg-white border-r flex flex-col w-[420px]">
+            <div className="bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 flex flex-col w-[420px]">
               {/* List header */}
-              <div className="px-4 py-3 bg-gradient-to-r from-amber-50 to-orange-50 border-b flex items-center justify-between sticky top-0 z-10">
+              <div className="px-4 py-3 bg-gray-100 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between sticky top-0 z-10">
                 <div className="flex items-center gap-2">
-                  <CloudDownload className="w-4 h-4 text-amber-600" />
-                  <span className="font-medium text-gray-700">Pending Events</span>
-                  <span className="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full font-medium">
+                  <CloudDownload className="w-4 h-4 text-amber-600 dark:text-amber-500" />
+                  <span className="font-medium text-gray-900 dark:text-gray-100">Pending Events</span>
+                  <span className="px-2 py-0.5 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-xs rounded font-medium border border-amber-200 dark:border-amber-700">
                     {scrapeStats?.pending_events || events.filter(e => e.publish_status === 'pending').length} to review
                   </span>
                 </div>
                 <button
                   onClick={loadData}
-                  className="p-1.5 hover:bg-amber-100 rounded"
+                  className="p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
                   title="Refresh"
                 >
-                  <RefreshCw className={clsx('w-4 h-4 text-amber-600', isLoading && 'animate-spin')} />
+                  <RefreshCw className={clsx('w-4 h-4 text-amber-600 dark:text-amber-500', isLoading && 'animate-spin')} />
                 </button>
               </div>
 
@@ -1151,36 +1210,36 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
               <div className="flex-1 overflow-auto">
                 {isLoading ? (
                   <div className="flex items-center justify-center h-32">
-                    <RefreshCw className="w-6 h-6 animate-spin text-gray-400" />
+                    <RefreshCw className="w-6 h-6 animate-spin text-gray-400 dark:text-gray-500" />
                   </div>
                 ) : events.filter(e => e.publish_status === 'pending').length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-48 text-gray-500 p-4">
-                    <Check className="w-12 h-12 text-green-400 mb-3" />
+                  <div className="flex flex-col items-center justify-center h-48 text-gray-500 dark:text-gray-400 p-4">
+                    <Check className="w-12 h-12 text-green-500 dark:text-green-600 mb-3" />
                     <p className="font-medium">All caught up!</p>
-                    <p className="text-sm text-gray-400 text-center mt-1">No pending events to review.</p>
+                    <p className="text-sm text-gray-400 dark:text-gray-500 text-center mt-1">No pending events to review.</p>
                   </div>
                 ) : (
                   sortEventsSmart(events.filter(e => e.publish_status === 'pending')).map((event) => (
                     <div
                       key={event.id}
-                      className="px-4 py-3 flex items-center gap-3 hover:bg-amber-50 border-b transition-colors group"
+                      className="px-4 py-3 flex items-center gap-3 hover:bg-gray-50 dark:hover:bg-gray-800 border-b border-gray-200 dark:border-gray-700 transition-colors group"
                     >
                       <div 
                         onClick={() => { setActiveTabState('events'); handleEdit(event); }}
-                        className="w-10 h-10 rounded bg-gray-200 flex items-center justify-center flex-shrink-0 overflow-hidden cursor-pointer"
+                        className="w-10 h-10 rounded bg-gray-200 dark:bg-gray-700 flex items-center justify-center flex-shrink-0 overflow-hidden cursor-pointer"
                       >
                         {event.flyer_front ? (
                           <img src={event.flyer_front} alt="" className="w-full h-full object-cover" />
                         ) : (
-                          <Calendar className="w-5 h-5 text-gray-400" />
+                          <Calendar className="w-5 h-5 text-gray-400 dark:text-gray-500" />
                         )}
                       </div>
                       <div 
                         onClick={() => { setActiveTabState('events'); handleEdit(event); }}
                         className="flex-1 min-w-0 cursor-pointer"
                       >
-                        <p className="font-medium text-sm truncate">{event.title}</p>
-                        <p className="text-xs text-gray-500 truncate">{event.venue_name} • {event.venue_city}</p>
+                        <p className="font-medium text-sm truncate text-gray-900 dark:text-gray-100">{event.title}</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{event.venue_name} • {event.venue_city}</p>
                       </div>
                       <div className="text-right flex-shrink-0 flex items-center gap-2">
                         <div className="mr-2">
@@ -1207,7 +1266,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                                 setEvents(events.map(ev => ev.id === event.id ? { ...ev, publish_status: 'approved' } : ev));
                               } catch (err) { console.error(err); }
                             }}
-                            className="p-1.5 bg-green-100 hover:bg-green-200 text-green-700 rounded-full"
+                            className="p-1.5 bg-green-100 dark:bg-green-900/30 hover:bg-green-200 dark:hover:bg-green-900/50 text-green-700 dark:text-green-400 rounded border border-green-200 dark:border-green-700"
                             title="Approve"
                           >
                             <CheckCircle className="w-4 h-4" />
@@ -1220,7 +1279,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                                 setEvents(events.map(ev => ev.id === event.id ? { ...ev, publish_status: 'rejected' } : ev));
                               } catch (err) { console.error(err); }
                             }}
-                            className="p-1.5 bg-red-100 hover:bg-red-200 text-red-700 rounded-full"
+                            className="p-1.5 bg-red-100 dark:bg-red-900/30 hover:bg-red-200 dark:hover:bg-red-900/50 text-red-700 dark:text-red-400 rounded border border-red-200 dark:border-red-700"
                             title="Reject"
                           >
                             <XCircle className="w-4 h-4" />
@@ -1234,11 +1293,11 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
               
               {/* Unlinked Scraped Events */}
               {scrapedEvents.length > 0 && (
-                <div className="border-t">
-                  <div className="px-4 py-2 bg-gray-50 border-b flex items-center justify-between">
+                <div className="border-t border-gray-200 dark:border-gray-700">
+                  <div className="px-4 py-2 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <Layers className="w-4 h-4 text-gray-500" />
-                      <span className="text-sm font-medium text-gray-600">Unlinked Scraped ({scrapedEvents.length})</span>
+                      <Layers className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                      <span className="text-sm font-medium text-gray-600 dark:text-gray-300">Unlinked Scraped ({scrapedEvents.length})</span>
                     </div>
                     <button
                       onClick={async () => {
@@ -1251,7 +1310,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                         finally { setIsMatching(false); }
                       }}
                       disabled={isMatching}
-                      className="px-2 py-1 text-xs bg-indigo-100 text-indigo-700 hover:bg-indigo-200 rounded font-medium disabled:opacity-50 flex items-center gap-1"
+                      className="px-2 py-1 text-xs bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-200 dark:hover:bg-indigo-900/50 rounded font-medium disabled:opacity-50 flex items-center gap-1 border border-indigo-200 dark:border-indigo-700"
                     >
                       {isMatching ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Link2 className="w-3 h-3" />}
                       Link All
@@ -1259,17 +1318,19 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                   </div>
                   <div className="max-h-48 overflow-auto">
                     {scrapedEvents.slice(0, 10).map((event) => (
-                      <div key={event.id} className="px-4 py-2 border-b hover:bg-gray-50 flex items-center gap-3">
+                      <div key={event.id} className="px-4 py-2 border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 flex items-center gap-3">
                         <span className={clsx(
-                          'px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0',
-                          event.source_code === 'ra' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'
+                          'px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0 border',
+                          event.source_code === 'ra' 
+                            ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-700' 
+                            : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-700'
                         )}>
                           {event.source_code?.toUpperCase()}
                         </span>
-                        <span className="text-xs truncate flex-1">{event.title}</span>
-                        <span className="text-[10px] text-gray-400">{event.date ? format(new Date(event.date), 'MMM d') : ''}</span>
+                        <span className="text-xs truncate flex-1 text-gray-900 dark:text-gray-100">{event.title}</span>
+                        <span className="text-[10px] text-gray-400 dark:text-gray-500">{event.date ? format(new Date(event.date), 'MMM d') : ''}</span>
                         {event.content_url && (
-                          <a href={event.content_url} target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-indigo-600" onClick={e => e.stopPropagation()}>
+                          <a href={event.content_url} target="_blank" rel="noopener noreferrer" className="text-gray-400 dark:text-gray-500 hover:text-indigo-600 dark:hover:text-indigo-400" onClick={e => e.stopPropagation()}>
                             <ExternalLink className="w-3 h-3" />
                           </a>
                         )}
@@ -1281,26 +1342,53 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
             </div>
 
             {/* RIGHT SIDE - Stats & Controls */}
-            <div className="flex-1 overflow-auto p-6 bg-gray-50">
+            <div className="flex-1 overflow-auto p-6 bg-gray-50 dark:bg-gray-900">
               <div className="max-w-3xl mx-auto space-y-6">
+                {/* Sync Progress Banner - Shown when syncing */}
+                {isSyncing && syncProgress && (
+                  <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-700 rounded-lg p-4">
+                    <div className="flex items-start gap-3">
+                      <RefreshCw className="w-5 h-5 text-indigo-600 dark:text-indigo-400 animate-spin flex-shrink-0 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-indigo-900 dark:text-indigo-100 mb-1">Pipeline Running</p>
+                        <div className="space-y-1 text-sm text-indigo-700 dark:text-indigo-300">
+                          <p>{syncProgress}</p>
+                          {scrapeStats?.last_scraped_city && (
+                            <p className="text-xs">
+                              <span className="text-indigo-600 dark:text-indigo-400 font-medium">City:</span> {scrapeStats.last_scraped_city}
+                              {scrapeStats.last_scraped_source && (
+                                <span className="ml-3">
+                                  <span className="text-indigo-600 dark:text-indigo-400 font-medium">Source:</span> {scrapeStats.last_scraped_source.toUpperCase()}
+                                </span>
+                              )}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Last Scraped Info */}
-                {scrapeStats?.last_scraped_at && (
-                  <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl p-4 border border-indigo-100">
+                {scrapeStats?.last_scraped_at && !isSyncing && (
+                  <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse" />
-                        <span className="text-sm text-gray-600">
-                          Last synced: <span className="font-medium text-gray-900">
+                        <div className="w-3 h-3 bg-green-500 dark:bg-green-600 rounded-full animate-pulse" />
+                        <span className="text-sm text-gray-600 dark:text-gray-300">
+                          Last synced: <span className="font-medium text-gray-900 dark:text-gray-100">
                             {new Date(scrapeStats.last_scraped_at).toLocaleString('en-US', { 
                               month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
                             })}
                           </span>
                           {scrapeStats.last_scraped_city && (
-                            <span className="text-gray-500"> • {scrapeStats.last_scraped_city}</span>
+                            <span className="text-gray-500 dark:text-gray-400"> • {scrapeStats.last_scraped_city}</span>
                           )}
                           {scrapeStats.last_scraped_source && (
-                            <span className={`ml-2 px-1.5 py-0.5 rounded text-xs font-medium ${
-                              scrapeStats.last_scraped_source === 'ra' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
+                            <span className={`ml-2 px-1.5 py-0.5 rounded text-xs font-medium border ${
+                              scrapeStats.last_scraped_source === 'ra' 
+                                ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-700' 
+                                : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-700'
                             }`}>
                               {scrapeStats.last_scraped_source.toUpperCase()}
                             </span>
@@ -1308,7 +1396,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                         </span>
                       </div>
                       {historyTotals && (
-                        <span className="text-xs text-gray-500">
+                        <span className="text-xs text-gray-500 dark:text-gray-400">
                           {historyTotals.total_scrape_runs} total runs
                         </span>
                       )}
@@ -1317,9 +1405,9 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                 )}
 
                 {/* Sync Controls Card */}
-                <div className="bg-white rounded-xl shadow-sm p-6">
-                  <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">
-                    <CloudDownload className="w-5 h-5 text-indigo-600" />
+                <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
+                  <h3 className="font-semibold text-lg mb-4 flex items-center gap-2 text-gray-900 dark:text-gray-100">
+                    <CloudDownload className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                     Fetch New Events
                   </h3>
                   
@@ -1327,11 +1415,11 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                     <div className="grid md:grid-cols-2 gap-4">
                       {/* City Selection */}
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">City</label>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">City</label>
                         <select
                           value={scrapeCity}
                           onChange={(e) => setScrapeCity(e.target.value)}
-                          className="w-full px-3 py-2 border rounded-lg bg-white"
+                          className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
                         >
                           <option value="all">🌍 All Cities (from database)</option>
                           <optgroup label="🇩🇪 Germany">
@@ -1371,25 +1459,25 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
 
                       {/* Source Selection */}
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Sources</label>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Sources</label>
                         <div className="flex gap-4 mt-3">
                           <label className="flex items-center gap-2 cursor-pointer">
                             <input
                               type="checkbox"
                               checked={scrapeSources.includes('ra')}
                               onChange={() => toggleSource('ra')}
-                              className="rounded text-indigo-600"
+                              className="rounded text-indigo-600 dark:text-indigo-400"
                             />
-                            <span className="text-sm">Resident Advisor</span>
+                            <span className="text-sm text-gray-900 dark:text-gray-100">Resident Advisor</span>
                           </label>
                           <label className="flex items-center gap-2 cursor-pointer">
                             <input
                               type="checkbox"
                               checked={scrapeSources.includes('ticketmaster')}
                               onChange={() => toggleSource('ticketmaster')}
-                              className="rounded text-indigo-600"
+                              className="rounded text-indigo-600 dark:text-indigo-400"
                             />
-                            <span className="text-sm">Ticketmaster</span>
+                            <span className="text-sm text-gray-900 dark:text-gray-100">Ticketmaster</span>
                           </label>
                         </div>
                       </div>
@@ -1399,7 +1487,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                     <button
                       onClick={handleSyncWorkflow}
                       disabled={isSyncing || scrapeSources.length === 0}
-                      className="w-full px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 flex items-center justify-center gap-2 font-medium shadow-md"
+                      className="w-full px-6 py-3 bg-indigo-600 dark:bg-indigo-500 text-white rounded-lg hover:bg-indigo-700 dark:hover:bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 font-medium border border-indigo-700 dark:border-indigo-400"
                     >
                       {isSyncing ? (
                         <>
@@ -1415,18 +1503,20 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                     </button>
 
                     {/* Pipeline Info */}
-                    <div className="px-4 py-3 bg-gray-50 rounded-lg border border-gray-200 text-xs text-gray-600">
-                      <span className="font-medium">Pipeline:</span> Scrape → Match & Link → Enrich → Deduplicate
+                    <div className="px-4 py-3 bg-gray-100 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 text-xs text-gray-600 dark:text-gray-400">
+                      <span className="font-medium text-gray-900 dark:text-gray-100">Pipeline:</span> Scrape → Match & Link → Enrich → Deduplicate
                       {scrapeCity === 'all' && (
-                        <p className="text-amber-600 mt-1">⚠️ Syncing all cities may take several minutes.</p>
+                        <p className="text-amber-600 dark:text-amber-500 mt-1">⚠️ Syncing all cities may take several minutes.</p>
                       )}
                     </div>
 
                     {/* Sync Result */}
                     {syncResult && (
                       <div className={clsx(
-                        'p-4 rounded-lg',
-                        syncResult.error ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'
+                        'p-4 rounded-lg border',
+                        syncResult.error 
+                          ? 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 border-red-200 dark:border-red-700' 
+                          : 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 border-green-200 dark:border-green-700'
                       )}>
                         {syncResult.error ? (
                           <p>Error: {syncResult.error}</p>
@@ -1446,18 +1536,18 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                   </div>
                 </div>
 
-                {/* Stats Overview - Modern Dashboard Cards */}
+                {/* Stats Overview - Flat Border Cards */}
                 <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
                   {/* Events Card - Large Feature */}
-                  <div className="col-span-2 lg:col-span-1 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl p-6 text-white shadow-lg">
+                  <div className="col-span-2 lg:col-span-1 bg-emerald-500 dark:bg-emerald-600 border-2 border-emerald-600 dark:border-emerald-500 rounded-lg p-6 text-white">
                     <div className="flex items-center justify-between mb-4">
-                      <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+                      <div className="w-12 h-12 bg-white/20 dark:bg-white/10 border border-white/30 rounded-lg flex items-center justify-center">
                         <Calendar className="w-6 h-6" />
                       </div>
-                      <span className="text-emerald-200 text-xs font-medium uppercase tracking-wide">Total Events</span>
+                      <span className="text-emerald-100 dark:text-emerald-200 text-xs font-medium uppercase tracking-wide">Total Events</span>
                     </div>
                     <div className="text-4xl font-bold mb-1">{(scrapeStats?.total_main_events || 0).toLocaleString()}</div>
-                    <div className="flex items-center gap-4 text-sm text-emerald-100">
+                    <div className="flex items-center gap-4 text-sm text-emerald-100 dark:text-emerald-200">
                       <span className="flex items-center gap-1">
                         <CheckCircle className="w-4 h-4" />
                         {scrapeStats?.approved_events || 0} live
@@ -1470,65 +1560,65 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                   </div>
                   
                   {/* Pending - Highlight Card */}
-                  <div className="bg-gradient-to-br from-amber-400 to-orange-500 rounded-2xl p-5 text-white shadow-lg">
-                    <div className="flex items-center gap-2 mb-3 text-amber-100 text-xs font-medium uppercase tracking-wide">
+                  <div className="bg-amber-400 dark:bg-amber-500 border-2 border-amber-500 dark:border-amber-400 rounded-lg p-5 text-white">
+                    <div className="flex items-center gap-2 mb-3 text-amber-100 dark:text-amber-200 text-xs font-medium uppercase tracking-wide">
                       <AlertTriangle className="w-4 h-4" />
                       Needs Review
                     </div>
                     <div className="text-3xl font-bold">{scrapeStats?.pending_events || 0}</div>
-                    <div className="text-amber-100 text-sm mt-1">events waiting</div>
+                    <div className="text-amber-100 dark:text-amber-200 text-sm mt-1">events waiting</div>
                   </div>
                   
                   {/* Venues Card */}
-                  <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-                    <div className="flex items-center gap-2 mb-3 text-gray-400 text-xs font-medium uppercase tracking-wide">
+                  <div className="bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 rounded-lg p-5">
+                    <div className="flex items-center gap-2 mb-3 text-gray-500 dark:text-gray-400 text-xs font-medium uppercase tracking-wide">
                       <Building2 className="w-4 h-4" />
                       Venues
                     </div>
-                    <div className="text-3xl font-bold text-gray-900">{scrapeStats?.total_main_venues || 0}</div>
-                    <div className="text-gray-500 text-sm mt-1">unique locations</div>
+                    <div className="text-3xl font-bold text-gray-900 dark:text-gray-100">{scrapeStats?.total_main_venues || 0}</div>
+                    <div className="text-gray-500 dark:text-gray-400 text-sm mt-1">unique locations</div>
                   </div>
                   
                   {/* Artists Card */}
-                  <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-                    <div className="flex items-center gap-2 mb-3 text-gray-400 text-xs font-medium uppercase tracking-wide">
+                  <div className="bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 rounded-lg p-5">
+                    <div className="flex items-center gap-2 mb-3 text-gray-500 dark:text-gray-400 text-xs font-medium uppercase tracking-wide">
                       <Music className="w-4 h-4" />
                       Artists
                     </div>
-                    <div className="text-3xl font-bold text-gray-900">{scrapeStats?.total_main_artists || 0}</div>
-                    <div className="text-gray-500 text-sm mt-1">performers</div>
+                    <div className="text-3xl font-bold text-gray-900 dark:text-gray-100">{scrapeStats?.total_main_artists || 0}</div>
+                    <div className="text-gray-500 dark:text-gray-400 text-sm mt-1">performers</div>
                   </div>
                   
                   {/* RA Source Card */}
-                  <div className="bg-gradient-to-br from-red-500 to-rose-600 rounded-2xl p-5 text-white shadow-lg">
-                    <div className="flex items-center gap-2 mb-3 text-red-200 text-xs font-medium uppercase tracking-wide">
+                  <div className="bg-red-500 dark:bg-red-600 border-2 border-red-600 dark:border-red-500 rounded-lg p-5 text-white">
+                    <div className="flex items-center gap-2 mb-3 text-red-100 dark:text-red-200 text-xs font-medium uppercase tracking-wide">
                       <Globe className="w-4 h-4" />
                       Resident Advisor
                     </div>
                     <div className="text-3xl font-bold">{scrapeStats?.ra_events || 0}</div>
-                    <div className="text-red-100 text-sm mt-1">events scraped</div>
+                    <div className="text-red-100 dark:text-red-200 text-sm mt-1">events scraped</div>
                   </div>
                   
                   {/* Ticketmaster Source Card */}
-                  <div className="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl p-5 text-white shadow-lg">
-                    <div className="flex items-center gap-2 mb-3 text-blue-200 text-xs font-medium uppercase tracking-wide">
+                  <div className="bg-blue-500 dark:bg-blue-600 border-2 border-blue-600 dark:border-blue-500 rounded-lg p-5 text-white">
+                    <div className="flex items-center gap-2 mb-3 text-blue-100 dark:text-blue-200 text-xs font-medium uppercase tracking-wide">
                       <Ticket className="w-4 h-4" />
                       Ticketmaster
                     </div>
                     <div className="text-3xl font-bold">{scrapeStats?.ticketmaster_events || 0}</div>
-                    <div className="text-blue-100 text-sm mt-1">events scraped</div>
+                    <div className="text-blue-100 dark:text-blue-200 text-sm mt-1">events scraped</div>
                   </div>
                 </div>
 
                 {/* Activity Chart */}
                 {scrapeHistory.length > 0 && (
-                  <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-2xl p-6 text-white shadow-lg">
+                  <div className="bg-gray-900 dark:bg-gray-950 border-2 border-gray-800 dark:border-gray-700 rounded-lg p-6 text-white">
                     <div className="flex items-center justify-between mb-4">
                       <h3 className="font-semibold text-lg flex items-center gap-2">
-                        <Layers className="w-5 h-5 text-indigo-400" />
+                        <Layers className="w-5 h-5 text-indigo-400 dark:text-indigo-300" />
                         Activity Timeline
                       </h3>
-                      <span className="text-xs text-gray-400 uppercase tracking-wide">Last 30 Days</span>
+                      <span className="text-xs text-gray-400 dark:text-gray-500 uppercase tracking-wide">Last 30 Days</span>
                     </div>
                     <MiniAreaChart
                       data={scrapeHistory}
@@ -1544,9 +1634,9 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
 
                 {/* Recent Activity */}
                 {recentScrapes.length > 0 && (
-                  <div className="bg-white rounded-2xl shadow-sm p-6 border border-gray-100">
-                    <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">
-                      <RefreshCw className="w-5 h-5 text-gray-400" />
+                  <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
+                    <h3 className="font-semibold text-lg mb-4 flex items-center gap-2 text-gray-900 dark:text-gray-100">
+                      <RefreshCw className="w-5 h-5 text-gray-500 dark:text-gray-400" />
                       Recent Activity
                     </h3>
                     <RecentActivity activities={recentScrapes} />
@@ -1646,9 +1736,9 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
               <div className="flex-1 overflow-y-auto p-4 space-y-4">
                 {/* Source References Section - show linked scraped sources */}
                 {editingItem && activeTab === 'events' && (
-                  <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-lg p-4 border border-indigo-100">
-                    <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                      <Layers className="w-4 h-4 text-indigo-600" />
+                  <div className="bg-indigo-50 dark:bg-indigo-950 rounded-lg p-4 border-2 border-indigo-200 dark:border-indigo-800">
+                    <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
+                      <Layers className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
                       Linked Sources ({sourceReferences.length})
                     </h3>
                     {sourceReferences.length === 0 ? (

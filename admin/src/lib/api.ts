@@ -634,6 +634,18 @@ export async function fetchRecentScrapes(limit: number = 20) {
 
 // ============== Sync Pipeline API ==============
 
+// Get sync job status
+export async function getSyncStatus() {
+  const response = await fetch(`${API_URL}/sync/status`, {
+    method: 'GET',
+    headers,
+  });
+  if (!response.ok) {
+    throw new Error('Failed to fetch sync status');
+  }
+  return response.json();
+}
+
 // Direct sync pipeline - scrapes, matches, enriches, and dedupes
 export async function syncEventsPipeline(params: { cities: string[]; sources: string[]; enrichAfter?: boolean; dedupeAfter?: boolean }) {
   const response = await fetch(`${API_URL}/sync/pipeline`, {
