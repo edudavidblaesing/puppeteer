@@ -25,6 +25,8 @@ import {
   Link2,
   CloudDownload,
   Layers,
+  CheckCircle,
+  XCircle,
 } from 'lucide-react';
 
 // Dynamic import for EventMap (Leaflet requires client-side only)
@@ -999,12 +1001,12 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
             {/* LEFT SIDE - Pending Events TODO List */}
             <div className="bg-white border-r flex flex-col w-[420px]">
               {/* List header */}
-              <div className="px-4 py-3 bg-gradient-to-r from-amber-50 to-orange-50 border-b flex items-center justify-between">
+              <div className="px-4 py-3 bg-gradient-to-r from-amber-50 to-orange-50 border-b flex items-center justify-between sticky top-0 z-10">
                 <div className="flex items-center gap-2">
                   <CloudDownload className="w-4 h-4 text-amber-600" />
                   <span className="font-medium text-gray-700">Pending Events</span>
                   <span className="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full font-medium">
-                    {events.filter(e => e.publish_status === 'pending').length} to review
+                    {scrapeStats?.pending_events || events.filter(e => e.publish_status === 'pending').length} to review
                   </span>
                 </div>
                 <button
@@ -1032,30 +1034,66 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                   sortEventsSmart(events.filter(e => e.publish_status === 'pending')).map((event) => (
                     <div
                       key={event.id}
-                      onClick={() => { setActiveTabState('events'); handleEdit(event); }}
-                      className="px-4 py-3 flex items-center gap-3 cursor-pointer hover:bg-amber-50 border-b transition-colors"
+                      className="px-4 py-3 flex items-center gap-3 hover:bg-amber-50 border-b transition-colors group"
                     >
-                      <div className="w-10 h-10 rounded bg-gray-200 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                      <div 
+                        onClick={() => { setActiveTabState('events'); handleEdit(event); }}
+                        className="w-10 h-10 rounded bg-gray-200 flex items-center justify-center flex-shrink-0 overflow-hidden cursor-pointer"
+                      >
                         {event.flyer_front ? (
                           <img src={event.flyer_front} alt="" className="w-full h-full object-cover" />
                         ) : (
                           <Calendar className="w-5 h-5 text-gray-400" />
                         )}
                       </div>
-                      <div className="flex-1 min-w-0">
+                      <div 
+                        onClick={() => { setActiveTabState('events'); handleEdit(event); }}
+                        className="flex-1 min-w-0 cursor-pointer"
+                      >
                         <p className="font-medium text-sm truncate">{event.title}</p>
                         <p className="text-xs text-gray-500 truncate">{event.venue_name} • {event.venue_city}</p>
                       </div>
-                      <div className="text-right flex-shrink-0">
-                        <p className="text-xs font-medium">{event.date ? format(new Date(event.date), 'MMM d') : '—'}</p>
-                        {(() => {
-                          const badge = getTimingBadge(event);
-                          return (
-                            <span className={clsx('text-[10px] px-1.5 py-0.5 rounded', badge.bg, badge.text)}>
-                              {badge.label}
-                            </span>
-                          );
-                        })()}
+                      <div className="text-right flex-shrink-0 flex items-center gap-2">
+                        <div className="mr-2">
+                          <p className="text-xs font-medium">{event.date ? format(new Date(event.date), 'MMM d') : '—'}</p>
+                          {(() => {
+                            const badge = getTimingBadge(event);
+                            return (
+                              <span className={clsx('text-[10px] px-1.5 py-0.5 rounded', badge.bg, badge.text)}>
+                                {badge.label}
+                              </span>
+                            );
+                          })()}
+                        </div>
+                        {/* Approve/Decline buttons */}
+                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              try {
+                                await setPublishStatus(event.id, 'approved');
+                                setEvents(events.map(ev => ev.id === event.id ? { ...ev, publish_status: 'approved' } : ev));
+                              } catch (err) { console.error(err); }
+                            }}
+                            className="p-1.5 bg-green-100 hover:bg-green-200 text-green-700 rounded-full"
+                            title="Approve"
+                          >
+                            <CheckCircle className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              try {
+                                await setPublishStatus(event.id, 'rejected');
+                                setEvents(events.map(ev => ev.id === event.id ? { ...ev, publish_status: 'rejected' } : ev));
+                              } catch (err) { console.error(err); }
+                            }}
+                            className="p-1.5 bg-red-100 hover:bg-red-200 text-red-700 rounded-full"
+                            title="Reject"
+                          >
+                            <XCircle className="w-4 h-4" />
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))
@@ -1065,9 +1103,27 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
               {/* Unlinked Scraped Events */}
               {scrapedEvents.length > 0 && (
                 <div className="border-t">
-                  <div className="px-4 py-2 bg-gray-50 border-b flex items-center gap-2">
-                    <Layers className="w-4 h-4 text-gray-500" />
-                    <span className="text-sm font-medium text-gray-600">Unlinked Scraped ({scrapedEvents.length})</span>
+                  <div className="px-4 py-2 bg-gray-50 border-b flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Layers className="w-4 h-4 text-gray-500" />
+                      <span className="text-sm font-medium text-gray-600">Unlinked Scraped ({scrapedEvents.length})</span>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        setIsMatching(true);
+                        try {
+                          await runMatching();
+                          await loadScrapeData();
+                          await loadEvents();
+                        } catch (err) { console.error(err); }
+                        finally { setIsMatching(false); }
+                      }}
+                      disabled={isMatching}
+                      className="px-2 py-1 text-xs bg-indigo-100 text-indigo-700 hover:bg-indigo-200 rounded font-medium disabled:opacity-50 flex items-center gap-1"
+                    >
+                      {isMatching ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Link2 className="w-3 h-3" />}
+                      Link All
+                    </button>
                   </div>
                   <div className="max-h-48 overflow-auto">
                     {scrapedEvents.slice(0, 10).map((event) => (
@@ -1265,12 +1321,12 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                     <StatCard
                       title="Total Events"
                       value={scrapeStats?.total_main_events || 0}
-                      subValue={`${scrapeStats?.published_events || 0} approved`}
+                      subValue={`${scrapeStats?.approved_events || 0} approved`}
                       color="#22c55e"
                     />
                     <StatCard
                       title="Pending Review"
-                      value={events.filter(e => e.publish_status === 'pending').length}
+                      value={scrapeStats?.pending_events || 0}
                       color="#f59e0b"
                     />
                     <StatCard
@@ -1432,7 +1488,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
             {/* List Panel */}
             <div className="bg-white border-r flex flex-col w-96">
               {/* List header */}
-              <div className="px-4 py-2 bg-gray-50 border-b flex items-center justify-between">
+              <div className="px-4 py-2 bg-gray-50 border-b flex items-center justify-between sticky top-0 z-10">
                 <span className="text-sm text-gray-600">
                   {currentTotal.toLocaleString()} {activeTab}
                 </span>
@@ -1516,41 +1572,95 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
               </div>
 
               <div className="p-4 space-y-4">
-                {/* Source References Section - show linked scraped sources */}
-                {sourceReferences.length > 0 && editingItem && (
-                  <div className="bg-gray-50 rounded-lg p-3 border">
-                    <h3 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
-                      <Layers className="w-4 h-4" />
+                {/* Source References Section - show linked scraped sources with field-level options */}
+                {sourceReferences.length > 0 && editingItem && activeTab === 'events' && (
+                  <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-lg p-4 border border-indigo-100">
+                    <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                      <Layers className="w-4 h-4 text-indigo-600" />
                       Linked Sources ({sourceReferences.length})
                     </h3>
-                    <div className="space-y-2 max-h-32 overflow-auto">
+                    
+                    {/* Source badges */}
+                    <div className="flex flex-wrap gap-2 mb-4">
                       {sourceReferences.map((source: any, idx: number) => (
-                        <div key={idx} className="flex items-center justify-between text-xs bg-white rounded px-2 py-1.5 border">
-                          <span className="flex items-center gap-2">
-                            <span className={clsx(
-                              'px-1.5 py-0.5 rounded font-medium uppercase',
-                              source.source_code === 'manual' ? 'bg-green-100 text-green-700' :
-                              source.source_code === 'ra' ? 'bg-red-100 text-red-700' :
-                              source.source_code === 'ticketmaster' ? 'bg-blue-100 text-blue-700' :
-                              'bg-gray-100 text-gray-700'
-                            )}>
-                              {source.source_code}
-                            </span>
-                            <span className="text-gray-600 truncate max-w-[150px]">{source.title || source.name}</span>
-                          </span>
+                        <span
+                          key={idx}
+                          className={clsx(
+                            'px-2 py-1 rounded text-xs font-medium inline-flex items-center gap-1',
+                            source.source_code === 'ra' ? 'bg-red-100 text-red-700' :
+                            source.source_code === 'ticketmaster' ? 'bg-blue-100 text-blue-700' :
+                            source.source_code === 'original' ? 'bg-green-100 text-green-700' :
+                            'bg-gray-100 text-gray-700'
+                          )}
+                        >
+                          {source.source_code?.toUpperCase()}
+                          {source.content_url && (
+                            <a href={source.content_url} target="_blank" rel="noopener noreferrer" className="hover:opacity-70">
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                          )}
+                        </span>
+                      ))}
+                    </div>
+                    
+                    {/* Field-level source options */}
+                    <div className="space-y-2 max-h-64 overflow-auto">
+                      {['title', 'description', 'venue_name', 'venue_address', 'flyer_front', 'content_url'].map((field) => {
+                        const sources = sourceReferences.filter((s: any) => s[field] && s[field] !== editForm[field]);
+                        if (sources.length === 0) return null;
+                        
+                        return (
+                          <div key={field} className="bg-white rounded p-2 border">
+                            <div className="text-xs font-medium text-gray-500 mb-1.5 capitalize">{field.replace(/_/g, ' ')}</div>
+                            <div className="space-y-1">
+                              {sources.map((source: any, idx: number) => (
+                                <div key={idx} className="flex items-start gap-2 text-xs">
+                                  <span className={clsx(
+                                    'px-1 py-0.5 rounded font-medium uppercase flex-shrink-0 mt-0.5',
+                                    source.source_code === 'ra' ? 'bg-red-100 text-red-700' :
+                                    source.source_code === 'ticketmaster' ? 'bg-blue-100 text-blue-700' :
+                                    'bg-gray-100 text-gray-700'
+                                  )}>
+                                    {source.source_code?.substring(0, 2).toUpperCase()}
+                                  </span>
+                                  <span className="text-gray-700 flex-1 break-words line-clamp-2">
+                                    {field === 'flyer_front' || field === 'content_url' 
+                                      ? <a href={source[field]} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline truncate block">{source[field]?.substring(0, 40)}...</a>
+                                      : source[field]?.substring(0, 100)}{source[field]?.length > 100 && '...'}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditForm({ ...editForm, [field]: source[field] })}
+                                    className="text-indigo-600 hover:text-indigo-800 font-medium flex-shrink-0"
+                                  >
+                                    Use
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    
+                    {/* Quick apply all from source */}
+                    <div className="mt-3 pt-3 border-t border-indigo-200">
+                      <div className="text-xs text-gray-500 mb-2">Apply all fields from:</div>
+                      <div className="flex flex-wrap gap-2">
+                        {sourceReferences.map((source: any, idx: number) => (
                           <button
+                            key={idx}
                             type="button"
                             onClick={() => {
-                              // Apply source data to form
                               const sourceData = { ...source };
                               delete sourceData.id;
                               delete sourceData.source_code;
                               delete sourceData.source_event_id;
-                              delete sourceData.source_venue_id;
-                              delete sourceData.source_artist_id;
-                              delete sourceData.is_primary;
                               delete sourceData.confidence;
-                              // Only copy non-empty values
+                              delete sourceData.is_primary;
+                              delete sourceData.raw_data;
+                              delete sourceData.created_at;
+                              delete sourceData.updated_at;
                               const updates: Record<string, any> = {};
                               Object.entries(sourceData).forEach(([key, value]) => {
                                 if (value !== null && value !== undefined && value !== '') {
@@ -1559,16 +1669,18 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                               });
                               setEditForm({ ...editForm, ...updates });
                             }}
-                            className="text-indigo-600 hover:text-indigo-800 font-medium"
+                            className={clsx(
+                              'px-2 py-1 rounded text-xs font-medium',
+                              source.source_code === 'ra' ? 'bg-red-100 text-red-700 hover:bg-red-200' :
+                              source.source_code === 'ticketmaster' ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' :
+                              'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                            )}
                           >
-                            Use
+                            Use all from {source.source_code?.toUpperCase()}
                           </button>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
-                    <p className="text-xs text-gray-500 mt-2">
-                      Click "Use" to apply source data. Changes will be saved to your main record.
-                    </p>
                   </div>
                 )}
 
@@ -1771,16 +1883,6 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                         onChange={(e) => setEditForm({ ...editForm, flyer_front: e.target.value })}
                         className="w-full px-3 py-2 border rounded-lg"
                       />
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        id="is_published"
-                        checked={editForm.is_published || false}
-                        onChange={(e) => setEditForm({ ...editForm, is_published: e.target.checked })}
-                        className="rounded text-indigo-600"
-                      />
-                      <label htmlFor="is_published" className="text-sm">Published</label>
                     </div>
                   </>
                 )}
