@@ -92,7 +92,7 @@ export interface AdminDashboardProps {
 export function AdminDashboard({ initialTab }: AdminDashboardProps) {
   const router = useRouter();
   const pathname = usePathname();
-  
+
   // Determine active tab from pathname or initialTab prop
   const getTabFromPathname = (path: string): ActiveTab => {
     if (path === '/events') return 'events';
@@ -102,19 +102,19 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
     if (path === '/scrape') return 'scrape';
     return 'events'; // default for root path
   };
-  
+
   // Redirect root path to /events
   useEffect(() => {
     if (pathname === '/') {
       router.replace('/events');
     }
   }, [pathname, router]);
-  
+
   // Main state
   const [activeTab, setActiveTabState] = useState<ActiveTab>(initialTab || getTabFromPathname(pathname));
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  
+
   // Handle tab changes with URL navigation
   const setActiveTab = useCallback((tab: ActiveTab) => {
     setActiveTabState(tab);
@@ -142,10 +142,10 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
   // Cities state
   const [adminCities, setAdminCities] = useState<City[]>([]);
   const [citiesTotal, setCitiesTotal] = useState(0);
-  
+
   // Dropdown data for city/country
-  const [countriesDropdown, setCountriesDropdown] = useState<{name: string; code?: string}[]>([]);
-  const [citiesDropdown, setCitiesDropdown] = useState<{name: string; country: string}[]>([]);
+  const [countriesDropdown, setCountriesDropdown] = useState<{ name: string; code?: string }[]>([]);
+  const [citiesDropdown, setCitiesDropdown] = useState<{ name: string; country: string }[]>([]);
 
   // Scraped events state (for main/scraped toggle in events tab)
   const [scrapedEventsData, setScrapedEventsData] = useState<any[]>([]);
@@ -159,25 +159,25 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
   const [isScraping, setIsScraping] = useState(false);
   const [isMatching, setIsMatching] = useState(false);
   const [scrapeResult, setScrapeResult] = useState<any>(null);
-  
+
   // Sync pipeline state
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<any>(null);
   const [syncProgress, setSyncProgress] = useState<string>('');
   const [syncJobStatus, setSyncJobStatus] = useState<any>(null);
-  
+
   // Scrape history for charts
   const [scrapeHistory, setScrapeHistory] = useState<any[]>([]);
   const [recentScrapes, setRecentScrapes] = useState<any[]>([]);
   const [historyTotals, setHistoryTotals] = useState<any>(null);
-  
+
   // SQL Console state
   const [showSqlConsole, setShowSqlConsole] = useState(false);
   const [sqlQuery, setSqlQuery] = useState('SELECT COUNT(*) FROM events;');
   const [sqlResult, setSqlResult] = useState<any>(null);
   const [sqlError, setSqlError] = useState<string>('');
   const [isExecutingSql, setIsExecutingSql] = useState(false);
-  
+
   // Connection status
   const [dbConnected, setDbConnected] = useState(true);
   const [connectionError, setConnectionError] = useState<string | null>(null);
@@ -349,7 +349,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
   useEffect(() => {
     loadData();
   }, [loadData]);
-  
+
   // Load dropdown data and check connection on mount
   useEffect(() => {
     const initDropdowns = async () => {
@@ -362,7 +362,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
         } else {
           setConnectionError(null);
         }
-        
+
         // Load countries and cities for dropdowns
         const [countriesData, citiesData] = await Promise.all([
           fetchCountries().catch(() => []),
@@ -376,7 +376,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
         setConnectionError((error as Error).message);
       }
     };
-    
+
     initDropdowns();
   }, []);
 
@@ -390,7 +390,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
           setShowArtistDropdown(results.length > 0);
         } catch {
           // Fallback to local filter
-          const filtered = artists.filter(a => 
+          const filtered = artists.filter(a =>
             a.name?.toLowerCase().includes(artistSearch.toLowerCase())
           ).slice(0, 8);
           setArtistSuggestions(filtered);
@@ -401,7 +401,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
         setShowArtistDropdown(false);
       }
     };
-    
+
     const debounce = setTimeout(doSearch, 200);
     return () => clearTimeout(debounce);
   }, [artistSearch, artists]);
@@ -416,7 +416,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
           setShowVenueDropdown(results.length > 0);
         } catch {
           // Fallback to local filter
-          const filtered = venues.filter(v => 
+          const filtered = venues.filter(v =>
             v.name?.toLowerCase().includes(venueSearch.toLowerCase())
           ).slice(0, 8);
           setVenueSuggestions(filtered);
@@ -427,7 +427,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
         setShowVenueDropdown(false);
       }
     };
-    
+
     const debounce = setTimeout(doSearch, 200);
     return () => clearTimeout(debounce);
   }, [venueSearch, venues, editForm?.venue_city]);
@@ -477,7 +477,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
     setEditingItem(item);
     setSourceReferences([]);
     setSelectedSourceFields({});
-    
+
     // Format date and time fields for events
     if (activeTab === 'events') {
       const formData = { ...item };
@@ -515,7 +515,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
         formData.artistsList = [];
       }
       setEditForm(formData);
-      
+
       // Fetch source references for events (from linked scraped sources)
       if (item.id) {
         fetchEvent(item.id).then(data => {
@@ -564,7 +564,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
           saveData.artists = JSON.stringify(saveData.artistsList.map((name: string) => ({ name })));
           delete saveData.artistsList;
         }
-        
+
         if (editingItem) {
           await updateEvent(editingItem.id, saveData);
           setEvents(events.map(e => e.id === editingItem.id ? { ...e, ...saveData } : e));
@@ -686,19 +686,19 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
       } else {
         citiesToSync = [scrapeCity];
       }
-      
+
       setSyncProgress(`Starting sync for ${citiesToSync.length} cities...`);
-      
+
       const result = await syncEventsPipeline({
         cities: citiesToSync,
         sources: scrapeSources,
         enrichAfter: true,
         dedupeAfter: true,
       });
-      
+
       // Job started, will be polled in useEffect
       console.log('Sync job started:', result);
-      
+
     } catch (error: any) {
       console.error('Sync pipeline failed:', error);
       setSyncResult({ error: error.message });
@@ -710,12 +710,12 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
   // Poll for sync status when syncing
   useEffect(() => {
     let pollInterval: NodeJS.Timeout | null = null;
-    
+
     const pollSyncStatus = async () => {
       try {
         const status = await getSyncStatus();
         setSyncJobStatus(status);
-        
+
         if (status.status === 'running') {
           setIsSyncing(true);
           const { currentCity, currentSource, phase, percentComplete } = status.progress || {};
@@ -728,7 +728,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
           setIsSyncing(false);
           setSyncResult(status.results);
           setSyncProgress('Sync completed! Reloading data...');
-          
+
           // Reload all data
           await Promise.all([
             loadScrapeData(),
@@ -738,14 +738,14 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
           ]);
           setSyncProgress('');
           setSyncJobStatus(null);
-          
+
           if (pollInterval) clearInterval(pollInterval);
         } else if (status.status === 'failed') {
           setIsSyncing(false);
           setSyncResult({ error: status.error });
           setSyncProgress('');
           setSyncJobStatus(null);
-          
+
           if (pollInterval) clearInterval(pollInterval);
         } else if (status.status === 'idle') {
           // No job running
@@ -758,15 +758,15 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
         console.error('Failed to fetch sync status:', error);
       }
     };
-    
+
     // Check status on mount (in case we're returning to the page with a job running)
     pollSyncStatus();
-    
+
     // Poll every 2 seconds if syncing
     if (isSyncing || syncJobStatus?.status === 'running') {
       pollInterval = setInterval(pollSyncStatus, 2000);
     }
-    
+
     return () => {
       if (pollInterval) clearInterval(pollInterval);
     };
@@ -880,21 +880,21 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
         if (ref.source_code && !acc.includes(ref.source_code)) acc.push(ref.source_code);
         return acc;
       }, [] as string[]) || [];
-      
+
       const timing = getTimingStyle(item);
       const isRejected = item.publish_status === 'rejected';
       const isPending = item.publish_status === 'pending';
-      
+
       return (
         <div
           key={item.id}
           onClick={() => handleEdit(item)}
           className={clsx(
             'px-4 py-2.5 flex items-center gap-3 cursor-pointer border-b transition-colors relative',
-            editingItem?.id === item.id && 'bg-indigo-50 border-l-2 border-l-indigo-500',
-            isRejected && 'bg-gray-100',
-            isPending && !editingItem?.id && 'bg-yellow-50',
-            !isRejected && !isPending && !editingItem?.id && 'bg-white hover:bg-gray-50'
+            editingItem?.id === item.id && 'bg-indigo-50 dark:bg-gray-800 border-l-2 border-l-indigo-500 dark:border-l-gray-400',
+            isRejected && 'bg-gray-100 dark:bg-gray-900/50',
+            isPending && !editingItem?.id && 'bg-yellow-50 dark:bg-yellow-900/10',
+            !isRejected && !isPending && !editingItem?.id && 'bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800'
           )}
           style={isRejected ? {
             backgroundImage: 'repeating-linear-gradient(135deg, transparent, transparent 10px, rgba(0,0,0,0.03) 10px, rgba(0,0,0,0.03) 20px)'
@@ -906,16 +906,16 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
             onChange={(e) => { e.stopPropagation(); handleSelect(item.id); }}
             className="rounded text-indigo-600"
           />
-          <div className="w-10 h-10 rounded bg-gray-200 flex items-center justify-center flex-shrink-0 overflow-hidden">
+          <div className="w-10 h-10 rounded bg-gray-200 dark:bg-gray-800 flex items-center justify-center flex-shrink-0 overflow-hidden">
             {item.flyer_front ? (
               <img src={item.flyer_front} alt="" className="w-full h-full object-cover" />
             ) : (
-              <Calendar className="w-5 h-5 text-gray-400" />
+              <Calendar className="w-5 h-5 text-gray-400 dark:text-gray-500" />
             )}
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
-              <p className="font-medium text-sm truncate">{item.title}</p>
+              <p className="font-medium text-sm truncate text-gray-900 dark:text-gray-100">{item.title}</p>
               {item.event_type && item.event_type !== 'event' && (
                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 font-medium flex-shrink-0">
                   {EVENT_TYPES.find(t => t.value === item.event_type)?.icon} {EVENT_TYPES.find(t => t.value === item.event_type)?.label}
@@ -934,9 +934,9 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                     className={clsx(
                       'text-[10px] px-1.5 py-0.5 rounded font-medium',
                       source === 'ra' ? 'bg-red-100 text-red-700' :
-                      source === 'ticketmaster' ? 'bg-blue-100 text-blue-700' :
-                      source === 'original' ? 'bg-green-100 text-green-700' :
-                      'bg-gray-100 text-gray-700'
+                        source === 'ticketmaster' ? 'bg-blue-100 text-blue-700' :
+                          source === 'original' ? 'bg-green-100 text-green-700' :
+                            'bg-gray-100 text-gray-700'
                     )}
                   >
                     {source.toUpperCase()}
@@ -964,20 +964,20 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
           key={item.id}
           onClick={() => handleEdit(item)}
           className={clsx(
-            'px-4 py-3 flex items-center gap-3 cursor-pointer hover:bg-gray-50 border-b transition-colors',
-            editingItem?.id === item.id && 'bg-indigo-50 border-l-2 border-l-indigo-500'
+            'px-4 py-3 flex items-center gap-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 border-b border-gray-200 dark:border-gray-800 transition-colors bg-white dark:bg-gray-900',
+            editingItem?.id === item.id && 'bg-indigo-50 dark:bg-gray-800 border-l-2 border-l-indigo-500 dark:border-l-gray-400'
           )}
         >
-          <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0 overflow-hidden">
+          <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-800 flex items-center justify-center flex-shrink-0 overflow-hidden">
             {item.image_url ? (
               <img src={item.image_url} alt="" className="w-full h-full object-cover" />
             ) : (
-              <Music className="w-5 h-5 text-gray-400" />
+              <Music className="w-5 h-5 text-gray-400 dark:text-gray-500" />
             )}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="font-medium text-sm truncate">{item.name}</p>
-            <div className="flex items-center gap-2 text-xs text-gray-500">
+            <p className="font-medium text-sm truncate text-gray-900 dark:text-gray-100">{item.name}</p>
+            <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
               <span>{item.country || item.genres || '—'}</span>
               {item.source_references?.length > 0 && (
                 <span className="bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded">
@@ -1001,19 +1001,19 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
           key={item.id}
           onClick={() => handleEdit(item)}
           className={clsx(
-            'px-4 py-3 flex items-center gap-3 cursor-pointer hover:bg-gray-50 border-b transition-colors',
-            editingItem?.id === item.id && 'bg-indigo-50 border-l-2 border-l-indigo-500'
+            'px-4 py-3 flex items-center gap-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 border-b border-gray-200 dark:border-gray-800 transition-colors bg-white dark:bg-gray-900',
+            editingItem?.id === item.id && 'bg-indigo-50 dark:bg-gray-800 border-l-2 border-l-indigo-500 dark:border-l-gray-400'
           )}
         >
-          <div className="w-10 h-10 rounded bg-gray-200 flex items-center justify-center flex-shrink-0">
-            <Building2 className="w-5 h-5 text-gray-400" />
+          <div className="w-10 h-10 rounded bg-gray-200 dark:bg-gray-800 flex items-center justify-center flex-shrink-0">
+            <Building2 className="w-5 h-5 text-gray-400 dark:text-gray-500" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="font-medium text-sm truncate">{item.name}</p>
-            <p className="text-xs text-gray-500 truncate">{item.city || '—'}{item.country && `, ${item.country}`}</p>
+            <p className="font-medium text-sm truncate text-gray-900 dark:text-gray-100">{item.name}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{item.city || '—'}{item.country && `, ${item.country}`}</p>
           </div>
           {item.source_references?.length > 0 && (
-            <span className="bg-indigo-100 text-indigo-600 text-xs px-2 py-0.5 rounded">
+            <span className="bg-indigo-100 dark:bg-gray-800 text-indigo-600 dark:text-gray-300 text-xs px-2 py-0.5 rounded">
               {item.source_references.length} sources
             </span>
           )}
@@ -1027,16 +1027,16 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
           key={item.id}
           onClick={() => handleEdit(item)}
           className={clsx(
-            'px-4 py-3 flex items-center gap-3 cursor-pointer hover:bg-gray-50 border-b transition-colors',
-            editingItem?.id === item.id && 'bg-indigo-50 border-l-2 border-l-indigo-500'
+            'px-4 py-3 flex items-center gap-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 border-b border-gray-200 dark:border-gray-800 transition-colors bg-white dark:bg-gray-900',
+            editingItem?.id === item.id && 'bg-indigo-50 dark:bg-gray-800 border-l-2 border-l-indigo-500 dark:border-l-gray-400'
           )}
         >
-          <div className="w-10 h-10 rounded bg-gray-200 flex items-center justify-center flex-shrink-0">
-            <Globe className="w-5 h-5 text-gray-400" />
+          <div className="w-10 h-10 rounded bg-gray-200 dark:bg-gray-800 flex items-center justify-center flex-shrink-0">
+            <Globe className="w-5 h-5 text-gray-400 dark:text-gray-500" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="font-medium text-sm truncate">{item.name}</p>
-            <p className="text-xs text-gray-500">{item.country || '—'}</p>
+            <p className="font-medium text-sm truncate text-gray-900 dark:text-gray-100">{item.name}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">{item.country || '—'}</p>
           </div>
           <div className="flex items-center gap-2 text-xs">
             <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded">{item.event_count || 0} events</span>
@@ -1066,7 +1066,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
           <AlertTriangle className="w-5 h-5" />
           <span className="font-medium">Database connection error:</span>
           <span>{connectionError || 'Unable to connect to database'}</span>
-          <button 
+          <button
             onClick={async () => {
               const health = await checkHealth();
               setDbConnected(health.connected);
@@ -1078,7 +1078,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
           </button>
         </div>
       )}
-      
+
       {/* Secondary toolbar */}
       <header className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 flex-shrink-0 z-50">
         <div className="flex items-center px-4 py-2 gap-3 bg-gray-50 dark:bg-gray-800">
@@ -1086,7 +1086,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
           <button onClick={loadData} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg text-gray-700 dark:text-gray-300" title="Refresh">
             <RefreshCw className={clsx('w-4 h-4', isLoading && 'animate-spin')} />
           </button>
-          
+
           {/* Search */}
           <div className="relative flex-1 max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
@@ -1095,7 +1095,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
               placeholder={`Search ${activeTab}...`}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-4 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 focus:border-indigo-500 dark:focus:border-indigo-400"
+              className="w-full pl-9 pr-4 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-gray-500 dark:focus:ring-gray-400 focus:border-gray-500 dark:focus:border-gray-400"
             />
           </div>
 
@@ -1224,7 +1224,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                       key={event.id}
                       className="px-4 py-3 flex items-center gap-3 hover:bg-gray-50 dark:hover:bg-gray-800 border-b border-gray-200 dark:border-gray-700 transition-colors group"
                     >
-                      <div 
+                      <div
                         onClick={() => { setActiveTabState('events'); handleEdit(event); }}
                         className="w-10 h-10 rounded bg-gray-200 dark:bg-gray-700 flex items-center justify-center flex-shrink-0 overflow-hidden cursor-pointer"
                       >
@@ -1234,7 +1234,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                           <Calendar className="w-5 h-5 text-gray-400 dark:text-gray-500" />
                         )}
                       </div>
-                      <div 
+                      <div
                         onClick={() => { setActiveTabState('events'); handleEdit(event); }}
                         className="flex-1 min-w-0 cursor-pointer"
                       >
@@ -1290,7 +1290,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                   ))
                 )}
               </div>
-              
+
               {/* Unlinked Scraped Events */}
               {scrapedEvents.length > 0 && (
                 <div className="border-t border-gray-200 dark:border-gray-700">
@@ -1310,7 +1310,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                         finally { setIsMatching(false); }
                       }}
                       disabled={isMatching}
-                      className="px-2 py-1 text-xs bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-200 dark:hover:bg-indigo-900/50 rounded font-medium disabled:opacity-50 flex items-center gap-1 border border-indigo-200 dark:border-indigo-700"
+                      className="px-2 py-1 text-xs bg-indigo-100 dark:bg-gray-800 text-indigo-700 dark:text-gray-300 hover:bg-indigo-200 dark:hover:bg-gray-700 rounded font-medium disabled:opacity-50 flex items-center gap-1 border border-indigo-200 dark:border-gray-700"
                     >
                       {isMatching ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Link2 className="w-3 h-3" />}
                       Link All
@@ -1321,8 +1321,8 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                       <div key={event.id} className="px-4 py-2 border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 flex items-center gap-3">
                         <span className={clsx(
                           'px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0 border',
-                          event.source_code === 'ra' 
-                            ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-700' 
+                          event.source_code === 'ra'
+                            ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-700'
                             : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-700'
                         )}>
                           {event.source_code?.toUpperCase()}
@@ -1377,19 +1377,18 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                         <div className="w-3 h-3 bg-green-500 dark:bg-green-600 rounded-full animate-pulse" />
                         <span className="text-sm text-gray-600 dark:text-gray-300">
                           Last synced: <span className="font-medium text-gray-900 dark:text-gray-100">
-                            {new Date(scrapeStats.last_scraped_at).toLocaleString('en-US', { 
-                              month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+                            {new Date(scrapeStats.last_scraped_at).toLocaleString('en-US', {
+                              month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
                             })}
                           </span>
                           {scrapeStats.last_scraped_city && (
                             <span className="text-gray-500 dark:text-gray-400"> • {scrapeStats.last_scraped_city}</span>
                           )}
                           {scrapeStats.last_scraped_source && (
-                            <span className={`ml-2 px-1.5 py-0.5 rounded text-xs font-medium border ${
-                              scrapeStats.last_scraped_source === 'ra' 
-                                ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-700' 
-                                : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-700'
-                            }`}>
+                            <span className={`ml-2 px-1.5 py-0.5 rounded text-xs font-medium border ${scrapeStats.last_scraped_source === 'ra'
+                              ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-700'
+                              : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-700'
+                              }`}>
                               {scrapeStats.last_scraped_source.toUpperCase()}
                             </span>
                           )}
@@ -1410,7 +1409,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                     <CloudDownload className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                     Fetch New Events
                   </h3>
-                  
+
                   <div className="space-y-4">
                     <div className="grid md:grid-cols-2 gap-4">
                       {/* City Selection */}
@@ -1514,8 +1513,8 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                     {syncResult && (
                       <div className={clsx(
                         'p-4 rounded-lg border',
-                        syncResult.error 
-                          ? 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 border-red-200 dark:border-red-700' 
+                        syncResult.error
+                          ? 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 border-red-200 dark:border-red-700'
                           : 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 border-green-200 dark:border-green-700'
                       )}>
                         {syncResult.error ? (
@@ -1558,7 +1557,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                       </span>
                     </div>
                   </div>
-                  
+
                   {/* Pending - Highlight Card */}
                   <div className="bg-amber-400 dark:bg-amber-500 border-2 border-amber-500 dark:border-amber-400 rounded-lg p-5 text-white">
                     <div className="flex items-center gap-2 mb-3 text-amber-100 dark:text-amber-200 text-xs font-medium uppercase tracking-wide">
@@ -1568,7 +1567,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                     <div className="text-3xl font-bold">{scrapeStats?.pending_events || 0}</div>
                     <div className="text-amber-100 dark:text-amber-200 text-sm mt-1">events waiting</div>
                   </div>
-                  
+
                   {/* Venues Card */}
                   <div className="bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 rounded-lg p-5">
                     <div className="flex items-center gap-2 mb-3 text-gray-500 dark:text-gray-400 text-xs font-medium uppercase tracking-wide">
@@ -1578,7 +1577,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                     <div className="text-3xl font-bold text-gray-900 dark:text-gray-100">{scrapeStats?.total_main_venues || 0}</div>
                     <div className="text-gray-500 dark:text-gray-400 text-sm mt-1">unique locations</div>
                   </div>
-                  
+
                   {/* Artists Card */}
                   <div className="bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 rounded-lg p-5">
                     <div className="flex items-center gap-2 mb-3 text-gray-500 dark:text-gray-400 text-xs font-medium uppercase tracking-wide">
@@ -1588,7 +1587,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                     <div className="text-3xl font-bold text-gray-900 dark:text-gray-100">{scrapeStats?.total_main_artists || 0}</div>
                     <div className="text-gray-500 dark:text-gray-400 text-sm mt-1">performers</div>
                   </div>
-                  
+
                   {/* RA Source Card */}
                   <div className="bg-red-500 dark:bg-red-600 border-2 border-red-600 dark:border-red-500 rounded-lg p-5 text-white">
                     <div className="flex items-center gap-2 mb-3 text-red-100 dark:text-red-200 text-xs font-medium uppercase tracking-wide">
@@ -1598,7 +1597,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                     <div className="text-3xl font-bold">{scrapeStats?.ra_events || 0}</div>
                     <div className="text-red-100 dark:text-red-200 text-sm mt-1">events scraped</div>
                   </div>
-                  
+
                   {/* Ticketmaster Source Card */}
                   <div className="bg-blue-500 dark:bg-blue-600 border-2 border-blue-600 dark:border-blue-500 rounded-lg p-5 text-white">
                     <div className="flex items-center gap-2 mb-3 text-blue-100 dark:text-blue-200 text-xs font-medium uppercase tracking-wide">
@@ -1648,10 +1647,10 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
         ) : (
           <div className="flex-1 flex overflow-hidden">
             {/* List Panel */}
-            <div className="bg-white border-r flex flex-col w-96 h-full max-h-full">
+            <div className="bg-white dark:bg-gray-900 border-r dark:border-gray-800 flex flex-col w-96 h-full max-h-full">
               {/* List header */}
-              <div className="px-4 py-2 bg-gray-50 border-b flex items-center justify-between flex-shrink-0">
-                <span className="text-sm text-gray-600">
+              <div className="px-4 py-2 bg-gray-50 dark:bg-gray-800 border-b dark:border-gray-700 flex items-center justify-between flex-shrink-0">
+                <span className="text-sm text-gray-600 dark:text-gray-400">
                   {currentTotal.toLocaleString()} {activeTab}
                 </span>
                 {activeTab === 'events' && (
@@ -1684,7 +1683,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
 
               {/* Pagination - always visible at bottom */}
               {totalPages > 1 && (
-                <div className="px-4 py-2 border-t bg-gray-50 flex items-center justify-between flex-shrink-0">
+                <div className="px-4 py-2 border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-800 flex items-center justify-between flex-shrink-0">
                   <span className="text-xs text-gray-500">
                     Page {page}/{totalPages}
                   </span>
@@ -1692,14 +1691,14 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                     <button
                       onClick={() => setPage(p => Math.max(1, p - 1))}
                       disabled={page === 1}
-                      className="p-1 rounded hover:bg-gray-200 disabled:opacity-50"
+                      className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50"
                     >
                       <ChevronLeft className="w-4 h-4" />
                     </button>
                     <button
                       onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                       disabled={page >= totalPages}
-                      className="p-1 rounded hover:bg-gray-200 disabled:opacity-50"
+                      className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50"
                     >
                       <ChevronRight className="w-4 h-4" />
                     </button>
@@ -1710,718 +1709,718 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
 
             {/* Edit Panel */}
             {showEditPanel ? (
-              <div className="flex-1 bg-white border-l flex flex-col h-full max-h-full overflow-hidden">
-                <div className="bg-white border-b px-4 py-3 flex items-center justify-between flex-shrink-0">
-                <h2 className="font-semibold">
-                  {editingItem ? `Edit ${activeTab.slice(0, -1)}` : `New ${activeTab.slice(0, -1)}`}
-                </h2>
-                <div className="flex items-center gap-2">
-                  {editingItem && (
+              <div className="flex-1 bg-white dark:bg-gray-900 border-l dark:border-gray-800 flex flex-col h-full max-h-full overflow-hidden">
+                <div className="bg-white dark:bg-gray-900 border-b dark:border-gray-800 px-4 py-3 flex items-center justify-between flex-shrink-0">
+                  <h2 className="font-semibold">
+                    {editingItem ? `Edit ${activeTab.slice(0, -1)}` : `New ${activeTab.slice(0, -1)}`}
+                  </h2>
+                  <div className="flex items-center gap-2">
+                    {editingItem && (
+                      <button
+                        onClick={() => handleDelete(editingItem)}
+                        className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
                     <button
-                      onClick={() => handleDelete(editingItem)}
-                      className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                      onClick={() => { setShowEditPanel(false); setEditingItem(null); }}
+                      className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <X className="w-4 h-4" />
                     </button>
-                  )}
-                  <button
-                    onClick={() => { setShowEditPanel(false); setEditingItem(null); }}
-                    className="p-2 hover:bg-gray-100 rounded-lg"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
+                  </div>
                 </div>
-              </div>
 
-              <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                {/* Source References Section - show linked scraped sources */}
-                {editingItem && activeTab === 'events' && (
-                  <div className="bg-indigo-50 dark:bg-indigo-950 rounded-lg p-4 border-2 border-indigo-200 dark:border-indigo-800">
-                    <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
-                      <Layers className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                      Linked Sources ({sourceReferences.length})
-                    </h3>
-                    {sourceReferences.length === 0 ? (
-                      <p className="text-sm text-gray-500 italic">No linked scraped sources found for this event.</p>
-                    ) : (
-                      <>
-                        {/* Sources with badge + Use all button inline */}
-                        {(() => {
-                          // Group by source_code, keeping unique content_urls
-                          const groupedSources = sourceReferences.reduce((acc: Record<string, any[]>, source: any) => {
-                            const key = source.source_code || 'unknown';
-                            if (!acc[key]) acc[key] = [];
-                            // Only add if content_url is unique within this source
-                            const isDuplicate = acc[key].some((s: any) => s.content_url === source.content_url);
-                            if (!isDuplicate) acc[key].push(source);
-                            return acc;
-                          }, {} as Record<string, any[]>);
-                          
-                          return (
-                            <div className="space-y-2">
-                              {Object.entries(groupedSources).map(([sourceCode, sources]) => (
-                                <div key={sourceCode} className="flex items-center gap-2 flex-wrap">
-                                  {/* Source links */}
-                                  {sources.map((source: any, idx: number) => (
-                                    <a
-                                      key={`${sourceCode}-${idx}`}
-                                      href={source.content_url}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
+                <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                  {/* Source References Section - show linked scraped sources */}
+                  {editingItem && activeTab === 'events' && (
+                    <div className="bg-indigo-50 dark:bg-gray-800/50 rounded-lg p-4 border-2 border-indigo-200 dark:border-gray-700">
+                      <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
+                        <Layers className="w-4 h-4 text-indigo-600 dark:text-gray-400" />
+                        Linked Sources ({sourceReferences.length})
+                      </h3>
+                      {sourceReferences.length === 0 ? (
+                        <p className="text-sm text-gray-500 italic">No linked scraped sources found for this event.</p>
+                      ) : (
+                        <>
+                          {/* Sources with badge + Use all button inline */}
+                          {(() => {
+                            // Group by source_code, keeping unique content_urls
+                            const groupedSources = sourceReferences.reduce((acc: Record<string, any[]>, source: any) => {
+                              const key = source.source_code || 'unknown';
+                              if (!acc[key]) acc[key] = [];
+                              // Only add if content_url is unique within this source
+                              const isDuplicate = acc[key].some((s: any) => s.content_url === source.content_url);
+                              if (!isDuplicate) acc[key].push(source);
+                              return acc;
+                            }, {} as Record<string, any[]>);
+
+                            return (
+                              <div className="space-y-2">
+                                {Object.entries(groupedSources).map(([sourceCode, sources]) => (
+                                  <div key={sourceCode} className="flex items-center gap-2 flex-wrap">
+                                    {/* Source links */}
+                                    {sources.map((source: any, idx: number) => (
+                                      <a
+                                        key={`${sourceCode}-${idx}`}
+                                        href={source.content_url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className={clsx(
+                                          'px-2 py-1 rounded text-xs font-medium inline-flex items-center gap-1 hover:opacity-80 transition-opacity',
+                                          sourceCode === 'ra' ? 'bg-red-100 text-red-700' :
+                                            sourceCode === 'ticketmaster' ? 'bg-blue-100 text-blue-700' :
+                                              sourceCode === 'original' ? 'bg-green-100 text-green-700' :
+                                                'bg-gray-100 text-gray-700'
+                                        )}
+                                      >
+                                        {sourceCode?.toUpperCase()}
+                                        {source.title && <span className="opacity-70">: {source.title?.substring(0, 20)}{source.title?.length > 20 ? '...' : ''}</span>}
+                                        <ExternalLink className="w-3 h-3" />
+                                      </a>
+                                    ))}
+                                    {/* Use all button for this source */}
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const source = sources[0]; // Use first source of this type
+                                        const sourceData = { ...source };
+                                        delete sourceData.id;
+                                        delete sourceData.source_code;
+                                        delete sourceData.source_event_id;
+                                        delete sourceData.confidence;
+                                        delete sourceData.is_primary;
+                                        delete sourceData.raw_data;
+                                        delete sourceData.created_at;
+                                        delete sourceData.updated_at;
+                                        const updates: Record<string, any> = {};
+                                        Object.entries(sourceData).forEach(([key, value]) => {
+                                          if (value !== null && value !== undefined && value !== '') {
+                                            // Format date to YYYY-MM-DD for form input
+                                            if (key === 'date' && value) {
+                                              const d = new Date(value as string | number | Date);
+                                              if (!isNaN(d.getTime())) {
+                                                updates[key] = d.toISOString().split('T')[0];
+                                              }
+                                              // Format start_time to HH:MM for form input
+                                            } else if (key === 'start_time' && typeof value === 'string') {
+                                              if (value.includes('T')) {
+                                                const timePart = value.split('T')[1];
+                                                updates[key] = timePart ? timePart.substring(0, 5) : '';
+                                              } else {
+                                                updates[key] = value.substring(0, 5);
+                                              }
+                                            } else {
+                                              updates[key] = value;
+                                            }
+                                          }
+                                        });
+                                        setEditForm({ ...editForm, ...updates });
+                                      }}
                                       className={clsx(
-                                        'px-2 py-1 rounded text-xs font-medium inline-flex items-center gap-1 hover:opacity-80 transition-opacity',
-                                        sourceCode === 'ra' ? 'bg-red-100 text-red-700' :
-                                        sourceCode === 'ticketmaster' ? 'bg-blue-100 text-blue-700' :
-                                        sourceCode === 'original' ? 'bg-green-100 text-green-700' :
-                                        'bg-gray-100 text-gray-700'
+                                        'px-2 py-1 rounded text-xs font-medium border',
+                                        sourceCode === 'ra' ? 'border-red-300 text-red-700 hover:bg-red-50' :
+                                          sourceCode === 'ticketmaster' ? 'border-blue-300 text-blue-700 hover:bg-blue-50' :
+                                            'border-gray-300 text-gray-700 hover:bg-gray-50'
                                       )}
                                     >
-                                      {sourceCode?.toUpperCase()}
-                                      {source.title && <span className="opacity-70">: {source.title?.substring(0, 20)}{source.title?.length > 20 ? '...' : ''}</span>}
-                                      <ExternalLink className="w-3 h-3" />
-                                    </a>
-                                  ))}
-                                  {/* Use all button for this source */}
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const source = sources[0]; // Use first source of this type
-                                      const sourceData = { ...source };
-                                      delete sourceData.id;
-                                      delete sourceData.source_code;
-                                      delete sourceData.source_event_id;
-                                      delete sourceData.confidence;
-                                      delete sourceData.is_primary;
-                                      delete sourceData.raw_data;
-                                      delete sourceData.created_at;
-                                      delete sourceData.updated_at;
-                                      const updates: Record<string, any> = {};
-                                      Object.entries(sourceData).forEach(([key, value]) => {
-                                        if (value !== null && value !== undefined && value !== '') {
-                                          // Format date to YYYY-MM-DD for form input
-                                          if (key === 'date' && value) {
-                                            const d = new Date(value as string | number | Date);
-                                            if (!isNaN(d.getTime())) {
-                                              updates[key] = d.toISOString().split('T')[0];
-                                            }
-                                          // Format start_time to HH:MM for form input
-                                          } else if (key === 'start_time' && typeof value === 'string') {
-                                            if (value.includes('T')) {
-                                              const timePart = value.split('T')[1];
-                                              updates[key] = timePart ? timePart.substring(0, 5) : '';
-                                            } else {
-                                              updates[key] = value.substring(0, 5);
-                                            }
-                                          } else {
-                                            updates[key] = value;
-                                          }
-                                        }
-                                      });
-                                      setEditForm({ ...editForm, ...updates });
-                                    }}
-                                    className={clsx(
-                                      'px-2 py-1 rounded text-xs font-medium border',
-                                      sourceCode === 'ra' ? 'border-red-300 text-red-700 hover:bg-red-50' :
-                                      sourceCode === 'ticketmaster' ? 'border-blue-300 text-blue-700 hover:bg-blue-50' :
-                                      'border-gray-300 text-gray-700 hover:bg-gray-50'
-                                    )}
-                                  >
-                                    Use all from {sourceCode?.toUpperCase()}
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          );
-                        })()}
-
-                        {/* Field-level source options */}
-                        <div className="space-y-2 max-h-48 overflow-auto mt-4">
-                          {['title', 'description', 'venue_name', 'flyer_front', 'content_url'].map((field) => {
-                            const sources = sourceReferences.filter((s: any) => s[field] && s[field] !== editForm[field]);
-                            if (sources.length === 0) return null;
-                            
-                            return (
-                              <div key={field} className="bg-white rounded p-2 border">
-                                <div className="text-xs font-medium text-gray-500 mb-1.5 capitalize">{field.replace(/_/g, ' ')}</div>
-                                <div className="space-y-1">
-                                  {sources.map((source: any, sidx: number) => (
-                                    <div key={sidx} className="flex items-start gap-2 text-xs">
-                                      <span className={clsx(
-                                        'px-1 py-0.5 rounded font-medium uppercase flex-shrink-0 mt-0.5',
-                                        source.source_code === 'ra' ? 'bg-red-100 text-red-700' :
-                                        source.source_code === 'ticketmaster' ? 'bg-blue-100 text-blue-700' :
-                                        'bg-gray-100 text-gray-700'
-                                      )}>
-                                        {source.source_code?.substring(0, 2).toUpperCase()}
-                                      </span>
-                                      <span className="text-gray-700 flex-1 break-words line-clamp-2">
-                                        {field === 'flyer_front' || field === 'content_url' 
-                                          ? <a href={source[field]} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline truncate block">{source[field]?.substring(0, 40)}...</a>
-                                          : source[field]?.substring(0, 80)}{source[field]?.length > 80 ? '...' : ''}
-                                      </span>
-                                      <button
-                                        type="button"
-                                        onClick={() => setEditForm({ ...editForm, [field]: source[field] })}
-                                        className="text-indigo-600 hover:text-indigo-800 font-medium flex-shrink-0"
-                                      >
-                                        Use
-                                      </button>
-                                    </div>
-                                  ))}
-                                </div>
+                                      Use all from {sourceCode?.toUpperCase()}
+                                    </button>
+                                  </div>
+                                ))}
                               </div>
                             );
-                          })}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                )}
+                          })()}
 
-                {/* Event form */}
-                {activeTab === 'events' && (
-                  <>
-                    {/* Approve/Reject Switch */}
-                    {editingItem && (
-                      <div className="bg-white border rounded-lg p-4">
-                        <label className="block text-sm font-medium text-gray-700 mb-3">Publish Status</label>
-                        <div className="flex items-center gap-4">
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              setEditForm({ ...editForm, publish_status: 'approved' });
-                              try {
-                                await setPublishStatus([editingItem.id], 'approved');
-                                setEvents(events.map(ev => ev.id === editingItem.id ? { ...ev, publish_status: 'approved' } : ev));
-                              } catch (e) { console.error(e); }
-                            }}
-                            className={clsx(
-                              'flex-1 px-4 py-3 rounded-lg font-medium flex items-center justify-center gap-2 transition-all',
-                              editForm.publish_status === 'approved'
-                                ? 'bg-green-500 text-white shadow-lg'
-                                : 'bg-gray-100 text-gray-600 hover:bg-green-50 hover:text-green-700'
-                            )}
-                          >
-                            <Check className="w-5 h-5" />
-                            Approve
-                          </button>
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              setEditForm({ ...editForm, publish_status: 'pending' });
-                              try {
-                                await setPublishStatus([editingItem.id], 'pending');
-                                setEvents(events.map(ev => ev.id === editingItem.id ? { ...ev, publish_status: 'pending' } : ev));
-                              } catch (e) { console.error(e); }
-                            }}
-                            className={clsx(
-                              'flex-1 px-4 py-3 rounded-lg font-medium flex items-center justify-center gap-2 transition-all',
-                              editForm.publish_status === 'pending'
-                                ? 'bg-amber-500 text-white shadow-lg'
-                                : 'bg-gray-100 text-gray-600 hover:bg-amber-50 hover:text-amber-700'
-                            )}
-                          >
-                            <Clock className="w-5 h-5" />
-                            Pending
-                          </button>
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              setEditForm({ ...editForm, publish_status: 'rejected' });
-                              try {
-                                await setPublishStatus([editingItem.id], 'rejected');
-                                setEvents(events.map(ev => ev.id === editingItem.id ? { ...ev, publish_status: 'rejected' } : ev));
-                              } catch (e) { console.error(e); }
-                            }}
-                            className={clsx(
-                              'flex-1 px-4 py-3 rounded-lg font-medium flex items-center justify-center gap-2 transition-all',
-                              editForm.publish_status === 'rejected'
-                                ? 'bg-red-500 text-white shadow-lg'
-                                : 'bg-gray-100 text-gray-600 hover:bg-red-50 hover:text-red-700'
-                            )}
-                          >
-                            <X className="w-5 h-5" />
-                            Reject
-                          </button>
-                        </div>
-                      </div>
-                    )}
+                          {/* Field-level source options */}
+                          <div className="space-y-2 max-h-48 overflow-auto mt-4">
+                            {['title', 'description', 'venue_name', 'flyer_front', 'content_url'].map((field) => {
+                              const sources = sourceReferences.filter((s: any) => s[field] && s[field] !== editForm[field]);
+                              if (sources.length === 0) return null;
 
-                    {editForm.flyer_front && (
-                      <img src={editForm.flyer_front} alt="" className="w-full h-48 object-cover rounded-lg" />
-                    )}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
-                      <input
-                        type="text"
-                        value={editForm.title || ''}
-                        onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
-                        className="w-full px-3 py-2 border rounded-lg"
-                      />
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
-                        <input
-                          type="date"
-                          value={editForm.date || ''}
-                          onChange={(e) => setEditForm({ ...editForm, date: e.target.value })}
-                          className="w-full px-3 py-2 border rounded-lg"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Start Time</label>
-                        <input
-                          type="time"
-                          value={editForm.start_time || ''}
-                          onChange={(e) => setEditForm({ ...editForm, start_time: e.target.value })}
-                          className="w-full px-3 py-2 border rounded-lg"
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Event Type</label>
-                      <select
-                        value={editForm.event_type || 'event'}
-                        onChange={(e) => setEditForm({ ...editForm, event_type: e.target.value as EventType })}
-                        className="w-full px-3 py-2 border rounded-lg"
-                      >
-                        {EVENT_TYPES.map((type) => (
-                          <option key={type.value} value={type.value}>
-                            {type.icon} {type.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="relative">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Venue</label>
-                      <input
-                        type="text"
-                        value={editForm.venue_name || ''}
-                        onChange={(e) => {
-                          setEditForm({ ...editForm, venue_name: e.target.value });
-                          setVenueSearch(e.target.value);
-                        }}
-                        onFocus={() => venueSearch.length >= 2 && setShowVenueDropdown(true)}
-                        onBlur={() => setTimeout(() => setShowVenueDropdown(false), 200)}
-                        className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"
-                        placeholder="Type to search venues..."
-                      />
-                      {showVenueDropdown && venueSuggestions.length > 0 && (
-                        <div className="absolute z-50 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-auto">
-                          {venueSuggestions.map((venue: any) => (
-                            <button
-                              key={venue.id}
-                              type="button"
-                              onClick={() => {
-                                setEditForm({
-                                  ...editForm,
-                                  venue_name: venue.name,
-                                  venue_city: venue.city || editForm.venue_city,
-                                  venue_country: venue.country || editForm.venue_country,
-                                  venue_address: venue.address || editForm.venue_address,
-                                  venue_id: venue.id
-                                });
-                                setShowVenueDropdown(false);
-                                setVenueSearch('');
-                              }}
-                              className="w-full px-3 py-2 text-left hover:bg-indigo-50 flex items-center gap-2 border-b last:border-0"
-                            >
-                              <Building2 className="w-4 h-4 text-gray-400" />
-                              <div>
-                                <p className="text-sm font-medium">{venue.name}</p>
-                                <p className="text-xs text-gray-500">{venue.city}, {venue.country}</p>
-                              </div>
-                            </button>
-                          ))}
-                        </div>
+                              return (
+                                <div key={field} className="bg-white rounded p-2 border">
+                                  <div className="text-xs font-medium text-gray-500 mb-1.5 capitalize">{field.replace(/_/g, ' ')}</div>
+                                  <div className="space-y-1">
+                                    {sources.map((source: any, sidx: number) => (
+                                      <div key={sidx} className="flex items-start gap-2 text-xs">
+                                        <span className={clsx(
+                                          'px-1 py-0.5 rounded font-medium uppercase flex-shrink-0 mt-0.5',
+                                          source.source_code === 'ra' ? 'bg-red-100 text-red-700' :
+                                            source.source_code === 'ticketmaster' ? 'bg-blue-100 text-blue-700' :
+                                              'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300'
+                                        )}>
+                                          {source.source_code?.substring(0, 2).toUpperCase()}
+                                        </span>
+                                        <span className="text-gray-700 flex-1 break-words line-clamp-2">
+                                          {field === 'flyer_front' || field === 'content_url'
+                                            ? <a href={source[field]} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline truncate block">{source[field]?.substring(0, 40)}...</a>
+                                            : source[field]?.substring(0, 80)}{source[field]?.length > 80 ? '...' : ''}
+                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={() => setEditForm({ ...editForm, [field]: source[field] })}
+                                          className="text-indigo-600 hover:text-indigo-800 font-medium flex-shrink-0"
+                                        >
+                                          Use
+                                        </button>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </>
                       )}
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
+                  )}
+
+                  {/* Event form */}
+                  {activeTab === 'events' && (
+                    <>
+                      {/* Approve/Reject Switch */}
+                      {editingItem && (
+                        <div className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-lg p-4">
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Publish Status</label>
+                          <div className="flex items-center gap-4">
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                setEditForm({ ...editForm, publish_status: 'approved' });
+                                try {
+                                  await setPublishStatus([editingItem.id], 'approved');
+                                  setEvents(events.map(ev => ev.id === editingItem.id ? { ...ev, publish_status: 'approved' } : ev));
+                                } catch (e) { console.error(e); }
+                              }}
+                              className={clsx(
+                                'flex-1 px-4 py-3 rounded-lg font-medium flex items-center justify-center gap-2 transition-all',
+                                editForm.publish_status === 'approved'
+                                  ? 'bg-green-500 text-white shadow-lg'
+                                  : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-green-50 dark:hover:bg-green-900/30 hover:text-green-700'
+                              )}
+                            >
+                              <Check className="w-5 h-5" />
+                              Approve
+                            </button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                setEditForm({ ...editForm, publish_status: 'pending' });
+                                try {
+                                  await setPublishStatus([editingItem.id], 'pending');
+                                  setEvents(events.map(ev => ev.id === editingItem.id ? { ...ev, publish_status: 'pending' } : ev));
+                                } catch (e) { console.error(e); }
+                              }}
+                              className={clsx(
+                                'flex-1 px-4 py-3 rounded-lg font-medium flex items-center justify-center gap-2 transition-all',
+                                editForm.publish_status === 'pending'
+                                  ? 'bg-amber-500 text-white shadow-lg'
+                                  : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-amber-50 dark:hover:bg-amber-900/30 hover:text-amber-700'
+                              )}
+                            >
+                              <Clock className="w-5 h-5" />
+                              Pending
+                            </button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                setEditForm({ ...editForm, publish_status: 'rejected' });
+                                try {
+                                  await setPublishStatus([editingItem.id], 'rejected');
+                                  setEvents(events.map(ev => ev.id === editingItem.id ? { ...ev, publish_status: 'rejected' } : ev));
+                                } catch (e) { console.error(e); }
+                              }}
+                              className={clsx(
+                                'flex-1 px-4 py-3 rounded-lg font-medium flex items-center justify-center gap-2 transition-all',
+                                editForm.publish_status === 'rejected'
+                                  ? 'bg-red-500 text-white shadow-lg'
+                                  : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-red-50 dark:hover:bg-red-900/30 hover:text-red-700'
+                              )}
+                            >
+                              <X className="w-5 h-5" />
+                              Reject
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {editForm.flyer_front && (
+                        <img src={editForm.flyer_front} alt="" className="w-full h-48 object-cover rounded-lg" />
+                      )}
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
-                        <select
-                          value={editForm.venue_city || ''}
-                          onChange={(e) => setEditForm({ ...editForm, venue_city: e.target.value })}
-                          className="w-full px-3 py-2 border rounded-lg"
-                        >
-                          <option value="">Select city...</option>
-                          {citiesDropdown.map((city) => (
-                            <option key={`${city.name}-${city.country}`} value={city.name}>
-                              {city.name}
-                            </option>
-                          ))}
-                          {/* Allow custom entry if not in list */}
-                          {editForm.venue_city && !citiesDropdown.find(c => c.name === editForm.venue_city) && (
-                            <option value={editForm.venue_city}>{editForm.venue_city} (custom)</option>
-                          )}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Country</label>
-                        <select
-                          value={editForm.venue_country || ''}
-                          onChange={(e) => setEditForm({ ...editForm, venue_country: e.target.value })}
-                          className="w-full px-3 py-2 border rounded-lg"
-                        >
-                          <option value="">Select country...</option>
-                          {countriesDropdown.map((country) => (
-                            <option key={country.name} value={country.name}>
-                              {country.name} {country.code ? `(${country.code})` : ''}
-                            </option>
-                          ))}
-                          {/* Allow custom entry if not in list */}
-                          {editForm.venue_country && !countriesDropdown.find(c => c.name === editForm.venue_country) && (
-                            <option value={editForm.venue_country}>{editForm.venue_country} (custom)</option>
-                          )}
-                        </select>
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
-                      <input
-                        type="text"
-                        value={editForm.venue_address || ''}
-                        onChange={(e) => setEditForm({ ...editForm, venue_address: e.target.value })}
-                        className="w-full px-3 py-2 border rounded-lg"
-                      />
-                    </div>
-                    <div className="relative">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Artists</label>
-                      <div className="relative">
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Title</label>
                         <input
                           type="text"
-                          value={artistSearch}
-                          onChange={(e) => setArtistSearch(e.target.value)}
-                          onFocus={() => artistSearch.length >= 2 && setShowArtistDropdown(true)}
-                          onBlur={() => setTimeout(() => setShowArtistDropdown(false), 200)}
-                          className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"
-                          placeholder="Type to search artists..."
+                          value={editForm.title || ''}
+                          onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
+                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
                         />
-                        {showArtistDropdown && artistSuggestions.length > 0 && (
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Date</label>
+                          <input
+                            type="date"
+                            value={editForm.date || ''}
+                            onChange={(e) => setEditForm({ ...editForm, date: e.target.value })}
+                            className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Start Time</label>
+                          <input
+                            type="time"
+                            value={editForm.start_time || ''}
+                            onChange={(e) => setEditForm({ ...editForm, start_time: e.target.value })}
+                            className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Event Type</label>
+                        <select
+                          value={editForm.event_type || 'event'}
+                          onChange={(e) => setEditForm({ ...editForm, event_type: e.target.value as EventType })}
+                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                        >
+                          {EVENT_TYPES.map((type) => (
+                            <option key={type.value} value={type.value}>
+                              {type.icon} {type.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="relative">
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Venue</label>
+                        <input
+                          type="text"
+                          value={editForm.venue_name || ''}
+                          onChange={(e) => {
+                            setEditForm({ ...editForm, venue_name: e.target.value });
+                            setVenueSearch(e.target.value);
+                          }}
+                          onFocus={() => venueSearch.length >= 2 && setShowVenueDropdown(true)}
+                          onBlur={() => setTimeout(() => setShowVenueDropdown(false), 200)}
+                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-gray-500 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                          placeholder="Type to search venues..."
+                        />
+                        {showVenueDropdown && venueSuggestions.length > 0 && (
                           <div className="absolute z-50 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-auto">
-                            {artistSuggestions.map((artist: any) => (
+                            {venueSuggestions.map((venue: any) => (
                               <button
-                                key={artist.id}
+                                key={venue.id}
                                 type="button"
                                 onClick={() => {
-                                  const currentArtists = editForm.artistsList || [];
-                                  if (!currentArtists.includes(artist.name)) {
-                                    const newArtists = [...currentArtists, artist.name];
-                                    setEditForm({ ...editForm, artistsList: newArtists });
-                                  }
-                                  setArtistSearch('');
-                                  setShowArtistDropdown(false);
+                                  setEditForm({
+                                    ...editForm,
+                                    venue_name: venue.name,
+                                    venue_city: venue.city || editForm.venue_city,
+                                    venue_country: venue.country || editForm.venue_country,
+                                    venue_address: venue.address || editForm.venue_address,
+                                    venue_id: venue.id
+                                  });
+                                  setShowVenueDropdown(false);
+                                  setVenueSearch('');
                                 }}
-                                className="w-full px-3 py-2 text-left hover:bg-indigo-50 flex items-center gap-2 border-b last:border-0"
+                                className="w-full px-3 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 border-b dark:border-gray-700 last:border-0"
                               >
-                                {artist.image_url ? (
-                                  <img src={artist.image_url} alt="" className="w-6 h-6 rounded-full object-cover" />
-                                ) : (
-                                  <Music className="w-4 h-4 text-gray-400" />
-                                )}
-                                <span className="text-sm font-medium">{artist.name}</span>
+                                <Building2 className="w-4 h-4 text-gray-400" />
+                                <div>
+                                  <p className="text-sm font-medium">{venue.name}</p>
+                                  <p className="text-xs text-gray-500">{venue.city}, {venue.country}</p>
+                                </div>
                               </button>
                             ))}
                           </div>
                         )}
                       </div>
-                      {/* Selected artists display */}
-                      {editForm.artistsList && editForm.artistsList.length > 0 && (
-                        <div className="flex flex-wrap gap-2 mt-2">
-                          {editForm.artistsList.map((artistName: string, idx: number) => (
-                            <span
-                              key={idx}
-                              className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-100 text-indigo-700 rounded-full text-sm"
-                            >
-                              {artistName}
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const newArtists = editForm.artistsList.filter((_: string, i: number) => i !== idx);
-                                  setEditForm({ ...editForm, artistsList: newArtists });
-                                }}
-                                className="hover:text-indigo-900"
-                              >
-                                <X className="w-3 h-3" />
-                              </button>
-                            </span>
-                          ))}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">City</label>
+                          <select
+                            value={editForm.venue_city || ''}
+                            onChange={(e) => setEditForm({ ...editForm, venue_city: e.target.value })}
+                            className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                          >
+                            <option value="">Select city...</option>
+                            {citiesDropdown.map((city) => (
+                              <option key={`${city.name}-${city.country}`} value={city.name}>
+                                {city.name}
+                              </option>
+                            ))}
+                            {/* Allow custom entry if not in list */}
+                            {editForm.venue_city && !citiesDropdown.find(c => c.name === editForm.venue_city) && (
+                              <option value={editForm.venue_city}>{editForm.venue_city} (custom)</option>
+                            )}
+                          </select>
                         </div>
-                      )}
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                      <textarea
-                        value={editForm.description || ''}
-                        onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
-                        rows={3}
-                        className="w-full px-3 py-2 border rounded-lg"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Event URL</label>
-                      <input
-                        type="url"
-                        value={editForm.content_url || ''}
-                        onChange={(e) => setEditForm({ ...editForm, content_url: e.target.value })}
-                        className="w-full px-3 py-2 border rounded-lg"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Flyer URL</label>
-                      <input
-                        type="url"
-                        value={editForm.flyer_front || ''}
-                        onChange={(e) => setEditForm({ ...editForm, flyer_front: e.target.value })}
-                        className="w-full px-3 py-2 border rounded-lg"
-                      />
-                    </div>
-                  </>
-                )}
-
-                {/* Artist form */}
-                {activeTab === 'artists' && (
-                  <>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
-                      <input
-                        type="text"
-                        value={editForm.name || ''}
-                        onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                        className="w-full px-3 py-2 border rounded-lg"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Country</label>
-                      <input
-                        type="text"
-                        value={editForm.country || ''}
-                        onChange={(e) => setEditForm({ ...editForm, country: e.target.value })}
-                        className="w-full px-3 py-2 border rounded-lg"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Profile URL</label>
-                      <input
-                        type="url"
-                        value={editForm.content_url || ''}
-                        onChange={(e) => setEditForm({ ...editForm, content_url: e.target.value })}
-                        className="w-full px-3 py-2 border rounded-lg"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Image URL</label>
-                      <input
-                        type="url"
-                        value={editForm.image_url || ''}
-                        onChange={(e) => setEditForm({ ...editForm, image_url: e.target.value })}
-                        className="w-full px-3 py-2 border rounded-lg"
-                      />
-                    </div>
-                  </>
-                )}
-
-                {/* Venue form */}
-                {activeTab === 'venues' && (
-                  <>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
-                      <input
-                        type="text"
-                        value={editForm.name || ''}
-                        onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                        className="w-full px-3 py-2 border rounded-lg"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
-                      <input
-                        type="text"
-                        value={editForm.address || ''}
-                        onChange={(e) => setEditForm({ ...editForm, address: e.target.value })}
-                        className="w-full px-3 py-2 border rounded-lg"
-                      />
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Country</label>
+                          <select
+                            value={editForm.venue_country || ''}
+                            onChange={(e) => setEditForm({ ...editForm, venue_country: e.target.value })}
+                            className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                          >
+                            <option value="">Select country...</option>
+                            {countriesDropdown.map((country) => (
+                              <option key={country.name} value={country.name}>
+                                {country.name} {country.code ? `(${country.code})` : ''}
+                              </option>
+                            ))}
+                            {/* Allow custom entry if not in list */}
+                            {editForm.venue_country && !countriesDropdown.find(c => c.name === editForm.venue_country) && (
+                              <option value={editForm.venue_country}>{editForm.venue_country} (custom)</option>
+                            )}
+                          </select>
+                        </div>
+                      </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
-                        <select
-                          value={editForm.city || ''}
-                          onChange={(e) => setEditForm({ ...editForm, city: e.target.value })}
-                          className="w-full px-3 py-2 border rounded-lg"
-                        >
-                          <option value="">Select city...</option>
-                          {citiesDropdown.map((city) => (
-                            <option key={`${city.name}-${city.country}`} value={city.name}>
-                              {city.name}
-                            </option>
-                          ))}
-                          {editForm.city && !citiesDropdown.find(c => c.name === editForm.city) && (
-                            <option value={editForm.city}>{editForm.city} (custom)</option>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Address</label>
+                        <input
+                          type="text"
+                          value={editForm.venue_address || ''}
+                          onChange={(e) => setEditForm({ ...editForm, venue_address: e.target.value })}
+                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                        />
+                      </div>
+                      <div className="relative">
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Artists</label>
+                        <div className="relative">
+                          <input
+                            type="text"
+                            value={artistSearch}
+                            onChange={(e) => setArtistSearch(e.target.value)}
+                            onFocus={() => artistSearch.length >= 2 && setShowArtistDropdown(true)}
+                            onBlur={() => setTimeout(() => setShowArtistDropdown(false), 200)}
+                            className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-gray-500 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                            placeholder="Type to search artists..."
+                          />
+                          {showArtistDropdown && artistSuggestions.length > 0 && (
+                            <div className="absolute z-50 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-auto">
+                              {artistSuggestions.map((artist: any) => (
+                                <button
+                                  key={artist.id}
+                                  type="button"
+                                  onClick={() => {
+                                    const currentArtists = editForm.artistsList || [];
+                                    if (!currentArtists.includes(artist.name)) {
+                                      const newArtists = [...currentArtists, artist.name];
+                                      setEditForm({ ...editForm, artistsList: newArtists });
+                                    }
+                                    setArtistSearch('');
+                                    setShowArtistDropdown(false);
+                                  }}
+                                  className="w-full px-3 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 border-b dark:border-gray-700 last:border-0"
+                                >
+                                  {artist.image_url ? (
+                                    <img src={artist.image_url} alt="" className="w-6 h-6 rounded-full object-cover" />
+                                  ) : (
+                                    <Music className="w-4 h-4 text-gray-400" />
+                                  )}
+                                  <span className="text-sm font-medium">{artist.name}</span>
+                                </button>
+                              ))}
+                            </div>
                           )}
-                        </select>
+                        </div>
+                        {/* Selected artists display */}
+                        {editForm.artistsList && editForm.artistsList.length > 0 && (
+                          <div className="flex flex-wrap gap-2 mt-2">
+                            {editForm.artistsList.map((artistName: string, idx: number) => (
+                              <span
+                                key={idx}
+                                className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-100 dark:bg-gray-800 text-indigo-700 dark:text-gray-300 rounded-full text-sm border dark:border-gray-600"
+                              >
+                                {artistName}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const newArtists = editForm.artistsList.filter((_: string, i: number) => i !== idx);
+                                    setEditForm({ ...editForm, artistsList: newArtists });
+                                  }}
+                                  className="hover:text-indigo-900"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Country</label>
-                        <select
-                          value={editForm.country || ''}
-                          onChange={(e) => setEditForm({ ...editForm, country: e.target.value })}
-                          className="w-full px-3 py-2 border rounded-lg"
-                        >
-                          <option value="">Select country...</option>
-                          {countriesDropdown.map((country) => (
-                            <option key={country.name} value={country.name}>
-                              {country.name} {country.code ? `(${country.code})` : ''}
-                            </option>
-                          ))}
-                          {editForm.country && !countriesDropdown.find(c => c.name === editForm.country) && (
-                            <option value={editForm.country}>{editForm.country} (custom)</option>
-                          )}
-                        </select>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Latitude</label>
-                        <input
-                          type="number"
-                          step="any"
-                          value={editForm.latitude || ''}
-                          onChange={(e) => setEditForm({ ...editForm, latitude: e.target.value })}
-                          className="w-full px-3 py-2 border rounded-lg"
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Description</label>
+                        <textarea
+                          value={editForm.description || ''}
+                          onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                          rows={3}
+                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Longitude</label>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Event URL</label>
                         <input
-                          type="number"
-                          step="any"
-                          value={editForm.longitude || ''}
-                          onChange={(e) => setEditForm({ ...editForm, longitude: e.target.value })}
-                          className="w-full px-3 py-2 border rounded-lg"
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Website URL</label>
-                      <input
-                        type="url"
-                        value={editForm.content_url || ''}
-                        onChange={(e) => setEditForm({ ...editForm, content_url: e.target.value })}
-                        className="w-full px-3 py-2 border rounded-lg"
-                      />
-                    </div>
-                  </>
-                )}
-
-                {/* City form */}
-                {activeTab === 'cities' && (
-                  <>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
-                      <input
-                        type="text"
-                        value={editForm.name || ''}
-                        onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                        className="w-full px-3 py-2 border rounded-lg"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Country</label>
-                      <input
-                        type="text"
-                        value={editForm.country || ''}
-                        onChange={(e) => setEditForm({ ...editForm, country: e.target.value })}
-                        className="w-full px-3 py-2 border rounded-lg"
-                      />
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Latitude</label>
-                        <input
-                          type="number"
-                          step="any"
-                          value={editForm.latitude || ''}
-                          onChange={(e) => setEditForm({ ...editForm, latitude: e.target.value })}
-                          className="w-full px-3 py-2 border rounded-lg"
+                          type="url"
+                          value={editForm.content_url || ''}
+                          onChange={(e) => setEditForm({ ...editForm, content_url: e.target.value })}
+                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Longitude</label>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Flyer URL</label>
                         <input
-                          type="number"
-                          step="any"
-                          value={editForm.longitude || ''}
-                          onChange={(e) => setEditForm({ ...editForm, longitude: e.target.value })}
-                          className="w-full px-3 py-2 border rounded-lg"
+                          type="url"
+                          value={editForm.flyer_front || ''}
+                          onChange={(e) => setEditForm({ ...editForm, flyer_front: e.target.value })}
+                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
                         />
                       </div>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Timezone</label>
-                      <input
-                        type="text"
-                        value={editForm.timezone || ''}
-                        onChange={(e) => setEditForm({ ...editForm, timezone: e.target.value })}
-                        className="w-full px-3 py-2 border rounded-lg"
-                        placeholder="Europe/Berlin"
-                      />
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        id="is_active"
-                        checked={editForm.is_active !== false}
-                        onChange={(e) => setEditForm({ ...editForm, is_active: e.target.checked })}
-                        className="rounded text-indigo-600"
-                      />
-                      <label htmlFor="is_active" className="text-sm">Active</label>
-                    </div>
-                  </>
-                )}
-              </div>
-
-              {/* Save button */}
-              <div className="sticky bottom-0 bg-white border-t px-4 py-3">
-                <button
-                  onClick={handleSave}
-                  disabled={isSaving}
-                  className="w-full px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  {isSaving ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                      Saving...
-                    </>
-                  ) : (
-                    <>
-                      <Check className="w-4 h-4" />
-                      Save Changes
                     </>
                   )}
-                </button>
+
+                  {/* Artist form */}
+                  {activeTab === 'artists' && (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name *</label>
+                        <input
+                          type="text"
+                          value={editForm.name || ''}
+                          onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Country</label>
+                        <input
+                          type="text"
+                          value={editForm.country || ''}
+                          onChange={(e) => setEditForm({ ...editForm, country: e.target.value })}
+                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Profile URL</label>
+                        <input
+                          type="url"
+                          value={editForm.content_url || ''}
+                          onChange={(e) => setEditForm({ ...editForm, content_url: e.target.value })}
+                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Image URL</label>
+                        <input
+                          type="url"
+                          value={editForm.image_url || ''}
+                          onChange={(e) => setEditForm({ ...editForm, image_url: e.target.value })}
+                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  {/* Venue form */}
+                  {activeTab === 'venues' && (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name *</label>
+                        <input
+                          type="text"
+                          value={editForm.name || ''}
+                          onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Address</label>
+                        <input
+                          type="text"
+                          value={editForm.address || ''}
+                          onChange={(e) => setEditForm({ ...editForm, address: e.target.value })}
+                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">City</label>
+                          <select
+                            value={editForm.city || ''}
+                            onChange={(e) => setEditForm({ ...editForm, city: e.target.value })}
+                            className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                          >
+                            <option value="">Select city...</option>
+                            {citiesDropdown.map((city) => (
+                              <option key={`${city.name}-${city.country}`} value={city.name}>
+                                {city.name}
+                              </option>
+                            ))}
+                            {editForm.city && !citiesDropdown.find(c => c.name === editForm.city) && (
+                              <option value={editForm.city}>{editForm.city} (custom)</option>
+                            )}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Country</label>
+                          <select
+                            value={editForm.country || ''}
+                            onChange={(e) => setEditForm({ ...editForm, country: e.target.value })}
+                            className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                          >
+                            <option value="">Select country...</option>
+                            {countriesDropdown.map((country) => (
+                              <option key={country.name} value={country.name}>
+                                {country.name} {country.code ? `(${country.code})` : ''}
+                              </option>
+                            ))}
+                            {editForm.country && !countriesDropdown.find(c => c.name === editForm.country) && (
+                              <option value={editForm.country}>{editForm.country} (custom)</option>
+                            )}
+                          </select>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Latitude</label>
+                          <input
+                            type="number"
+                            step="any"
+                            value={editForm.latitude || ''}
+                            onChange={(e) => setEditForm({ ...editForm, latitude: e.target.value })}
+                            className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Longitude</label>
+                          <input
+                            type="number"
+                            step="any"
+                            value={editForm.longitude || ''}
+                            onChange={(e) => setEditForm({ ...editForm, longitude: e.target.value })}
+                            className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Website URL</label>
+                        <input
+                          type="url"
+                          value={editForm.content_url || ''}
+                          onChange={(e) => setEditForm({ ...editForm, content_url: e.target.value })}
+                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  {/* City form */}
+                  {activeTab === 'cities' && (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name *</label>
+                        <input
+                          type="text"
+                          value={editForm.name || ''}
+                          onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Country</label>
+                        <input
+                          type="text"
+                          value={editForm.country || ''}
+                          onChange={(e) => setEditForm({ ...editForm, country: e.target.value })}
+                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Latitude</label>
+                          <input
+                            type="number"
+                            step="any"
+                            value={editForm.latitude || ''}
+                            onChange={(e) => setEditForm({ ...editForm, latitude: e.target.value })}
+                            className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Longitude</label>
+                          <input
+                            type="number"
+                            step="any"
+                            value={editForm.longitude || ''}
+                            onChange={(e) => setEditForm({ ...editForm, longitude: e.target.value })}
+                            className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Timezone</label>
+                        <input
+                          type="text"
+                          value={editForm.timezone || ''}
+                          onChange={(e) => setEditForm({ ...editForm, timezone: e.target.value })}
+                          className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                          placeholder="Europe/Berlin"
+                        />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          id="is_active"
+                          checked={editForm.is_active !== false}
+                          onChange={(e) => setEditForm({ ...editForm, is_active: e.target.checked })}
+                          className="rounded text-indigo-600"
+                        />
+                        <label htmlFor="is_active" className="text-sm">Active</label>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* Save button */}
+                <div className="sticky bottom-0 bg-white dark:bg-gray-900 border-t dark:border-gray-800 px-4 py-3">
+                  <button
+                    onClick={handleSave}
+                    disabled={isSaving}
+                    className="w-full px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {isSaving ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-4 h-4" />
+                        Save Changes
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
-            </div>
-          ) : activeTab === 'events' ? (
-            <div className="flex-1 bg-white border-l overflow-hidden">
-              <EventMap
-                events={filteredEvents}
-                cities={cities}
-                onEventClick={(event) => handleEdit(event)}
-                onCityChange={(city) => setCityFilter(city)}
-                selectedCity={cityFilter}
-              />
-            </div>
-          ) : (
-            <div className="flex-1 bg-gray-50 flex items-center justify-center">
-              <div className="text-center text-gray-500">
-                <Calendar className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                <p>Select an item to view details</p>
-                <p className="text-sm mt-1">or click "Add" to create new</p>
+            ) : activeTab === 'events' ? (
+              <div className="flex-1 bg-white border-l overflow-hidden">
+                <EventMap
+                  events={filteredEvents}
+                  cities={cities}
+                  onEventClick={(event) => handleEdit(event)}
+                  onCityChange={(city) => setCityFilter(city)}
+                  selectedCity={cityFilter}
+                />
               </div>
-            </div>
-          )}
+            ) : (
+              <div className="flex-1 bg-gray-50 flex items-center justify-center">
+                <div className="text-center text-gray-500">
+                  <Calendar className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                  <p>Select an item to view details</p>
+                  <p className="text-sm mt-1">or click "Add" to create new</p>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </main>

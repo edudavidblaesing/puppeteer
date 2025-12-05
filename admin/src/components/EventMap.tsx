@@ -59,13 +59,13 @@ interface EventMapProps {
   selectedEventId?: string;
 }
 
-export default function EventMap({ 
-  events, 
+export default function EventMap({
+  events,
   cities,
-  onEventClick, 
+  onEventClick,
   onCityChange,
   selectedCity,
-  selectedEventId 
+  selectedEventId
 }: EventMapProps) {
   const mapRef = useRef<L.Map | null>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -77,11 +77,11 @@ export default function EventMap({
   // Build city config from dynamic cities
   const cityConfig = useMemo(() => {
     const config: Record<string, { coords: [number, number]; eventCount: number; venueCount: number }> = {};
-    
+
     cities.forEach((city) => {
       const lat = city.latitude ? Number(city.latitude) : DEFAULT_CITY_COORDS[city.name]?.lat;
       const lng = city.longitude ? Number(city.longitude) : DEFAULT_CITY_COORDS[city.name]?.lng;
-      
+
       if (lat && lng) {
         config[city.name] = {
           coords: [lat, lng],
@@ -90,32 +90,32 @@ export default function EventMap({
         };
       }
     });
-    
+
     return config;
   }, [cities]);
 
   // Group events by venue
   const venueData = useMemo(() => {
-    const venues: Record<string, { 
+    const venues: Record<string, {
       name: string;
-      events: Event[]; 
+      events: Event[];
       coords: [number, number] | null;
       approvedCount: number;
       pendingCount: number;
       rejectedCount: number;
     }> = {};
-    
+
     events.forEach((event) => {
       const venueName = event.venue_name || 'Unknown Venue';
-      
+
       if (!venues[venueName]) {
         let coords: [number, number] | null = null;
-        
+
         // First priority: Use actual coordinates from database if available
         if (event.latitude && event.longitude) {
           coords = [event.latitude, event.longitude];
         }
-        
+
         // Second priority: Try to find coordinates from known venues
         if (!coords) {
           for (const [name, venueCoords] of Object.entries(VENUE_COORDS)) {
@@ -125,7 +125,7 @@ export default function EventMap({
             }
           }
         }
-        
+
         // Fallback to city center with offset
         if (!coords && event.venue_city) {
           const cityCoords = cityConfig[event.venue_city]?.coords;
@@ -134,7 +134,7 @@ export default function EventMap({
             coords = [cityCoords[0] + offset(), cityCoords[1] + offset()];
           }
         }
-        
+
         venues[venueName] = {
           name: venueName,
           events: [],
@@ -147,14 +147,14 @@ export default function EventMap({
         // Update venue coords if we find an event with coordinates
         venues[venueName].coords = [event.latitude, event.longitude];
       }
-      
+
       venues[venueName].events.push(event);
       // Track status counts
       if (event.publish_status === 'approved') venues[venueName].approvedCount++;
       else if (event.publish_status === 'pending') venues[venueName].pendingCount++;
       else venues[venueName].rejectedCount++;
     });
-    
+
     return venues;
   }, [events, cityConfig]);
 
@@ -200,7 +200,7 @@ export default function EventMap({
         isProgrammaticMove.current = false;
         return;
       }
-      
+
       const zoom = map.getZoom();
       const center = map.getCenter();
 
@@ -213,10 +213,10 @@ export default function EventMap({
       if (zoom >= 10 && onCityChange) {
         let closestCity = '';
         let minDist = Infinity;
-        
+
         for (const [city, config] of Object.entries(cityConfig)) {
           const dist = Math.sqrt(
-            Math.pow(center.lat - config.coords[0], 2) + 
+            Math.pow(center.lat - config.coords[0], 2) +
             Math.pow(center.lng - config.coords[1], 2)
           );
           if (dist < minDist && dist < 0.5) {
@@ -255,7 +255,7 @@ export default function EventMap({
 
         const eventCount = data.events.length;
         const { approvedCount, pendingCount, rejectedCount } = data;
-        
+
         // Determine marker color based on status distribution
         // Priority: All approved = green, any pending = yellow, all rejected = gray transparent
         let bgColor = 'bg-gray-400/60';
@@ -296,7 +296,7 @@ export default function EventMap({
               onEventClick(data.events[0]);
             }
           });
-          
+
           // Simple tooltip for single event
           marker.bindTooltip(`
             <div class="px-2 py-1">
@@ -313,10 +313,10 @@ export default function EventMap({
             <p class="text-xs text-gray-500 mb-2">${eventCount} events • ${approvedCount} approved, ${pendingCount} pending</p>
             <div class="max-h-[200px] overflow-y-auto space-y-1">
               ${data.events.map((event, idx) => {
-                const statusColor = event.publish_status === 'approved' ? 'bg-emerald-50 border-emerald-200' :
-                                   event.publish_status === 'pending' ? 'bg-amber-50 border-amber-200' :
-                                   'bg-gray-50 border-gray-200';
-                return `
+            const statusColor = event.publish_status === 'approved' ? 'bg-emerald-50 border-emerald-200' :
+              event.publish_status === 'pending' ? 'bg-amber-50 border-amber-200' :
+                'bg-gray-50 border-gray-200';
+            return `
                 <button 
                   data-event-idx="${idx}" 
                   class="w-full p-2 ${statusColor} hover:bg-indigo-50 rounded text-xs text-left transition-colors cursor-pointer border hover:border-indigo-200"
@@ -330,7 +330,7 @@ export default function EventMap({
               `}).join('')}
             </div>
           `;
-          
+
           // Store events reference on the element for click handler
           (popupContent as any)._venueEvents = data.events;
 
@@ -369,7 +369,7 @@ export default function EventMap({
 
         const approvedCount = cityEvents.filter(e => e.publish_status === 'approved').length;
         const pendingCount = cityEvents.filter(e => e.publish_status === 'pending').length;
-        
+
         // Border color based on status: all approved = green, any pending = yellow, else gray
         let borderColor = 'border-gray-300';
         if (approvedCount === eventCount) borderColor = 'border-emerald-500';
@@ -403,10 +403,10 @@ export default function EventMap({
   // Handle city selection changes
   useEffect(() => {
     if (!mapRef.current || !mapRef.current.getContainer()) return;
-    
+
     try {
       isProgrammaticMove.current = true;
-      
+
       if (selectedCity && cityConfig[selectedCity]) {
         mapRef.current.setView(cityConfig[selectedCity].coords, CITY_ZOOM, { animate: true });
       } else if (!selectedCity && Object.keys(cityConfig).length > 0) {
@@ -421,7 +421,7 @@ export default function EventMap({
   // Handle selected event
   useEffect(() => {
     if (!selectedEventId || !mapRef.current || !mapRef.current.getContainer()) return;
-    
+
     try {
       const event = events.find(e => e.id === selectedEventId);
       if (event && event.venue_name) {
@@ -449,7 +449,7 @@ export default function EventMap({
   return (
     <div className="relative h-full w-full overflow-hidden rounded-lg">
       <div ref={mapContainerRef} className="h-full w-full" style={{ zIndex: 1 }} />
-      
+
       {/* City Quick Select */}
       <div className="absolute top-3 left-3 flex flex-wrap gap-1 max-w-[60%]" style={{ zIndex: 1000 }}>
         {availableCities.map(({ name, eventCount }) => (
@@ -470,8 +470,8 @@ export default function EventMap({
             className={clsx(
               'px-2 py-1 text-xs font-medium rounded-full shadow transition-all',
               selectedCity === name
-                ? 'bg-indigo-600 text-white'
-                : 'bg-white text-gray-700 hover:bg-gray-50'
+                ? 'bg-gray-800 text-white dark:bg-gray-700'
+                : 'bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700'
             )}
           >
             {name} ({eventCount})
@@ -492,7 +492,7 @@ export default function EventMap({
             }}
             className={clsx(
               'px-2 py-1 text-xs font-medium rounded-full shadow transition-all',
-              !selectedCity ? 'bg-indigo-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'
+              !selectedCity ? 'bg-gray-800 text-white dark:bg-gray-700' : 'bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700'
             )}
           >
             All
@@ -501,11 +501,11 @@ export default function EventMap({
       </div>
 
       {/* Legend */}
-      <div className="absolute bottom-16 left-3 bg-white rounded-lg shadow-lg p-2" style={{ zIndex: 1000 }}>
+      <div className="absolute bottom-16 left-3 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-2" style={{ zIndex: 1000 }}>
         <div className="space-y-1">
           <div className="flex items-center">
             <div className="w-3 h-3 rounded bg-emerald-500 mr-2"></div>
-            <span className="text-xs text-gray-600">All published</span>
+            <span className="text-xs text-gray-600 dark:text-gray-300">All published</span>
           </div>
           <div className="flex items-center">
             <div className="w-3 h-3 rounded bg-amber-500 mr-2"></div>
@@ -513,15 +513,15 @@ export default function EventMap({
           </div>
           <div className="flex items-center">
             <div className="w-3 h-3 rounded bg-gray-500 mr-2"></div>
-            <span className="text-xs text-gray-600">All draft</span>
+            <span className="text-xs text-gray-600 dark:text-gray-300">All draft</span>
           </div>
         </div>
       </div>
 
       {/* Stats */}
-      <div className="absolute top-3 right-3 bg-white rounded-lg shadow-lg px-3 py-2" style={{ zIndex: 1000 }}>
-        <div className="text-xs text-gray-600">
-          <span className="font-semibold text-gray-900">{events.length}</span> events
+      <div className="absolute top-3 right-3 bg-white dark:bg-gray-800 rounded-lg shadow-lg px-3 py-2" style={{ zIndex: 1000 }}>
+        <div className="text-xs text-gray-600 dark:text-gray-300">
+          <span className="font-semibold text-gray-900 dark:text-gray-100">{events.length}</span> events
           <span className="mx-1">•</span>
           <span className="font-semibold text-emerald-600">
             {events.filter(e => e.is_published).length}
@@ -530,7 +530,7 @@ export default function EventMap({
           {currentZoom >= 10 && (
             <>
               <span className="mx-1">•</span>
-              <span className="font-semibold text-indigo-600">
+              <span className="font-semibold text-gray-600 dark:text-gray-400">
                 {Object.keys(venueData).length}
               </span>{' '}
               venues
@@ -541,7 +541,7 @@ export default function EventMap({
 
       {/* Zoom indicator */}
       {currentZoom >= 10 && selectedCity && (
-        <div className="absolute bottom-3 right-16 bg-indigo-600 text-white rounded-lg shadow-lg px-3 py-1.5" style={{ zIndex: 1000 }}>
+        <div className="absolute bottom-3 right-16 bg-gray-800 dark:bg-gray-700 text-white rounded-lg shadow-lg px-3 py-1.5" style={{ zIndex: 1000 }}>
           <span className="text-xs font-medium">📍 {selectedCity} - Venue View</span>
         </div>
       )}

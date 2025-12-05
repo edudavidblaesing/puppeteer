@@ -30,7 +30,7 @@ let pool = null;
 
 async function initializeDatabase() {
     console.log('[DB Init] Starting database initialization...');
-    
+
     // First, connect to postgres to check/create the database
     const adminPool = new Pool({
         host: DB_CONFIG.host,
@@ -39,14 +39,14 @@ async function initializeDatabase() {
         password: DB_CONFIG.password,
         database: 'postgres' // Connect to default postgres database
     });
-    
+
     try {
         // Check if our database exists
         const dbCheck = await adminPool.query(
             "SELECT 1 FROM pg_database WHERE datname = $1",
             [DB_CONFIG.database]
         );
-        
+
         if (dbCheck.rows.length === 0) {
             console.log(`[DB Init] Database '${DB_CONFIG.database}' does not exist. Creating...`);
             await adminPool.query(`CREATE DATABASE ${DB_CONFIG.database}`);
@@ -60,7 +60,7 @@ async function initializeDatabase() {
     } finally {
         await adminPool.end();
     }
-    
+
     // Now connect to our actual database
     pool = new Pool({
         host: DB_CONFIG.host,
@@ -69,16 +69,16 @@ async function initializeDatabase() {
         password: DB_CONFIG.password,
         database: DB_CONFIG.database
     });
-    
+
     // Run migrations
     await runMigrations();
-    
+
     console.log('[DB Init] Database initialization complete');
 }
 
 async function runMigrations() {
     console.log('[DB Init] Running migrations...');
-    
+
     // Create migrations tracking table
     await pool.query(`
         CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -86,33 +86,33 @@ async function runMigrations() {
             applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     `);
-    
+
     // Get list of applied migrations
     const applied = await pool.query('SELECT version FROM schema_migrations');
     const appliedVersions = new Set(applied.rows.map(r => r.version));
-    
+
     // Get migration files
     const migrationsDir = path.join(__dirname, 'migrations');
-    
+
     if (!fs.existsSync(migrationsDir)) {
         console.log('[DB Init] No migrations directory found, skipping migrations');
         return;
     }
-    
+
     const files = fs.readdirSync(migrationsDir)
         .filter(f => f.endsWith('.sql'))
         .sort();
-    
+
     for (const file of files) {
         const version = file.replace('.sql', '');
-        
+
         if (appliedVersions.has(version)) {
             console.log(`[DB Init] Migration ${version} already applied, skipping`);
             continue;
         }
-        
+
         console.log(`[DB Init] Applying migration: ${version}`);
-        
+
         try {
             const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
             await pool.query(sql);
@@ -126,7 +126,7 @@ async function runMigrations() {
             // Continue with other migrations - some may depend on tables that already exist
         }
     }
-    
+
     console.log('[DB Init] Migrations complete');
 }
 
@@ -151,7 +151,7 @@ app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-api-key, Authorization');
     res.setHeader('Access-Control-Allow-Credentials', 'true');
-    
+
     // Handle preflight requests
     if (req.method === 'OPTIONS') {
         return res.status(200).end();
@@ -164,7 +164,7 @@ const API_KEY = process.env.API_KEY || 'default-dev-key-change-in-production';
 
 function requireApiKey(req, res, next) {
     const providedKey = req.headers['x-api-key'] || req.headers['authorization']?.replace('Bearer ', '');
-    
+
     if (!providedKey || providedKey !== API_KEY) {
         return res.status(401).json({ error: 'Unauthorized: Invalid or missing API key' });
     }
@@ -182,7 +182,7 @@ app.use('/db', requireApiKey);
 async function initializeDefaultAdmin() {
     try {
         console.log('[Auth] Initializing admin users...');
-        
+
         // Check if admin_users table exists
         const tableExists = await pool.query(`
             SELECT EXISTS (
@@ -190,7 +190,7 @@ async function initializeDefaultAdmin() {
                 WHERE table_name = 'admin_users'
             );
         `);
-        
+
         if (!tableExists.rows[0].exists) {
             // Create admin_users table
             console.log('[Auth] Creating admin_users table...');
@@ -207,24 +207,24 @@ async function initializeDefaultAdmin() {
         } else {
             console.log('[Auth] admin_users table already exists');
         }
-        
+
         // Check if any admin users exist
         const userCount = await pool.query('SELECT COUNT(*) FROM admin_users');
         console.log(`[Auth] Found ${userCount.rows[0].count} admin users`);
-        
+
         if (parseInt(userCount.rows[0].count) === 0) {
             // Create default admin user
             console.log('[Auth] Creating default admin user...');
             const defaultPassword = 'TheKey4u';
             const passwordHash = await bcrypt.hash(defaultPassword, 10);
-            
+
             await pool.query(
                 'INSERT INTO admin_users (username, password_hash) VALUES ($1, $2)',
                 ['admin', passwordHash]
             );
             console.log('[Auth] Created default admin user (username: admin, password: TheKey4u)');
         }
-        
+
         console.log('[Auth] Admin initialization complete');
     } catch (error) {
         console.error('[Auth] Error initializing default admin:', error.message, error.stack);
@@ -235,11 +235,11 @@ async function initializeDefaultAdmin() {
 function verifyToken(req, res, next) {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
-    
+
     if (!token) {
         return res.status(401).json({ error: 'No token provided' });
     }
-    
+
     try {
         const decoded = jwt.verify(token, JWT_SECRET);
         req.user = decoded;
@@ -254,48 +254,48 @@ app.post('/auth/login', async (req, res) => {
     try {
         console.log('[Auth] Login attempt received');
         const { username, password } = req.body;
-        
+
         if (!username || !password) {
             console.log('[Auth] Missing username or password');
             return res.status(400).json({ error: 'Username and password are required' });
         }
-        
+
         console.log(`[Auth] Looking up user: ${username}`);
-        
+
         // Find user
         const result = await pool.query(
             'SELECT id, username, password_hash FROM admin_users WHERE username = $1',
             [username]
         );
-        
+
         console.log(`[Auth] Found ${result.rows.length} users`);
-        
+
         if (result.rows.length === 0) {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
-        
+
         const user = result.rows[0];
-        
+
         // Verify password
         console.log('[Auth] Verifying password...');
         const validPassword = await bcrypt.compare(password, user.password_hash);
-        
+
         if (!validPassword) {
             console.log('[Auth] Invalid password');
             return res.status(401).json({ error: 'Invalid credentials' });
         }
-        
+
         console.log('[Auth] Password valid, generating token...');
-        
+
         // Generate JWT token
         const token = jwt.sign(
             { id: user.id, username: user.username },
             JWT_SECRET,
             { expiresIn: '24h' }
         );
-        
+
         console.log('[Auth] Login successful');
-        
+
         res.json({
             success: true,
             token,
@@ -325,40 +325,40 @@ app.post('/auth/logout', verifyToken, (req, res) => {
 app.post('/auth/change-password', verifyToken, async (req, res) => {
     try {
         const { currentPassword, newPassword } = req.body;
-        
+
         if (!currentPassword || !newPassword) {
             return res.status(400).json({ error: 'Current and new password are required' });
         }
-        
+
         if (newPassword.length < 6) {
             return res.status(400).json({ error: 'New password must be at least 6 characters' });
         }
-        
+
         // Get current user
         const result = await pool.query(
             'SELECT password_hash FROM admin_users WHERE id = $1',
             [req.user.id]
         );
-        
+
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'User not found' });
         }
-        
+
         // Verify current password
         const validPassword = await bcrypt.compare(currentPassword, result.rows[0].password_hash);
-        
+
         if (!validPassword) {
             return res.status(401).json({ error: 'Current password is incorrect' });
         }
-        
+
         // Hash new password and update
         const newHash = await bcrypt.hash(newPassword, 10);
-        
+
         await pool.query(
             'UPDATE admin_users SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
             [newHash, req.user.id]
         );
-        
+
         res.json({ success: true, message: 'Password changed successfully' });
     } catch (error) {
         console.error('Change password error:', error);
@@ -371,15 +371,15 @@ app.post('/auth/change-password', verifyToken, async (req, res) => {
 app.post('/admin/sql', verifyToken, async (req, res) => {
     try {
         const { query, params = [] } = req.body;
-        
+
         if (!query) {
             return res.status(400).json({ error: 'Query is required' });
         }
-        
+
         console.log(`[Admin SQL] Executing query: ${query.substring(0, 200)}...`);
-        
+
         const result = await pool.query(query, params);
-        
+
         res.json({
             success: true,
             rowCount: result.rowCount,
@@ -388,7 +388,7 @@ app.post('/admin/sql', verifyToken, async (req, res) => {
         });
     } catch (error) {
         console.error('[Admin SQL] Error:', error.message);
-        res.status(500).json({ 
+        res.status(500).json({
             error: error.message,
             detail: error.detail,
             hint: error.hint
@@ -403,14 +403,14 @@ let lastGeocodeTime = 0;
 
 async function geocodeAddress(address, city, country) {
     if (!address && !city) return null;
-    
+
     const fullAddress = [address, city, country].filter(Boolean).join(', ');
-    
+
     // Check cache first
     if (geocodeCache.has(fullAddress)) {
         return geocodeCache.get(fullAddress);
     }
-    
+
     // Rate limiting
     const now = Date.now();
     const timeSinceLastRequest = now - lastGeocodeTime;
@@ -418,7 +418,7 @@ async function geocodeAddress(address, city, country) {
         await new Promise(resolve => setTimeout(resolve, GEOCODE_DELAY - timeSinceLastRequest));
     }
     lastGeocodeTime = Date.now();
-    
+
     try {
         const query = encodeURIComponent(fullAddress);
         const response = await fetch(
@@ -429,14 +429,14 @@ async function geocodeAddress(address, city, country) {
                 }
             }
         );
-        
+
         if (!response.ok) {
             console.warn(`Geocoding failed for "${fullAddress}": ${response.status}`);
             return null;
         }
-        
+
         const data = await response.json();
-        
+
         if (data && data.length > 0) {
             const result = {
                 latitude: parseFloat(data[0].lat),
@@ -446,7 +446,7 @@ async function geocodeAddress(address, city, country) {
             console.log(`Geocoded "${fullAddress}" -> ${result.latitude}, ${result.longitude}`);
             return result;
         }
-        
+
         geocodeCache.set(fullAddress, null);
         return null;
     } catch (error) {
@@ -484,13 +484,13 @@ function getNextProxy() {
     while (attempts < PROXY_LIST.length) {
         const proxy = PROXY_LIST[currentProxyIndex];
         currentProxyIndex = (currentProxyIndex + 1) % PROXY_LIST.length;
-        
+
         if (!blockedProxies.has(proxy)) {
             return proxy;
         }
         attempts++;
     }
-    
+
     // All proxies blocked, reset and try again
     console.log('All proxies blocked, resetting blocked list...');
     blockedProxies.clear();
@@ -503,8 +503,8 @@ function markProxyBlocked(proxy) {
 }
 
 app.get('/health', (req, res) => {
-    res.json({ 
-        status: 'ok', 
+    res.json({
+        status: 'ok',
         browser: browser ? 'launched' : 'not-launched',
         currentProxy: currentProxy,
         blockedProxies: Array.from(blockedProxies),
@@ -561,7 +561,7 @@ let browserPromise = null;
 
 async function initBrowser(forceNewProxy = false) {
     if (browser && !forceNewProxy) return browser;
-    
+
     // Close existing browser if forcing new proxy
     if (browser && forceNewProxy) {
         await browser.close();
@@ -569,17 +569,17 @@ async function initBrowser(forceNewProxy = false) {
         page = null;
         browserPromise = null;
     }
-    
+
     if (browserPromise && !forceNewProxy) return browserPromise;
 
     console.log('Launching browser...');
-    
+
     // Get proxy - either from env or rotate from list
     const envProxy = process.env.PROXY_SERVER;
     if (!currentProxy || forceNewProxy) {
         currentProxy = envProxy || getNextProxy();
     }
-    
+
     browserPromise = (async () => {
         try {
             const launchArgs = [
@@ -596,7 +596,7 @@ async function initBrowser(forceNewProxy = false) {
                 '--remote-debugging-port=9222',
                 '--remote-debugging-address=0.0.0.0'
             ];
-            
+
             // Add proxy (skip if NONE)
             if (currentProxy && currentProxy !== 'NONE') {
                 const proxyUrl = currentProxy.startsWith('http') ? currentProxy : `http://${currentProxy}`;
@@ -605,7 +605,7 @@ async function initBrowser(forceNewProxy = false) {
             } else {
                 console.log('Using DIRECT connection (no proxy)');
             }
-            
+
             const b = await puppeteer.launch({
                 headless: 'new',
                 executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
@@ -613,14 +613,14 @@ async function initBrowser(forceNewProxy = false) {
                 ignoreHTTPSErrors: true,
                 args: launchArgs
             });
-            
+
             const p = await b.newPage();
-            
+
             // Set a realistic user agent
             await p.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-            
+
             await p.setViewport({ width: 1920, height: 1080 });
-            
+
             // Set default headers
             await p.setExtraHTTPHeaders({
                 'Accept-Language': 'en-US,en;q=0.9',
@@ -666,7 +666,7 @@ async function checkBlocked(page) {
     const title = await page.title();
     const content = await page.content();
     const url = page.url();
-    
+
     // Check for various block indicators
     if (content.includes('Access blocked') || content.includes('Access denied')) {
         return { blocked: true, type: 'access_blocked', message: 'Access blocked by DataDome' };
@@ -683,22 +683,22 @@ async function checkBlocked(page) {
     if (content.includes('403') && content.includes('Forbidden')) {
         return { blocked: true, type: 'forbidden', message: '403 Forbidden' };
     }
-    
+
     return { blocked: false };
 }
 
 async function checkCaptcha(page) {
     const blockStatus = await checkBlocked(page);
-    
+
     if (blockStatus.blocked) {
         console.log(`Block detected: ${blockStatus.type} - ${blockStatus.message}`);
         console.log(`Current proxy: ${currentProxy}`);
-        
+
         // Mark current proxy as blocked
         if (currentProxy) {
             markProxyBlocked(currentProxy);
         }
-        
+
         if (bot && TELEGRAM_CHAT_ID) {
             const screenshot = await page.screenshot();
             await bot.sendPhoto(TELEGRAM_CHAT_ID, screenshot, {
@@ -723,14 +723,14 @@ async function checkCaptcha(page) {
 let resumeSignal = null;
 
 function waitForResume(timeoutMs = 120000) {
-    console.log(`Waiting for resume signal (timeout: ${timeoutMs/1000}s)...`);
+    console.log(`Waiting for resume signal (timeout: ${timeoutMs / 1000}s)...`);
     return new Promise(resolve => {
         const timeout = setTimeout(() => {
             console.log('Captcha wait timed out');
             resumeSignal = null;
             resolve(true); // true = timed out
         }, timeoutMs);
-        
+
         resumeSignal = () => {
             clearTimeout(timeout);
             resolve(false); // false = resumed successfully
@@ -836,13 +836,13 @@ app.post('/drag', express.urlencoded({ extended: true }), async (req, res) => {
         const startY = parseInt(req.body.startY) || 477;
         const endX = parseInt(req.body.endX) || 635;
         const endY = parseInt(req.body.endY) || 477;
-        
+
         // Perform drag operation
         await page.mouse.move(startX, startY);
         await new Promise(r => setTimeout(r, 100));
         await page.mouse.down();
         await new Promise(r => setTimeout(r, 100));
-        
+
         // Move in small steps to simulate human
         const steps = 20;
         for (let i = 1; i <= steps; i++) {
@@ -851,7 +851,7 @@ app.post('/drag', express.urlencoded({ extended: true }), async (req, res) => {
             await page.mouse.move(x, y);
             await new Promise(r => setTimeout(r, 20 + Math.random() * 30));
         }
-        
+
         await page.mouse.up();
         await new Promise(r => setTimeout(r, 1000));
         res.redirect('/screenshot');
@@ -882,19 +882,19 @@ function randomDelay(min = 1000, max = 3000) {
 // Helper to simulate human mouse movement
 async function humanLikeNavigation(page, url) {
     console.log(`Navigating to: ${url}`);
-    
+
     // First navigate to ra.co homepage to establish session
     if (!page.url().includes('ra.co')) {
         await page.goto('https://ra.co', { waitUntil: 'domcontentloaded', timeout: 30000 });
         await randomDelay(2000, 4000);
     }
-    
+
     // Then navigate to the actual page
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
-    
+
     // Wait a bit for any JS to execute
     await randomDelay(1000, 2000);
-    
+
     // Scroll a bit to simulate human
     await page.evaluate(() => {
         window.scrollBy(0, 100);
@@ -974,16 +974,16 @@ app.post('/scrape-listings', async (req, res) => {
 app.post('/scrape-event-auto', async (req, res) => {
     const { contentUrl } = req.body;
     const maxRetries = Math.min(PROXY_LIST.length, 5); // Try up to 5 different proxies
-    
+
     for (let attempt = 0; attempt < maxRetries; attempt++) {
         try {
             console.log(`Scrape attempt ${attempt + 1}/${maxRetries} with proxy: ${currentProxy}`);
-            
+
             await initBrowser(attempt > 0); // Force new proxy on retry
             const url = `https://ra.co${contentUrl}`;
 
             await humanLikeNavigation(page, url);
-            
+
             // Check for blocks without waiting for manual intervention
             const blockStatus = await checkBlocked(page);
             if (blockStatus.blocked) {
@@ -1007,21 +1007,21 @@ app.post('/scrape-event-auto', async (req, res) => {
             });
 
             if (data && data.props && data.props.pageProps && data.props.pageProps.data) {
-                return res.json({ 
-                    success: true, 
-                    proxy: currentProxy, 
+                return res.json({
+                    success: true,
+                    proxy: currentProxy,
                     attempts: attempt + 1,
-                    data: data.props.pageProps.data 
+                    data: data.props.pageProps.data
                 });
             } else {
                 // Check if we got actual content or just empty page
                 const content = await page.content();
                 if (content.length > 5000 && !content.includes('Verification Required')) {
-                    return res.json({ 
-                        success: true, 
-                        proxy: currentProxy, 
+                    return res.json({
+                        success: true,
+                        proxy: currentProxy,
                         attempts: attempt + 1,
-                        html: content 
+                        html: content
                     });
                 }
                 // Page didn't load properly, try next proxy
@@ -1037,9 +1037,9 @@ app.post('/scrape-event-auto', async (req, res) => {
             }
         }
     }
-    
-    res.status(500).json({ 
-        error: `Failed after ${maxRetries} attempts`, 
+
+    res.status(500).json({
+        error: `Failed after ${maxRetries} attempts`,
         blockedProxies: Array.from(blockedProxies)
     });
 });
@@ -1123,7 +1123,7 @@ app.get('/api/event/:id', async (req, res) => {
                 }
             }
         `;
-        
+
         const response = await fetch('https://ra.co/graphql', {
             method: 'POST',
             headers: {
@@ -1137,13 +1137,13 @@ app.get('/api/event/:id', async (req, res) => {
                 variables: { id: eventId }
             })
         });
-        
+
         const data = await response.json();
-        
+
         if (data.errors) {
             return res.status(400).json({ error: data.errors });
         }
-        
+
         res.json(data.data.event);
     } catch (error) {
         console.error('GraphQL error:', error);
@@ -1155,7 +1155,7 @@ app.get('/api/event/:id', async (req, res) => {
 app.get('/api/events', async (req, res) => {
     try {
         const { area, startDate, endDate, limit = 20 } = req.query;
-        
+
         const query = `
             query GetEvents($filters: FilterInputDtoInput, $pageSize: Int) {
                 eventListings(filters: $filters, pageSize: $pageSize) {
@@ -1191,17 +1191,17 @@ app.get('/api/events', async (req, res) => {
                 }
             }
         `;
-        
+
         const filters = {};
         if (area) filters.areas = { eq: parseInt(area) };
-        
+
         // Date filter - use listing date range
         const today = new Date().toISOString().split('T')[0];
-        filters.listingDate = { 
+        filters.listingDate = {
             gte: startDate || today,
             lte: endDate || new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
         };
-        
+
         const response = await fetch('https://ra.co/graphql', {
             method: 'POST',
             headers: {
@@ -1215,13 +1215,13 @@ app.get('/api/events', async (req, res) => {
                 variables: { filters, pageSize: parseInt(limit) }
             })
         });
-        
+
         const data = await response.json();
-        
+
         if (data.errors) {
             return res.status(400).json({ error: data.errors });
         }
-        
+
         res.json(data.data.eventListings);
     } catch (error) {
         console.error('GraphQL error:', error);
@@ -1251,7 +1251,7 @@ app.get('/api/venue/:id', async (req, res) => {
                 }
             }
         `;
-        
+
         const response = await fetch('https://ra.co/graphql', {
             method: 'POST',
             headers: {
@@ -1265,21 +1265,21 @@ app.get('/api/venue/:id', async (req, res) => {
                 variables: { id: venueId }
             })
         });
-        
+
         const data = await response.json();
-        
+
         if (data.errors) {
             return res.status(400).json({ error: data.errors });
         }
-        
+
         if (!data.data.venue) {
             return res.status(404).json({ error: 'Venue not found' });
         }
-        
+
         // Add full URL
         const venue = data.data.venue;
         venue.url = venue.contentUrl ? `https://ra.co${venue.contentUrl}` : null;
-        
+
         res.json(venue);
     } catch (error) {
         console.error('GraphQL error:', error);
@@ -1303,7 +1303,7 @@ app.get('/api/artist/:id', async (req, res) => {
                 }
             }
         `;
-        
+
         const response = await fetch('https://ra.co/graphql', {
             method: 'POST',
             headers: {
@@ -1317,21 +1317,21 @@ app.get('/api/artist/:id', async (req, res) => {
                 variables: { id: artistId }
             })
         });
-        
+
         const data = await response.json();
-        
+
         if (data.errors) {
             return res.status(400).json({ error: data.errors });
         }
-        
+
         if (!data.data.artist) {
             return res.status(404).json({ error: 'Artist not found' });
         }
-        
+
         // Add full URL
         const artist = data.data.artist;
         artist.url = artist.contentUrl ? `https://ra.co${artist.contentUrl}` : null;
-        
+
         res.json(artist);
     } catch (error) {
         console.error('GraphQL error:', error);
@@ -1343,11 +1343,11 @@ app.get('/api/artist/:id', async (req, res) => {
 app.get('/api/venues', async (req, res) => {
     try {
         const { area, limit = 20 } = req.query;
-        
+
         if (!area) {
             return res.status(400).json({ error: 'Query parameter "area" is required (e.g., 34 for Berlin)' });
         }
-        
+
         const query = `
             query GetVenues($areaId: ID!, $limit: Int) {
                 venues(orderBy: POPULAR, areaId: $areaId, limit: $limit) {
@@ -1365,7 +1365,7 @@ app.get('/api/venues', async (req, res) => {
                 }
             }
         `;
-        
+
         const response = await fetch('https://ra.co/graphql', {
             method: 'POST',
             headers: {
@@ -1379,19 +1379,19 @@ app.get('/api/venues', async (req, res) => {
                 variables: { areaId: area, limit: parseInt(limit) }
             })
         });
-        
+
         const data = await response.json();
-        
+
         if (data.errors) {
             return res.status(400).json({ error: data.errors });
         }
-        
+
         // Add full URLs
         const venues = (data.data.venues || []).map(venue => ({
             ...venue,
             url: venue.contentUrl ? `https://ra.co${venue.contentUrl}` : null
         }));
-        
+
         res.json({ data: venues });
     } catch (error) {
         console.error('GraphQL error:', error);
@@ -1407,14 +1407,14 @@ app.get('/api/venues', async (req, res) => {
 app.post('/db/events/create', async (req, res) => {
     try {
         const { title, date, start_time, venue_name, venue_city, venue_country, venue_address, artists, description, content_url, flyer_front, is_published, event_type } = req.body;
-        
+
         if (!title) {
             return res.status(400).json({ error: 'Title is required' });
         }
-        
+
         // Generate a unique ID
         const id = `manual_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        
+
         // Try to find or link venue
         let venueId = null;
         if (venue_name) {
@@ -1426,7 +1426,7 @@ app.post('/db/events/create', async (req, res) => {
                 venueId = venueResult.rows[0].id;
             }
         }
-        
+
         const result = await pool.query(`
             INSERT INTO events (
                 id, title, date, start_time, venue_id, venue_name, venue_address, 
@@ -1451,7 +1451,7 @@ app.post('/db/events/create', async (req, res) => {
             is_published || false,
             event_type || 'event'
         ]);
-        
+
         res.json(result.rows[0]);
     } catch (error) {
         console.error('Create event error:', error);
@@ -1463,15 +1463,15 @@ app.post('/db/events/create', async (req, res) => {
 app.post('/db/events', async (req, res) => {
     try {
         const events = req.body.events || req.body;
-        
+
         if (!Array.isArray(events)) {
             return res.status(400).json({ error: 'Expected array of events' });
         }
-        
+
         let inserted = 0;
         let updated = 0;
         let errors = [];
-        
+
         for (const event of events) {
             try {
                 const result = await pool.query(`
@@ -1514,7 +1514,7 @@ app.post('/db/events', async (req, res) => {
                     event.artists || null,
                     event.listingDate || event.listing_date || null
                 ]);
-                
+
                 if (result.rows[0].inserted) {
                     inserted++;
                 } else {
@@ -1524,11 +1524,11 @@ app.post('/db/events', async (req, res) => {
                 errors.push({ id: event.id, error: err.message });
             }
         }
-        
-        res.json({ 
-            success: true, 
-            inserted, 
-            updated, 
+
+        res.json({
+            success: true,
+            inserted,
+            updated,
             total: events.length,
             errors: errors.length > 0 ? errors : undefined
         });
@@ -1542,7 +1542,7 @@ app.post('/db/events', async (req, res) => {
 app.get('/db/events', async (req, res) => {
     try {
         const { city, search, limit = 100, offset = 0, from, to, status } = req.query;
-        
+
         let query = `
             SELECT e.*, 
                    COALESCE(
@@ -1561,7 +1561,7 @@ app.get('/db/events', async (req, res) => {
             WHERE 1=1`;
         const params = [];
         let paramIndex = 1;
-        
+
         if (search) {
             query += ` AND (
                 e.title ILIKE $${paramIndex} 
@@ -1571,31 +1571,31 @@ app.get('/db/events', async (req, res) => {
             params.push(`%${search}%`);
             paramIndex++;
         }
-        
+
         if (city) {
             query += ` AND LOWER(e.venue_city) = LOWER($${paramIndex})`;
             params.push(city);
             paramIndex++;
         }
-        
+
         if (status && status !== 'all') {
             query += ` AND e.publish_status = $${paramIndex}`;
             params.push(status);
             paramIndex++;
         }
-        
+
         if (from) {
             query += ` AND e.date >= $${paramIndex}`;
             params.push(from);
             paramIndex++;
         }
-        
+
         if (to) {
             query += ` AND e.date <= $${paramIndex}`;
             params.push(to);
             paramIndex++;
         }
-        
+
         // Order by: 
         // 1. Date: today first, then upcoming, then past
         // 2. Status: pending > approved > rejected (pending first for review)
@@ -1616,14 +1616,14 @@ app.get('/db/events', async (req, res) => {
             CASE WHEN e.date::date < CURRENT_DATE THEN e.date END DESC
             LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
         params.push(parseInt(limit), parseInt(offset));
-        
+
         const result = await pool.query(query, params);
-        
+
         // Get total count with same filters
         let countQuery = 'SELECT COUNT(*) FROM events WHERE 1=1';
         const countParams = [];
         let countParamIndex = 1;
-        
+
         if (search) {
             countQuery += ` AND (title ILIKE $${countParamIndex} OR venue_name ILIKE $${countParamIndex} OR artists ILIKE $${countParamIndex})`;
             countParams.push(`%${search}%`);
@@ -1648,9 +1648,9 @@ app.get('/db/events', async (req, res) => {
             countQuery += ` AND date <= $${countParamIndex}`;
             countParams.push(to);
         }
-        
+
         const countResult = await pool.query(countQuery, countParams);
-        
+
         res.json({
             data: result.rows,
             total: parseInt(countResult.rows[0].count),
@@ -1665,7 +1665,7 @@ app.get('/db/events', async (req, res) => {
                 let query = 'SELECT e.* FROM events e WHERE 1=1';
                 const params = [];
                 let paramIndex = 1;
-                
+
                 if (search) {
                     query += ` AND (e.title ILIKE $${paramIndex} OR e.venue_name ILIKE $${paramIndex} OR e.artists ILIKE $${paramIndex})`;
                     params.push(`%${search}%`);
@@ -1691,7 +1691,7 @@ app.get('/db/events', async (req, res) => {
                     params.push(to);
                     paramIndex++;
                 }
-                
+
                 query += ` ORDER BY 
                     CASE e.publish_status
                         WHEN 'pending' THEN 0
@@ -1708,13 +1708,13 @@ app.get('/db/events', async (req, res) => {
                     CASE WHEN e.date::date < CURRENT_DATE THEN e.date END DESC
                     LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
                 params.push(parseInt(limit), parseInt(offset));
-                
+
                 const result = await pool.query(query, params);
-                
+
                 let countQuery = 'SELECT COUNT(*) FROM events WHERE 1=1';
                 const countParams = [];
                 let countParamIndex = 1;
-                
+
                 if (search) {
                     countQuery += ` AND (title ILIKE $${countParamIndex} OR venue_name ILIKE $${countParamIndex} OR artists ILIKE $${countParamIndex})`;
                     countParams.push(`%${search}%`);
@@ -1739,9 +1739,9 @@ app.get('/db/events', async (req, res) => {
                     countQuery += ` AND date <= $${countParamIndex}`;
                     countParams.push(to);
                 }
-                
+
                 const countResult = await pool.query(countQuery, countParams);
-                
+
                 res.json({
                     data: result.rows,
                     total: parseInt(countResult.rows[0].count),
@@ -1761,16 +1761,16 @@ app.get('/db/events', async (req, res) => {
 app.get('/db/events/:id', async (req, res) => {
     try {
         const eventId = req.params.id;
-        
+
         // Get the event
         const result = await pool.query('SELECT * FROM events WHERE id = $1', [eventId]);
-        
+
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Event not found' });
         }
-        
+
         const event = result.rows[0];
-        
+
         // Get source references from event_scraped_links
         try {
             const sourceRefs = await pool.query(`
@@ -1781,13 +1781,13 @@ app.get('/db/events/:id', async (req, res) => {
                 JOIN scraped_events se ON se.id = esl.scraped_event_id
                 WHERE esl.event_id = $1
             `, [eventId]);
-            
+
             event.source_references = sourceRefs.rows;
         } catch (e) {
             console.error(`[Single Event] Error fetching source refs:`, e);
             event.source_references = [];
         }
-        
+
         res.json(event);
     } catch (error) {
         console.error('Database error:', error);
@@ -1799,11 +1799,11 @@ app.get('/db/events/:id', async (req, res) => {
 app.delete('/db/events/:id', async (req, res) => {
     try {
         const result = await pool.query('DELETE FROM events WHERE id = $1 RETURNING id', [req.params.id]);
-        
+
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Event not found' });
         }
-        
+
         res.json({ success: true, deleted: req.params.id });
     } catch (error) {
         console.error('Database error:', error);
@@ -1827,9 +1827,9 @@ app.patch('/db/events/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const updates = req.body;
-        
+
         console.log(`PATCH /db/events/${id}`, updates);
-        
+
         // Ensure required columns exist
         await pool.query(`
             DO $$ 
@@ -1845,7 +1845,7 @@ app.patch('/db/events/:id', async (req, res) => {
                 END IF;
             END $$;
         `);
-        
+
         // Build dynamic update query
         const allowedFields = [
             'title', 'date', 'start_time', 'end_time', 'content_url',
@@ -1853,38 +1853,38 @@ app.patch('/db/events/:id', async (req, res) => {
             'venue_address', 'venue_city', 'venue_country', 'artists',
             'is_published', 'latitude', 'longitude', 'event_type'
         ];
-        
+
         const setClauses = [];
         const values = [];
         let paramIndex = 1;
-        
+
         for (const [key, value] of Object.entries(updates)) {
             if (allowedFields.includes(key)) {
                 setClauses.push(`${key} = $${paramIndex++}`);
                 values.push(value);
             }
         }
-        
+
         if (setClauses.length === 0) {
             return res.status(400).json({ error: 'No valid fields to update' });
         }
-        
+
         setClauses.push('updated_at = CURRENT_TIMESTAMP');
         values.push(id);
-        
+
         const query = `
             UPDATE events 
             SET ${setClauses.join(', ')}
             WHERE id = $${paramIndex}
             RETURNING *
         `;
-        
+
         const result = await pool.query(query, values);
-        
+
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Event not found' });
         }
-        
+
         res.json({ success: true, event: result.rows[0] });
     } catch (error) {
         console.error('Database error updating event:', error);
@@ -1896,24 +1896,24 @@ app.patch('/db/events/:id', async (req, res) => {
 app.post('/db/events/publish', async (req, res) => {
     try {
         const { ids, publish } = req.body;
-        
+
         if (!Array.isArray(ids) || ids.length === 0) {
             return res.status(400).json({ error: 'ids must be a non-empty array' });
         }
-        
+
         // Check if is_published column exists
         const columnsResult = await pool.query(`
             SELECT column_name FROM information_schema.columns 
             WHERE table_name = 'events' AND column_name = 'is_published'
         `);
-        
+
         if (columnsResult.rows.length === 0) {
             // Column doesn't exist - run migration inline
             await pool.query(`
                 ALTER TABLE events ADD COLUMN IF NOT EXISTS is_published BOOLEAN DEFAULT false
             `);
         }
-        
+
         const result = await pool.query(
             `UPDATE events 
              SET is_published = $1, updated_at = CURRENT_TIMESTAMP 
@@ -1921,9 +1921,9 @@ app.post('/db/events/publish', async (req, res) => {
              RETURNING id`,
             [publish, ids]
         );
-        
-        res.json({ 
-            success: true, 
+
+        res.json({
+            success: true,
             updated: result.rows.length,
             ids: result.rows.map(r => r.id)
         });
@@ -1937,16 +1937,16 @@ app.post('/db/events/publish', async (req, res) => {
 app.post('/db/events/publish-status', async (req, res) => {
     try {
         const { ids, status } = req.body;
-        
+
         if (!Array.isArray(ids) || ids.length === 0) {
             return res.status(400).json({ error: 'ids must be a non-empty array' });
         }
-        
+
         const validStatuses = ['pending', 'approved', 'rejected'];
         if (!validStatuses.includes(status)) {
             return res.status(400).json({ error: `status must be one of: ${validStatuses.join(', ')}` });
         }
-        
+
         // Update main events table
         const result = await pool.query(
             `UPDATE events 
@@ -1957,7 +1957,7 @@ app.post('/db/events/publish-status', async (req, res) => {
              RETURNING id`,
             [status, status === 'approved', ids]
         );
-        
+
         // Also try to update unified_events for backwards compatibility
         try {
             await pool.query(
@@ -1971,9 +1971,9 @@ app.post('/db/events/publish-status', async (req, res) => {
         } catch (e) {
             // unified_events might not exist, that's ok
         }
-        
-        res.json({ 
-            success: true, 
+
+        res.json({
+            success: true,
             updated: result.rows.length,
             status,
             ids: result.rows.map(r => r.id)
@@ -1993,13 +1993,13 @@ app.post('/db/events/classify-types', async (req, res) => {
             FROM events 
             WHERE event_type IS NULL OR event_type = 'event'
         `);
-        
+
         let updated = 0;
         const typeUpdates = {};
-        
+
         for (const event of eventsResult.rows) {
             const classifiedType = classifyEventType(event.title, event.venue_name, event.description);
-            
+
             if (classifiedType !== 'event') {
                 await pool.query(
                     'UPDATE events SET event_type = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
@@ -2009,7 +2009,7 @@ app.post('/db/events/classify-types', async (req, res) => {
                 typeUpdates[classifiedType] = (typeUpdates[classifiedType] || 0) + 1;
             }
         }
-        
+
         res.json({
             success: true,
             total_checked: eventsResult.rows.length,
@@ -2034,7 +2034,7 @@ app.get('/db/stats', async (req, res) => {
                 MAX(date) as latest_event
             FROM events
         `);
-        
+
         const byCityResult = await pool.query(`
             SELECT venue_city, COUNT(*) as count 
             FROM events 
@@ -2043,7 +2043,7 @@ app.get('/db/stats', async (req, res) => {
             ORDER BY count DESC 
             LIMIT 10
         `);
-        
+
         res.json({
             ...stats.rows[0],
             events_by_city: byCityResult.rows
@@ -2058,7 +2058,7 @@ app.get('/db/stats', async (req, res) => {
 app.get('/db/cities', async (req, res) => {
     try {
         const { search, limit = 100, offset = 0 } = req.query;
-        
+
         // Get cities with dynamically calculated event and venue counts
         let query = `
             SELECT c.*,
@@ -2068,19 +2068,19 @@ app.get('/db/cities', async (req, res) => {
             WHERE 1=1`;
         const params = [];
         let paramIdx = 1;
-        
+
         if (search) {
             query += ` AND (LOWER(c.name) LIKE $${paramIdx} OR LOWER(c.country) LIKE $${paramIdx})`;
             params.push(`%${search.toLowerCase()}%`);
             paramIdx++;
         }
-        
+
         query += ` ORDER BY (SELECT COUNT(*) FROM events e WHERE LOWER(e.venue_city) = LOWER(c.name)) DESC NULLS LAST, c.name ASC`;
         query += ` LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`;
         params.push(parseInt(limit), parseInt(offset));
-        
+
         const citiesResult = await pool.query(query, params);
-        
+
         // Get total count
         let countQuery = `SELECT COUNT(*) FROM cities WHERE 1=1`;
         const countParams = [];
@@ -2089,9 +2089,9 @@ app.get('/db/cities', async (req, res) => {
             countParams.push(`%${search.toLowerCase()}%`);
         }
         const countResult = await pool.query(countQuery, countParams);
-        
-        res.json({ 
-            data: citiesResult.rows, 
+
+        res.json({
+            data: citiesResult.rows,
             total: parseInt(countResult.rows[0].count),
             limit: parseInt(limit),
             offset: parseInt(offset)
@@ -2114,14 +2114,14 @@ app.get('/db/cities', async (req, res) => {
                 ORDER BY event_count DESC
                 LIMIT $1 OFFSET $2
             `, [parseInt(limit), parseInt(offset)]);
-            
+
             // If no events have cities either, return empty
             if (fallbackResult.rows.length === 0) {
                 console.log('No cities found in events table, returning empty array');
                 res.json({ data: [], total: 0, limit: parseInt(limit), offset: parseInt(offset) });
             } else {
-                res.json({ 
-                    data: fallbackResult.rows, 
+                res.json({
+                    data: fallbackResult.rows,
                     total: fallbackResult.rows.length,
                     limit: parseInt(limit),
                     offset: parseInt(offset)
@@ -2148,7 +2148,7 @@ app.get('/db/countries', async (req, res) => {
             console.log('Countries table not found, using fallback query');
             result = { rows: [] };
         }
-        
+
         if (result.rows.length > 0) {
             res.json({ data: result.rows });
         } else {
@@ -2192,7 +2192,7 @@ app.get('/db/countries', async (req, res) => {
 app.get('/db/cities/dropdown', async (req, res) => {
     try {
         const { country } = req.query;
-        
+
         let query = `
             SELECT DISTINCT 
                 COALESCE(venue_city, '') as name,
@@ -2202,14 +2202,14 @@ app.get('/db/cities/dropdown', async (req, res) => {
             WHERE venue_city IS NOT NULL AND venue_city != ''
         `;
         const params = [];
-        
+
         if (country) {
             query += ` AND LOWER(venue_country) = LOWER($1)`;
             params.push(country);
         }
-        
+
         query += ` GROUP BY venue_city, venue_country ORDER BY event_count DESC, name ASC LIMIT 500`;
-        
+
         const result = await pool.query(query, params);
         res.json({ data: result.rows });
     } catch (error) {
@@ -2222,11 +2222,11 @@ app.get('/db/cities/dropdown', async (req, res) => {
 app.get('/db/venues/search', async (req, res) => {
     try {
         const { q, city, limit = 20 } = req.query;
-        
+
         if (!q || q.length < 2) {
             return res.json({ data: [] });
         }
-        
+
         let query = `
             SELECT id, name, address, city, country, latitude, longitude
             FROM venues
@@ -2234,13 +2234,13 @@ app.get('/db/venues/search', async (req, res) => {
         `;
         const params = [`%${q.toLowerCase()}%`];
         let paramIdx = 2;
-        
+
         if (city) {
             query += ` AND LOWER(city) = LOWER($${paramIdx})`;
             params.push(city);
             paramIdx++;
         }
-        
+
         query += ` ORDER BY 
             CASE WHEN LOWER(name) = LOWER($1) THEN 0
                  WHEN LOWER(name) LIKE $1 || '%' THEN 1
@@ -2250,7 +2250,7 @@ app.get('/db/venues/search', async (req, res) => {
             LIMIT $${paramIdx}`;
         params[0] = `%${q.toLowerCase()}%`; // restore the LIKE pattern
         params.push(parseInt(limit));
-        
+
         // Fix the ORDER BY reference
         const result = await pool.query(`
             SELECT id, name, address, city, country, latitude, longitude
@@ -2264,11 +2264,11 @@ app.get('/db/venues/search', async (req, res) => {
                 END,
                 name ASC
             LIMIT $${city ? '4' : '3'}
-        `, city 
+        `, city
             ? [`%${q.toLowerCase()}%`, city, q.toLowerCase(), parseInt(limit)]
             : [`%${q.toLowerCase()}%`, q.toLowerCase(), parseInt(limit)]
         );
-        
+
         res.json({ data: result.rows });
     } catch (error) {
         console.error('Venue search error:', error);
@@ -2280,11 +2280,11 @@ app.get('/db/venues/search', async (req, res) => {
 app.get('/db/artists/search', async (req, res) => {
     try {
         const { q, limit = 20 } = req.query;
-        
+
         if (!q || q.length < 2) {
             return res.json({ data: [] });
         }
-        
+
         const result = await pool.query(`
             SELECT id, name, country, image_url, genres
             FROM artists
@@ -2297,7 +2297,7 @@ app.get('/db/artists/search', async (req, res) => {
                 name ASC
             LIMIT $3
         `, [`%${q.toLowerCase()}%`, q.toLowerCase(), parseInt(limit)]);
-        
+
         res.json({ data: result.rows });
     } catch (error) {
         console.error('Artist search error:', error);
@@ -2309,7 +2309,7 @@ app.get('/db/artists/search', async (req, res) => {
 app.get('/db/events/:id/artists', async (req, res) => {
     try {
         const { id } = req.params;
-        
+
         const result = await pool.query(`
             SELECT ea.*, a.name, a.image_url, a.country, a.genres
             FROM event_artists ea
@@ -2317,7 +2317,7 @@ app.get('/db/events/:id/artists', async (req, res) => {
             WHERE ea.event_id = $1
             ORDER BY ea.billing_order ASC, a.name ASC
         `, [id]);
-        
+
         res.json({ data: result.rows });
     } catch (error) {
         // Table might not exist yet
@@ -2335,11 +2335,11 @@ app.post('/db/events/:id/artists', async (req, res) => {
     try {
         const { id } = req.params;
         const { artist_id, role = 'performer', billing_order = 0 } = req.body;
-        
+
         if (!artist_id) {
             return res.status(400).json({ error: 'artist_id is required' });
         }
-        
+
         const result = await pool.query(`
             INSERT INTO event_artists (event_id, artist_id, role, billing_order)
             VALUES ($1, $2, $3, $4)
@@ -2348,7 +2348,7 @@ app.post('/db/events/:id/artists', async (req, res) => {
                 billing_order = EXCLUDED.billing_order
             RETURNING *
         `, [id, artist_id, role, billing_order]);
-        
+
         res.json({ success: true, data: result.rows[0] });
     } catch (error) {
         console.error('Add event artist error:', error);
@@ -2360,11 +2360,11 @@ app.post('/db/events/:id/artists', async (req, res) => {
 app.delete('/db/events/:id/artists/:artistId', async (req, res) => {
     try {
         const { id, artistId } = req.params;
-        
+
         await pool.query(`
             DELETE FROM event_artists WHERE event_id = $1 AND artist_id = $2
         `, [id, artistId]);
-        
+
         res.json({ success: true });
     } catch (error) {
         console.error('Remove event artist error:', error);
@@ -2376,44 +2376,44 @@ app.delete('/db/events/:id/artists/:artistId', async (req, res) => {
 app.post('/db/events/:id/sync-artists', async (req, res) => {
     try {
         const { id } = req.params;
-        
+
         // Get the artists JSON from the event
         const eventResult = await pool.query(`
             SELECT artists FROM events WHERE id = $1
         `, [id]);
-        
+
         if (eventResult.rows.length === 0) {
             return res.status(404).json({ error: 'Event not found' });
         }
-        
+
         const artistsJson = eventResult.rows[0].artists;
         if (!artistsJson) {
             return res.json({ success: true, synced: 0, message: 'No artists to sync' });
         }
-        
+
         let artists;
         try {
             artists = typeof artistsJson === 'string' ? JSON.parse(artistsJson) : artistsJson;
         } catch {
             return res.json({ success: true, synced: 0, message: 'Could not parse artists JSON' });
         }
-        
+
         if (!Array.isArray(artists) || artists.length === 0) {
             return res.json({ success: true, synced: 0, message: 'No artists in array' });
         }
-        
+
         let synced = 0;
         for (let i = 0; i < artists.length; i++) {
             const artist = artists[i];
             const artistName = artist.name || artist;
-            
+
             if (!artistName) continue;
-            
+
             // Find or create artist
             let artistResult = await pool.query(`
                 SELECT id FROM artists WHERE LOWER(name) = LOWER($1) LIMIT 1
             `, [artistName]);
-            
+
             let artistId;
             if (artistResult.rows.length === 0) {
                 // Create artist
@@ -2423,7 +2423,7 @@ app.post('/db/events/:id/sync-artists', async (req, res) => {
                     ON CONFLICT (id) DO NOTHING
                     RETURNING id
                 `, [`artist_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, artistName]);
-                
+
                 artistId = newArtist.rows[0]?.id;
                 if (!artistId) {
                     // Retry fetch if insert had conflict
@@ -2433,7 +2433,7 @@ app.post('/db/events/:id/sync-artists', async (req, res) => {
             } else {
                 artistId = artistResult.rows[0].id;
             }
-            
+
             if (artistId) {
                 // Link to event
                 await pool.query(`
@@ -2444,7 +2444,7 @@ app.post('/db/events/:id/sync-artists', async (req, res) => {
                 synced++;
             }
         }
-        
+
         res.json({ success: true, synced });
     } catch (error) {
         console.error('Sync event artists error:', error);
@@ -2456,14 +2456,14 @@ app.post('/db/events/:id/sync-artists', async (req, res) => {
 app.get('/health', async (req, res) => {
     try {
         await pool.query('SELECT 1');
-        res.json({ 
-            status: 'ok', 
+        res.json({
+            status: 'ok',
             dbConnected: true,
             timestamp: new Date().toISOString()
         });
     } catch (error) {
-        res.status(503).json({ 
-            status: 'error', 
+        res.status(503).json({
+            status: 'error',
             dbConnected: false,
             error: error.message,
             timestamp: new Date().toISOString()
@@ -2475,7 +2475,7 @@ app.get('/health', async (req, res) => {
 app.post('/db/sync', async (req, res) => {
     try {
         const { area, city, startDate, endDate, limit = 100 } = req.body;
-        
+
         // City to area mapping
         const cityMap = {
             'london': 13, 'berlin': 34, 'hamburg': 148, 'new york': 8, 'paris': 12,
@@ -2485,16 +2485,16 @@ app.post('/db/sync', async (req, res) => {
             'detroit': 21, 'ibiza': 24, 'cologne': 143, 'frankfurt': 147,
             'munich': 151, 'vienna': 159
         };
-        
+
         const areaId = area || (city ? cityMap[city.toLowerCase()] : null);
-        
+
         if (!areaId) {
-            return res.status(400).json({ 
+            return res.status(400).json({
                 error: 'Please provide area ID or city name',
                 availableCities: Object.keys(cityMap)
             });
         }
-        
+
         // Fetch from RA GraphQL API
         const query = `
             query GetEvents($filters: FilterInputDtoInput, $pageSize: Int) {
@@ -2526,7 +2526,7 @@ app.post('/db/sync', async (req, res) => {
                 }
             }
         `;
-        
+
         const today = new Date().toISOString().split('T')[0];
         const filters = {
             areas: { eq: parseInt(areaId) },
@@ -2535,7 +2535,7 @@ app.post('/db/sync', async (req, res) => {
                 lte: endDate || new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
             }
         };
-        
+
         const response = await fetch('https://ra.co/graphql', {
             method: 'POST',
             headers: {
@@ -2545,28 +2545,28 @@ app.post('/db/sync', async (req, res) => {
             },
             body: JSON.stringify({ query, variables: { filters, pageSize: parseInt(limit) } })
         });
-        
+
         const data = await response.json();
-        
+
         if (data.errors) {
             return res.status(400).json({ error: data.errors });
         }
-        
+
         const listings = data.data.eventListings.data || [];
         let inserted = 0, updated = 0;
         let geocoded = 0;
-        
+
         for (const listing of listings) {
             const e = listing.event;
             if (!e) continue;
-            
+
             try {
                 // Try to geocode the venue address if we have it
                 let lat = null, lng = null;
                 const venueAddress = e.venue?.address;
                 const venueCity = e.venue?.area?.name;
                 const venueCountry = e.venue?.area?.country?.name;
-                
+
                 if (venueAddress || venueCity) {
                     const coords = await geocodeAddress(venueAddress, venueCity, venueCountry);
                     if (coords) {
@@ -2575,7 +2575,7 @@ app.post('/db/sync', async (req, res) => {
                         geocoded++;
                     }
                 }
-                
+
                 const result = await pool.query(`
                     INSERT INTO events (
                         id, title, date, start_time, end_time, content_url,
@@ -2621,14 +2621,14 @@ app.post('/db/sync', async (req, res) => {
                     lat,
                     lng
                 ]);
-                
+
                 if (result.rows[0].inserted) inserted++;
                 else updated++;
             } catch (err) {
                 console.error(`Error saving event ${e.id}:`, err.message);
             }
         }
-        
+
         res.json({
             success: true,
             fetched: listings.length,
@@ -2647,7 +2647,7 @@ app.post('/db/sync', async (req, res) => {
 app.post('/db/events/geocode', async (req, res) => {
     try {
         const { limit = 50, city } = req.body;
-        
+
         // Find events without coordinates
         let query = `
             SELECT id, venue_address, venue_city, venue_country
@@ -2657,28 +2657,28 @@ app.post('/db/events/geocode', async (req, res) => {
         `;
         const params = [];
         let paramIndex = 1;
-        
+
         if (city) {
             query += ` AND venue_city ILIKE $${paramIndex++}`;
             params.push(city);
         }
-        
+
         query += ` ORDER BY date DESC LIMIT $${paramIndex}`;
         params.push(parseInt(limit));
-        
+
         const eventsResult = await pool.query(query, params);
         const events = eventsResult.rows;
-        
+
         let geocoded = 0;
         let failed = 0;
-        
+
         for (const event of events) {
             const coords = await geocodeAddress(
                 event.venue_address,
                 event.venue_city,
                 event.venue_country
             );
-            
+
             if (coords) {
                 await pool.query(
                     'UPDATE events SET latitude = $1, longitude = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3',
@@ -2689,7 +2689,7 @@ app.post('/db/events/geocode', async (req, res) => {
                 failed++;
             }
         }
-        
+
         res.json({
             success: true,
             processed: events.length,
@@ -2734,16 +2734,16 @@ app.get('/db/artists/missing', async (req, res) => {
             FROM events
             WHERE artists IS NOT NULL AND artists != ''
         `);
-        
+
         // Get all artist names from artists table
         const existingArtistsResult = await pool.query('SELECT LOWER(name) as name FROM artists');
         const existingNames = new Set(existingArtistsResult.rows.map(r => r.name));
-        
+
         // Find missing
         const missing = eventArtistsResult.rows
             .filter(r => r.artist_name && !existingNames.has(r.artist_name.toLowerCase()))
             .map(r => r.artist_name);
-        
+
         res.json({ data: missing, total: missing.length });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -2757,9 +2757,9 @@ app.get('/db/venues/:id', async (req, res) => {
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Venue not found' });
         }
-        
+
         const venue = result.rows[0];
-        
+
         // Get events at this venue
         const eventsResult = await pool.query(`
             SELECT id, title, date, artists 
@@ -2769,7 +2769,7 @@ app.get('/db/venues/:id', async (req, res) => {
             LIMIT 50
         `, [req.params.id, venue.name]);
         venue.events = eventsResult.rows;
-        
+
         // Try to get source references from venue_scraped_links (new schema)
         // or fall back to unified_venues (old schema)
         try {
@@ -2781,7 +2781,7 @@ app.get('/db/venues/:id', async (req, res) => {
                 JOIN scraped_venues sv ON sv.id = vsl.scraped_venue_id
                 WHERE vsl.venue_id = $1
             `, [req.params.id]);
-            
+
             if (sourceRefsNew.rows.length > 0) {
                 venue.source_references = sourceRefsNew.rows;
             }
@@ -2797,13 +2797,13 @@ app.get('/db/venues/:id', async (req, res) => {
                     JOIN scraped_venues sv ON sv.id = vsl.scraped_venue_id
                     WHERE uv.original_venue_id = $1
                 `, [req.params.id]);
-                
+
                 venue.source_references = sourceRefsOld.rows;
             } catch (e2) {
                 venue.source_references = [];
             }
         }
-        
+
         res.json(venue);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -2817,9 +2817,9 @@ app.get('/db/artists/:id', async (req, res) => {
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Artist not found' });
         }
-        
+
         const artist = result.rows[0];
-        
+
         // Get events featuring this artist
         const eventsResult = await pool.query(`
             SELECT id, title, date, venue_name, venue_city 
@@ -2829,7 +2829,7 @@ app.get('/db/artists/:id', async (req, res) => {
             LIMIT 20
         `, [`%${artist.name}%`]);
         artist.events = eventsResult.rows;
-        
+
         // Try to get source references from artist_scraped_links (new schema)
         // or fall back to unified_artists (old schema)
         try {
@@ -2840,7 +2840,7 @@ app.get('/db/artists/:id', async (req, res) => {
                 JOIN scraped_artists sa ON sa.id = asl.scraped_artist_id
                 WHERE asl.artist_id = $1
             `, [req.params.id]);
-            
+
             if (sourceRefsNew.rows.length > 0) {
                 artist.source_references = sourceRefsNew.rows;
             }
@@ -2855,13 +2855,13 @@ app.get('/db/artists/:id', async (req, res) => {
                     JOIN scraped_artists sa ON sa.id = asl.scraped_artist_id
                     WHERE ua.original_artist_id = $1
                 `, [req.params.id]);
-                
+
                 artist.source_references = sourceRefsOld.rows;
             } catch (e2) {
                 artist.source_references = [];
             }
         }
-        
+
         res.json(artist);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -2875,7 +2875,7 @@ app.get('/db/artists/:id', async (req, res) => {
 app.post('/db/venues/enrich', async (req, res) => {
     try {
         const { limit = 50 } = req.body;
-        
+
         // Find missing venues
         const missingResult = await pool.query(`
             SELECT DISTINCT e.venue_id, e.venue_name, e.venue_city, e.venue_country
@@ -2885,10 +2885,10 @@ app.post('/db/venues/enrich', async (req, res) => {
             AND v.id IS NULL
             LIMIT $1
         `, [parseInt(limit)]);
-        
+
         const missing = missingResult.rows;
         let fetched = 0, saved = 0, errors = [];
-        
+
         // Fetch each venue from RA API
         for (const venue of missing) {
             try {
@@ -2908,7 +2908,7 @@ app.post('/db/venues/enrich', async (req, res) => {
                         }
                     }
                 `;
-                
+
                 const response = await fetch('https://ra.co/graphql', {
                     method: 'POST',
                     headers: {
@@ -2918,10 +2918,10 @@ app.post('/db/venues/enrich', async (req, res) => {
                     },
                     body: JSON.stringify({ query, variables: { id: venue.venue_id } })
                 });
-                
+
                 const data = await response.json();
                 fetched++;
-                
+
                 if (data.data?.venue) {
                     const v = data.data.venue;
                     await pool.query(`
@@ -2948,14 +2948,14 @@ app.post('/db/venues/enrich', async (req, res) => {
                     ]);
                     saved++;
                 }
-                
+
                 // Small delay to be nice to the API
                 await new Promise(r => setTimeout(r, 100));
             } catch (err) {
                 errors.push({ id: venue.venue_id, name: venue.venue_name, error: err.message });
             }
         }
-        
+
         res.json({
             success: true,
             missing: missing.length,
@@ -2973,26 +2973,26 @@ app.post('/db/venues/enrich', async (req, res) => {
 app.post('/db/artists/enrich', async (req, res) => {
     try {
         const { limit = 50 } = req.body;
-        
+
         // Get all unique artist names from events
         const eventArtistsResult = await pool.query(`
             SELECT DISTINCT unnest(string_to_array(artists, ', ')) as artist_name
             FROM events
             WHERE artists IS NOT NULL AND artists != ''
         `);
-        
+
         // Get all artist names from artists table
         const existingArtistsResult = await pool.query('SELECT LOWER(name) as name FROM artists');
         const existingNames = new Set(existingArtistsResult.rows.map(r => r.name));
-        
+
         // Find missing
         const missing = eventArtistsResult.rows
             .filter(r => r.artist_name && !existingNames.has(r.artist_name.toLowerCase()))
             .map(r => r.artist_name)
             .slice(0, parseInt(limit));
-        
+
         let fetched = 0, saved = 0, notFound = 0, errors = [];
-        
+
         // Search and save each artist
         for (const artistName of missing) {
             try {
@@ -3008,7 +3008,7 @@ app.post('/db/artists/enrich', async (req, res) => {
                         }
                     }
                 `;
-                
+
                 const response = await fetch('https://ra.co/graphql', {
                     method: 'POST',
                     headers: {
@@ -3018,16 +3018,16 @@ app.post('/db/artists/enrich', async (req, res) => {
                     },
                     body: JSON.stringify({ query: searchQuery, variables: { searchTerm: artistName } })
                 });
-                
+
                 const data = await response.json();
                 fetched++;
-                
+
                 const results = data.data?.search || [];
                 // Find exact or close match (value is the artist name in search results)
-                const match = results.find(a => 
+                const match = results.find(a =>
                     a.value && a.value.toLowerCase() === artistName.toLowerCase()
                 ) || results[0];
-                
+
                 if (match && match.id) {
                     await pool.query(`
                         INSERT INTO artists (id, name, country, content_url)
@@ -3047,14 +3047,14 @@ app.post('/db/artists/enrich', async (req, res) => {
                 } else {
                     notFound++;
                 }
-                
+
                 // Small delay to be nice to the API
                 await new Promise(r => setTimeout(r, 100));
             } catch (err) {
                 errors.push({ name: artistName, error: err.message });
             }
         }
-        
+
         res.json({
             success: true,
             missing: missing.length,
@@ -3077,7 +3077,7 @@ app.get('/db/enrich/stats', async (req, res) => {
                 (SELECT COUNT(DISTINCT venue_id) FROM events WHERE venue_id IS NOT NULL) as venues_in_events,
                 (SELECT COUNT(*) FROM venues) as venues_saved
         `);
-        
+
         // Count unique artists in events vs artists table  
         const artistsInEventsResult = await pool.query(`
             SELECT COUNT(DISTINCT artist_name) as count FROM (
@@ -3085,15 +3085,15 @@ app.get('/db/enrich/stats', async (req, res) => {
                 FROM events WHERE artists IS NOT NULL AND artists != ''
             ) sub
         `);
-        
+
         const artistsSavedResult = await pool.query('SELECT COUNT(*) FROM artists');
-        
+
         const stats = venueStats.rows[0];
         stats.artists_in_events = parseInt(artistsInEventsResult.rows[0].count);
         stats.artists_saved = parseInt(artistsSavedResult.rows[0].count);
         stats.venues_missing = parseInt(stats.venues_in_events) - parseInt(stats.venues_saved);
         stats.artists_missing = stats.artists_in_events - stats.artists_saved;
-        
+
         res.json(stats);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -3109,38 +3109,38 @@ app.get('/db/enrich/stats', async (req, res) => {
 app.get('/db/artists', async (req, res) => {
     try {
         const { search, limit = 50, offset = 0, sort = 'name', order = 'asc' } = req.query;
-        
+
         // First check if artists table has data
         const artistCountCheck = await pool.query('SELECT COUNT(*) FROM artists');
         const hasArtists = parseInt(artistCountCheck.rows[0].count) > 0;
-        
+
         if (hasArtists) {
             // Use artists table
             let query = 'SELECT * FROM artists WHERE 1=1';
             const params = [];
             let paramIndex = 1;
-            
+
             if (search) {
                 query += ` AND (name ILIKE $${paramIndex} OR country ILIKE $${paramIndex})`;
                 params.push(`%${search}%`);
                 paramIndex++;
             }
-            
+
             // Get total count
             const countQuery = query.replace('SELECT *', 'SELECT COUNT(*)');
             const countResult = await pool.query(countQuery, params);
             const total = parseInt(countResult.rows[0].count);
-            
+
             // Add sorting and pagination
             const validSorts = ['name', 'country', 'created_at', 'updated_at'];
             const sortCol = validSorts.includes(sort) ? sort : 'name';
             const sortOrder = order.toLowerCase() === 'desc' ? 'DESC' : 'ASC';
-            
+
             query += ` ORDER BY ${sortCol} ${sortOrder} LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
             params.push(parseInt(limit), parseInt(offset));
-            
+
             const result = await pool.query(query, params);
-            
+
             res.json({
                 data: result.rows,
                 total,
@@ -3164,15 +3164,15 @@ app.get('/db/artists', async (req, res) => {
             `;
             const params = [];
             let paramIndex = 1;
-            
+
             if (search) {
                 query += ` AND name ILIKE $${paramIndex}`;
                 params.push(`%${search}%`);
                 paramIndex++;
             }
-            
+
             query += ` ORDER BY LOWER(name), scraped_at DESC`;
-            
+
             // Get total count
             const countResult = await pool.query(`
                 SELECT COUNT(DISTINCT LOWER(name)) FROM scraped_artists 
@@ -3180,7 +3180,7 @@ app.get('/db/artists', async (req, res) => {
                 ${search ? `AND name ILIKE $1` : ''}
             `, search ? [`%${search}%`] : []);
             const total = parseInt(countResult.rows[0].count);
-            
+
             // Add pagination to wrapped query
             const sortOrder = order.toLowerCase() === 'desc' ? 'DESC' : 'ASC';
             const finalQuery = `
@@ -3189,9 +3189,9 @@ app.get('/db/artists', async (req, res) => {
                 LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
             `;
             params.push(parseInt(limit), parseInt(offset));
-            
+
             const result = await pool.query(finalQuery, params);
-            
+
             res.json({
                 data: result.rows,
                 total,
@@ -3210,21 +3210,21 @@ app.get('/db/artists', async (req, res) => {
 app.post('/db/artists', async (req, res) => {
     try {
         const { name, country, content_url, image_url, genres } = req.body;
-        
+
         if (!name) {
             return res.status(400).json({ error: 'Name is required' });
         }
-        
+
         // Save as 'original' source entry
         const { scrapedId, sourceId } = await saveOriginalEntry('artist', {
             name, country, content_url, image_url, genres
         });
-        
+
         // Link to unified (finds match or creates new)
         const unifiedId = await linkToUnified('artist', scrapedId, {
             source_code: 'original', name, country, content_url, image_url, genres
         });
-        
+
         // Return the unified artist
         const result = await pool.query(`
             SELECT ua.*, 
@@ -3239,7 +3239,7 @@ app.post('/db/artists', async (req, res) => {
                 WHERE asl.unified_artist_id = ua.id) as source_references
             FROM unified_artists ua WHERE ua.id = $1
         `, [unifiedId]);
-        
+
         res.json({ success: true, artist: result.rows[0], unified_id: unifiedId });
     } catch (error) {
         console.error('Error creating artist:', error);
@@ -3252,10 +3252,10 @@ app.patch('/db/artists/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const updates = req.body;
-        
+
         // Check if this is a unified ID (UUID) or old artist ID
         const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
-        
+
         if (isUUID) {
             // Get the original source entry for this unified artist
             const originalLink = await pool.query(`
@@ -3264,7 +3264,7 @@ app.patch('/db/artists/:id', async (req, res) => {
                 JOIN scraped_artists sa ON sa.id = asl.scraped_artist_id
                 WHERE asl.unified_artist_id = $1 AND sa.source_code = 'original'
             `, [id]);
-            
+
             let scrapedId;
             if (originalLink.rows.length > 0) {
                 // Update existing original entry
@@ -3278,8 +3278,8 @@ app.patch('/db/artists/:id', async (req, res) => {
                         genres = COALESCE($5, genres),
                         updated_at = CURRENT_TIMESTAMP
                     WHERE id = $6
-                `, [updates.name, updates.country, updates.image_url, updates.content_url, 
-                    updates.genres ? JSON.stringify(updates.genres) : null, scrapedId]);
+                `, [updates.name, updates.country, updates.image_url, updates.content_url,
+                updates.genres ? JSON.stringify(updates.genres) : null, scrapedId]);
             } else {
                 // Create new original entry and link it
                 const saved = await saveOriginalEntry('artist', updates);
@@ -3289,10 +3289,10 @@ app.patch('/db/artists/:id', async (req, res) => {
                     VALUES ($1, $2, 1.0, true, 1)
                 `, [id, scrapedId]);
             }
-            
+
             // Refresh unified with merged data
             await refreshUnifiedArtist(id);
-            
+
             // Return updated unified artist
             const result = await pool.query(`
                 SELECT ua.*, 
@@ -3307,7 +3307,7 @@ app.patch('/db/artists/:id', async (req, res) => {
                     WHERE asl.unified_artist_id = ua.id) as source_references
                 FROM unified_artists ua WHERE ua.id = $1
             `, [id]);
-            
+
             res.json({ success: true, artist: result.rows[0] });
         } else {
             // Legacy: update old artists table directly
@@ -3315,29 +3315,29 @@ app.patch('/db/artists/:id', async (req, res) => {
             const setClauses = [];
             const values = [];
             let paramIndex = 1;
-            
+
             for (const [key, value] of Object.entries(updates)) {
                 if (allowedFields.includes(key)) {
                     setClauses.push(`${key} = $${paramIndex++}`);
                     values.push(value);
                 }
             }
-            
+
             if (setClauses.length === 0) {
                 return res.status(400).json({ error: 'No valid fields to update' });
             }
-            
+
             setClauses.push('updated_at = CURRENT_TIMESTAMP');
             values.push(id);
-            
+
             const result = await pool.query(`
                 UPDATE artists SET ${setClauses.join(', ')} WHERE id = $${paramIndex} RETURNING *
             `, values);
-            
+
             if (result.rows.length === 0) {
                 return res.status(404).json({ error: 'Artist not found' });
             }
-            
+
             res.json({ success: true, artist: result.rows[0] });
         }
     } catch (error) {
@@ -3377,12 +3377,12 @@ app.post('/db/artists/bulk-delete', async (req, res) => {
         if (!Array.isArray(ids) || ids.length === 0) {
             return res.status(400).json({ error: 'ids must be a non-empty array' });
         }
-        
+
         const result = await pool.query(
             'DELETE FROM artists WHERE id = ANY($1::text[]) RETURNING id',
             [ids]
         );
-        
+
         res.json({ success: true, deleted: result.rows.length });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -3400,7 +3400,7 @@ app.get('/db/cities/:id', async (req, res) => {
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'City not found' });
         }
-        
+
         // Get venues in this city
         const venuesResult = await pool.query(`
             SELECT DISTINCT venue_name, venue_address, COUNT(*) as event_count
@@ -3409,7 +3409,7 @@ app.get('/db/cities/:id', async (req, res) => {
             GROUP BY venue_name, venue_address
             ORDER BY event_count DESC
         `, [result.rows[0].name]);
-        
+
         res.json({
             ...result.rows[0],
             venues: venuesResult.rows
@@ -3439,13 +3439,13 @@ app.post('/db/cities', async (req, res) => {
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         `);
-        
+
         const { name, country, latitude, longitude, timezone, ra_area_id, is_active = true } = req.body;
-        
+
         if (!name) {
             return res.status(400).json({ error: 'Name is required' });
         }
-        
+
         const result = await pool.query(`
             INSERT INTO cities (name, country, latitude, longitude, timezone, ra_area_id, is_active)
             VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -3459,7 +3459,7 @@ app.post('/db/cities', async (req, res) => {
                 updated_at = CURRENT_TIMESTAMP
             RETURNING *
         `, [name, country || null, latitude || null, longitude || null, timezone || null, ra_area_id || null, is_active]);
-        
+
         res.json({ success: true, city: result.rows[0] });
     } catch (error) {
         console.error('Error creating city:', error);
@@ -3472,34 +3472,34 @@ app.patch('/db/cities/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const updates = req.body;
-        
+
         const allowedFields = ['name', 'country', 'latitude', 'longitude', 'timezone', 'ra_area_id', 'is_active'];
         const setClauses = [];
         const values = [];
         let paramIndex = 1;
-        
+
         for (const [key, value] of Object.entries(updates)) {
             if (allowedFields.includes(key)) {
                 setClauses.push(`${key} = $${paramIndex++}`);
                 values.push(value);
             }
         }
-        
+
         if (setClauses.length === 0) {
             return res.status(400).json({ error: 'No valid fields to update' });
         }
-        
+
         setClauses.push('updated_at = CURRENT_TIMESTAMP');
         values.push(id);
-        
+
         const result = await pool.query(`
             UPDATE cities SET ${setClauses.join(', ')} WHERE id = $${paramIndex} RETURNING *
         `, values);
-        
+
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'City not found' });
         }
-        
+
         res.json({ success: true, city: result.rows[0] });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -3528,7 +3528,7 @@ app.post('/db/cities/refresh-stats', async (req, res) => {
                 venue_count = (SELECT COUNT(DISTINCT venue_name) FROM events WHERE venue_city = cities.name),
                 updated_at = CURRENT_TIMESTAMP
         `);
-        
+
         res.json({ success: true, message: 'City stats refreshed' });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -3544,44 +3544,44 @@ app.post('/db/cities/refresh-stats', async (req, res) => {
 app.get('/db/venues', async (req, res) => {
     try {
         const { search, city, limit = 50, offset = 0, sort = 'name', order = 'asc' } = req.query;
-        
+
         // First check if venues table has data
         const venueCountCheck = await pool.query('SELECT COUNT(*) FROM venues');
         const hasVenues = parseInt(venueCountCheck.rows[0].count) > 0;
-        
+
         if (hasVenues) {
             // Use venues table
             let query = 'SELECT * FROM venues WHERE 1=1';
             const params = [];
             let paramIndex = 1;
-            
+
             if (search) {
                 query += ` AND (name ILIKE $${paramIndex} OR address ILIKE $${paramIndex})`;
                 params.push(`%${search}%`);
                 paramIndex++;
             }
-            
+
             if (city) {
                 query += ` AND city ILIKE $${paramIndex}`;
                 params.push(`%${city}%`);
                 paramIndex++;
             }
-            
+
             // Get total count
             const countQuery = query.replace('SELECT *', 'SELECT COUNT(*)');
             const countResult = await pool.query(countQuery, params);
             const total = parseInt(countResult.rows[0].count);
-            
+
             // Add sorting and pagination
             const validSorts = ['name', 'city', 'country', 'created_at', 'updated_at'];
             const sortCol = validSorts.includes(sort) ? sort : 'name';
             const sortOrder = order.toLowerCase() === 'desc' ? 'DESC' : 'ASC';
-            
+
             query += ` ORDER BY ${sortCol} ${sortOrder} LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
             params.push(parseInt(limit), parseInt(offset));
-            
+
             const result = await pool.query(query, params);
-            
+
             res.json({
                 data: result.rows,
                 total,
@@ -3604,13 +3604,13 @@ app.get('/db/venues', async (req, res) => {
             `;
             const params = [];
             let paramIndex = 1;
-            
+
             if (search) {
                 query = `SELECT * FROM (${query}) v WHERE (v.name ILIKE $${paramIndex} OR v.address ILIKE $${paramIndex})`;
                 params.push(`%${search}%`);
                 paramIndex++;
             }
-            
+
             if (city) {
                 if (search) {
                     query += ` AND v.city ILIKE $${paramIndex}`;
@@ -3620,11 +3620,11 @@ app.get('/db/venues', async (req, res) => {
                 params.push(`%${city}%`);
                 paramIndex++;
             }
-            
+
             // Wrap for sorting and pagination
             const baseQuery = search || city ? query : `SELECT * FROM (${query}) v`;
             const countQuery = `SELECT COUNT(*) FROM (${baseQuery.replace('SELECT *', 'SELECT 1')}) c`;
-            
+
             let countParams = [...params];
             const countResult = await pool.query(`
                 SELECT COUNT(DISTINCT (LOWER(venue_name), LOWER(venue_city))) 
@@ -3634,7 +3634,7 @@ app.get('/db/venues', async (req, res) => {
                 ${city ? `AND venue_city ILIKE $${search ? 2 : 1}` : ''}
             `, params.slice(0, (search ? 1 : 0) + (city ? 1 : 0)));
             const total = parseInt(countResult.rows[0].count);
-            
+
             const sortOrder = order.toLowerCase() === 'desc' ? 'DESC' : 'ASC';
             const finalQuery = `
                 SELECT DISTINCT ON (LOWER(venue_name), LOWER(venue_city))
@@ -3653,9 +3653,9 @@ app.get('/db/venues', async (req, res) => {
                 LIMIT $${params.length + 1} OFFSET $${params.length + 2}
             `;
             params.push(parseInt(limit), parseInt(offset));
-            
+
             const result = await pool.query(finalQuery, params);
-            
+
             res.json({
                 data: result.rows,
                 total,
@@ -3674,21 +3674,21 @@ app.get('/db/venues', async (req, res) => {
 app.post('/db/venues', async (req, res) => {
     try {
         const { name, address, city, country, blurb, content_url, latitude, longitude, capacity } = req.body;
-        
+
         if (!name) {
             return res.status(400).json({ error: 'Name is required' });
         }
-        
+
         // Save as 'original' source entry
         const { scrapedId, sourceId } = await saveOriginalEntry('venue', {
             name, address, city, country, content_url, latitude, longitude, capacity
         });
-        
+
         // Link to unified (finds match or creates new)
         const unifiedId = await linkToUnified('venue', scrapedId, {
             source_code: 'original', name, address, city, country, content_url, latitude, longitude, capacity
         });
-        
+
         // Return the unified venue
         const result = await pool.query(`
             SELECT uv.*, 
@@ -3703,7 +3703,7 @@ app.post('/db/venues', async (req, res) => {
                 WHERE vsl.unified_venue_id = uv.id) as source_references
             FROM unified_venues uv WHERE uv.id = $1
         `, [unifiedId]);
-        
+
         res.json({ success: true, venue: result.rows[0], unified_id: unifiedId });
     } catch (error) {
         console.error('Error creating venue:', error);
@@ -3716,10 +3716,10 @@ app.patch('/db/venues/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const updates = req.body;
-        
+
         // Check if this is a unified ID (UUID)
         const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
-        
+
         if (isUUID) {
             // Get the original source entry for this unified venue
             const originalLink = await pool.query(`
@@ -3728,7 +3728,7 @@ app.patch('/db/venues/:id', async (req, res) => {
                 JOIN scraped_venues sv ON sv.id = vsl.scraped_venue_id
                 WHERE vsl.unified_venue_id = $1 AND sv.source_code = 'original'
             `, [id]);
-            
+
             let scrapedId;
             if (originalLink.rows.length > 0) {
                 // Update existing original entry
@@ -3746,7 +3746,7 @@ app.patch('/db/venues/:id', async (req, res) => {
                         updated_at = CURRENT_TIMESTAMP
                     WHERE id = $9
                 `, [updates.name, updates.address, updates.city, updates.country,
-                    updates.latitude, updates.longitude, updates.content_url, updates.capacity, scrapedId]);
+                updates.latitude, updates.longitude, updates.content_url, updates.capacity, scrapedId]);
             } else {
                 // Create new original entry and link it
                 const saved = await saveOriginalEntry('venue', updates);
@@ -3756,10 +3756,10 @@ app.patch('/db/venues/:id', async (req, res) => {
                     VALUES ($1, $2, 1.0, true, 1)
                 `, [id, scrapedId]);
             }
-            
+
             // Refresh unified with merged data
             await refreshUnifiedVenue(id);
-            
+
             // Return updated unified venue
             const result = await pool.query(`
                 SELECT uv.*, 
@@ -3774,7 +3774,7 @@ app.patch('/db/venues/:id', async (req, res) => {
                     WHERE vsl.unified_venue_id = uv.id) as source_references
                 FROM unified_venues uv WHERE uv.id = $1
             `, [id]);
-            
+
             res.json({ success: true, venue: result.rows[0] });
         } else {
             // Legacy: update old venues table directly
@@ -3782,29 +3782,29 @@ app.patch('/db/venues/:id', async (req, res) => {
             const setClauses = [];
             const values = [];
             let paramIndex = 1;
-            
+
             for (const [key, value] of Object.entries(updates)) {
                 if (allowedFields.includes(key)) {
                     setClauses.push(`${key} = $${paramIndex++}`);
                     values.push(value);
                 }
             }
-            
+
             if (setClauses.length === 0) {
                 return res.status(400).json({ error: 'No valid fields to update' });
             }
-            
+
             setClauses.push('updated_at = CURRENT_TIMESTAMP');
             values.push(id);
-            
+
             const result = await pool.query(`
                 UPDATE venues SET ${setClauses.join(', ')} WHERE id = $${paramIndex} RETURNING *
             `, values);
-            
+
             if (result.rows.length === 0) {
                 return res.status(404).json({ error: 'Venue not found' });
             }
-            
+
             res.json({ success: true, venue: result.rows[0] });
         }
     } catch (error) {
@@ -3844,12 +3844,12 @@ app.post('/db/venues/bulk-delete', async (req, res) => {
         if (!Array.isArray(ids) || ids.length === 0) {
             return res.status(400).json({ error: 'ids must be a non-empty array' });
         }
-        
+
         const result = await pool.query(
             'DELETE FROM venues WHERE id = ANY($1::text[]) RETURNING id',
             [ids]
         );
-        
+
         res.json({ success: true, deleted: result.rows.length });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -3863,16 +3863,16 @@ app.post('/db/venues/:id/geocode', async (req, res) => {
         if (venue.rows.length === 0) {
             return res.status(404).json({ error: 'Venue not found' });
         }
-        
+
         const v = venue.rows[0];
         const coords = await geocodeAddress(v.address, v.city, v.country);
-        
+
         if (coords) {
             const result = await pool.query(`
                 UPDATE venues SET latitude = $1, longitude = $2, updated_at = CURRENT_TIMESTAMP
                 WHERE id = $3 RETURNING *
             `, [coords.latitude, coords.longitude, req.params.id]);
-            
+
             res.json({ success: true, venue: result.rows[0] });
         } else {
             res.status(400).json({ error: 'Could not geocode address' });
@@ -3893,12 +3893,12 @@ app.post('/db/events/bulk-delete', async (req, res) => {
         if (!Array.isArray(ids) || ids.length === 0) {
             return res.status(400).json({ error: 'ids must be a non-empty array' });
         }
-        
+
         const result = await pool.query(
             'DELETE FROM events WHERE id = ANY($1::text[]) RETURNING id',
             [ids]
         );
-        
+
         res.json({ success: true, deleted: result.rows.length });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -3921,7 +3921,7 @@ app.get('/db/events/statistics', async (req, res) => {
                 MAX(date) as latest_date
             FROM events
         `);
-        
+
         const byCity = await pool.query(`
             SELECT venue_city as city, COUNT(*) as count,
                    COUNT(CASE WHEN is_published = true THEN 1 END) as published
@@ -3931,7 +3931,7 @@ app.get('/db/events/statistics', async (req, res) => {
             ORDER BY count DESC
             LIMIT 10
         `);
-        
+
         const byMonth = await pool.query(`
             SELECT 
                 date_trunc('month', date) as month,
@@ -3941,14 +3941,14 @@ app.get('/db/events/statistics', async (req, res) => {
             GROUP BY date_trunc('month', date)
             ORDER BY month
         `);
-        
+
         const recentActivity = await pool.query(`
             SELECT id, title, venue_name, venue_city, created_at, updated_at
             FROM events
             ORDER BY updated_at DESC
             LIMIT 10
         `);
-        
+
         res.json({
             ...stats.rows[0],
             by_city: byCity.rows,
@@ -3983,14 +3983,14 @@ app.get('/db/dashboard', async (req, res) => {
                 SELECT COUNT(DISTINCT venue_city) as total FROM events WHERE venue_city IS NOT NULL
             `)
         ]);
-        
+
         const recentEvents = await pool.query(`
             SELECT id, title, venue_name, venue_city, date, is_published, created_at
             FROM events
             ORDER BY created_at DESC
             LIMIT 5
         `);
-        
+
         const upcomingEvents = await pool.query(`
             SELECT id, title, venue_name, venue_city, date, is_published
             FROM events
@@ -3998,7 +3998,7 @@ app.get('/db/dashboard', async (req, res) => {
             ORDER BY date ASC
             LIMIT 5
         `);
-        
+
         res.json({
             stats: {
                 events: events.rows[0],
@@ -4169,7 +4169,7 @@ async function scrapeTicketmaster(city, options = {}) {
     if (!cityConfig) {
         throw new Error(`City not configured for Ticketmaster: ${city}. Available: ${Object.keys(TICKETMASTER_CITY_MAP).join(', ')}`);
     }
-    
+
     const { limit = 100, classificationName = 'Music' } = options;
     const params = new URLSearchParams({
         city: cityConfig.city,
@@ -4179,24 +4179,24 @@ async function scrapeTicketmaster(city, options = {}) {
         classificationName: classificationName,
         sort: 'date,asc'
     });
-    
+
     const url = `https://app.ticketmaster.com/discovery/v2/events.json?${params}`;
     console.log(`Fetching Ticketmaster: ${url}`);
-    
+
     const response = await fetch(url);
     if (!response.ok) {
         const error = await response.text();
         throw new Error(`Ticketmaster API error: ${response.status} - ${error}`);
     }
-    
+
     const data = await response.json();
     const events = data._embedded?.events || [];
-    
+
     return events.map(event => {
         const venue = event._embedded?.venues?.[0];
         const attractions = event._embedded?.attractions || [];
         const priceRange = event.priceRanges?.[0];
-        
+
         return {
             source_code: 'ticketmaster',
             source_event_id: event.id,
@@ -4245,10 +4245,10 @@ async function scrapeResidentAdvisor(city, options = {}) {
     if (!areaId) {
         throw new Error(`City not configured for Resident Advisor: ${city}. Available: ${Object.keys(RA_AREA_MAP).join(', ')}`);
     }
-    
+
     const { limit = 100, startDate, endDate } = options;
     const today = new Date().toISOString().split('T')[0];
-    
+
     const query = `
         query GetEvents($filters: FilterInputDtoInput, $pageSize: Int) {
             eventListings(filters: $filters, pageSize: $pageSize) {
@@ -4279,7 +4279,7 @@ async function scrapeResidentAdvisor(city, options = {}) {
             }
         }
     `;
-    
+
     const filters = {
         areas: { eq: areaId },
         listingDate: {
@@ -4287,7 +4287,7 @@ async function scrapeResidentAdvisor(city, options = {}) {
             lte: endDate || new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
         }
     };
-    
+
     const response = await fetch('https://ra.co/graphql', {
         method: 'POST',
         headers: {
@@ -4297,18 +4297,18 @@ async function scrapeResidentAdvisor(city, options = {}) {
         },
         body: JSON.stringify({ query, variables: { filters, pageSize: parseInt(limit) } })
     });
-    
+
     const data = await response.json();
     if (data.errors) {
         throw new Error(`RA GraphQL error: ${JSON.stringify(data.errors)}`);
     }
-    
+
     const listings = data.data.eventListings.data || [];
-    
+
     return listings.map(listing => {
         const e = listing.event;
         if (!e) return null;
-        
+
         return {
             source_code: 'ra',
             source_event_id: e.id,
@@ -4348,13 +4348,13 @@ async function saveScrapedEvents(events, options = {}) {
     let inserted = 0, updated = 0, geocoded = 0;
     const savedVenues = new Set();
     const savedArtists = new Set();
-    
+
     for (const event of events) {
         try {
             // Geocode if coordinates are missing and we have address info
             let venueLat = event.venue_latitude;
             let venueLon = event.venue_longitude;
-            
+
             if (geocodeMissing && (!venueLat || !venueLon) && (event.venue_address || event.venue_name)) {
                 try {
                     const coords = await geocodeAddress(
@@ -4376,7 +4376,7 @@ async function saveScrapedEvents(events, options = {}) {
                     console.warn(`[Geocode] Failed for ${event.venue_name}: ${geoErr.message}`);
                 }
             }
-            
+
             // Save scraped event
             const eventResult = await pool.query(`
                 INSERT INTO scraped_events (
@@ -4424,10 +4424,10 @@ async function saveScrapedEvents(events, options = {}) {
                 event.price_info ? JSON.stringify(event.price_info) : null,
                 JSON.stringify(event.raw_data)
             ]);
-            
+
             if (eventResult.rows[0].is_inserted) inserted++;
             else updated++;
-            
+
             // Save scraped venue if present
             if (event.venue_raw && event.venue_raw.source_venue_id) {
                 const venueKey = `${event.source_code}:${event.venue_raw.source_venue_id}`;
@@ -4461,7 +4461,7 @@ async function saveScrapedEvents(events, options = {}) {
                     savedVenues.add(venueKey);
                 }
             }
-            
+
             // Save scraped artists if present
             for (const artist of (event.artists_json || [])) {
                 if (artist.source_artist_id) {
@@ -4493,7 +4493,7 @@ async function saveScrapedEvents(events, options = {}) {
             console.error(`Error saving scraped event ${event.source_event_id}:`, err.message);
         }
     }
-    
+
     return { inserted, updated, venues: savedVenues.size, artists: savedArtists.size, geocoded };
 }
 
@@ -4516,23 +4516,23 @@ function stringSimilarity(a, b) {
     a = normalizeForMatch(a);
     b = normalizeForMatch(b);
     if (a === b) return 1;
-    
+
     const longer = a.length > b.length ? a : b;
     const shorter = a.length > b.length ? b : a;
-    
+
     if (longer.length === 0) return 1;
-    
+
     // Simple contains check
     if (longer.includes(shorter) || shorter.includes(longer)) {
         return shorter.length / longer.length;
     }
-    
+
     // Word overlap
     const wordsA = new Set(a.split(' ').filter(w => w.length > 2));
     const wordsB = new Set(b.split(' ').filter(w => w.length > 2));
     const intersection = [...wordsA].filter(w => wordsB.has(w));
     const union = new Set([...wordsA, ...wordsB]);
-    
+
     if (union.size === 0) return 0;
     return intersection.length / union.size;
 }
@@ -4569,7 +4569,7 @@ const EVENT_TYPE_KEYWORDS = {
 
 function classifyEventType(title, venueName, description) {
     const text = `${title || ''} ${venueName || ''} ${description || ''}`.toLowerCase();
-    
+
     // Check each type's keywords
     for (const [type, keywords] of Object.entries(EVENT_TYPE_KEYWORDS)) {
         for (const keyword of keywords) {
@@ -4578,28 +4578,28 @@ function classifyEventType(title, venueName, description) {
             }
         }
     }
-    
+
     return 'event'; // Default type
 }
 
 // Merge data from multiple sources, respecting priority
 function mergeSourceData(sources, fieldMapping = null) {
     // Sort sources by priority (original first)
-    const sorted = [...sources].sort((a, b) => 
+    const sorted = [...sources].sort((a, b) =>
         getSourcePriority(a.source_code) - getSourcePriority(b.source_code)
     );
-    
+
     const merged = {};
     const fieldSources = {};
-    
+
     // Define fields to merge (default event fields)
     const fields = fieldMapping || [
-        'title', 'date', 'start_time', 'end_time', 'description', 
+        'title', 'date', 'start_time', 'end_time', 'description',
         'flyer_front', 'content_url', 'ticket_url', 'price_info',
         'venue_name', 'venue_address', 'venue_city', 'venue_country',
         'venue_latitude', 'venue_longitude'
     ];
-    
+
     for (const field of fields) {
         for (const source of sorted) {
             const value = source[field];
@@ -4612,7 +4612,7 @@ function mergeSourceData(sources, fieldMapping = null) {
             }
         }
     }
-    
+
     return { merged, fieldSources };
 }
 
@@ -4620,9 +4620,9 @@ function mergeSourceData(sources, fieldMapping = null) {
 async function saveOriginalEntry(type, data, unifiedId = null) {
     const sourceCode = 'original';
     const sourceId = data.id || `manual-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    
+
     let scrapedId;
-    
+
     if (type === 'event') {
         const result = await pool.query(`
             INSERT INTO scraped_events (
@@ -4690,13 +4690,13 @@ async function saveOriginalEntry(type, data, unifiedId = null) {
                 updated_at = CURRENT_TIMESTAMP
             RETURNING id
         `, [
-            sourceCode, sourceId, data.name, 
+            sourceCode, sourceId, data.name,
             data.genres ? JSON.stringify(data.genres) : null,
             data.image_url, data.content_url
         ]);
         scrapedId = result.rows[0].id;
     }
-    
+
     return { scrapedId, sourceId };
 }
 
@@ -4704,14 +4704,14 @@ async function saveOriginalEntry(type, data, unifiedId = null) {
 async function linkToUnified(type, scrapedId, scrapedData, existingUnifiedId = null) {
     const priority = getSourcePriority(scrapedData.source_code || 'original');
     let unifiedId = existingUnifiedId;
-    
+
     if (type === 'event') {
         if (!unifiedId) {
             // Try to find matching unified event
             const match = await findMatchingUnifiedEvent(scrapedData);
             unifiedId = match?.id;
         }
-        
+
         if (!unifiedId) {
             // Create new unified event
             const result = await pool.query(`
@@ -4728,7 +4728,7 @@ async function linkToUnified(type, scrapedId, scrapedData, existingUnifiedId = n
             ]);
             unifiedId = result.rows[0].id;
         }
-        
+
         // Create link
         await pool.query(`
             INSERT INTO event_source_links (unified_event_id, scraped_event_id, match_confidence, is_primary, priority)
@@ -4737,16 +4737,16 @@ async function linkToUnified(type, scrapedId, scrapedData, existingUnifiedId = n
                 priority = EXCLUDED.priority,
                 is_primary = EXCLUDED.is_primary
         `, [unifiedId, scrapedId, priority === 1, priority]);
-        
+
         // Refresh merged data on unified event
         await refreshUnifiedEvent(unifiedId);
-        
+
     } else if (type === 'venue') {
         if (!unifiedId) {
             const match = await findMatchingUnifiedVenue(scrapedData);
             unifiedId = match?.id;
         }
-        
+
         if (!unifiedId) {
             const result = await pool.query(`
                 INSERT INTO unified_venues (name, address, city, country, latitude, longitude, website, capacity)
@@ -4758,7 +4758,7 @@ async function linkToUnified(type, scrapedId, scrapedData, existingUnifiedId = n
             ]);
             unifiedId = result.rows[0].id;
         }
-        
+
         await pool.query(`
             INSERT INTO venue_source_links (unified_venue_id, scraped_venue_id, match_confidence, is_primary, priority)
             VALUES ($1, $2, 1.0, $3, $4)
@@ -4766,15 +4766,15 @@ async function linkToUnified(type, scrapedId, scrapedData, existingUnifiedId = n
                 priority = EXCLUDED.priority,
                 is_primary = EXCLUDED.is_primary
         `, [unifiedId, scrapedId, priority === 1, priority]);
-        
+
         await refreshUnifiedVenue(unifiedId);
-        
+
     } else if (type === 'artist') {
         if (!unifiedId) {
             const match = await findMatchingUnifiedArtist(scrapedData);
             unifiedId = match?.id;
         }
-        
+
         if (!unifiedId) {
             const result = await pool.query(`
                 INSERT INTO unified_artists (name, genres, country, image_url, website)
@@ -4786,7 +4786,7 @@ async function linkToUnified(type, scrapedId, scrapedData, existingUnifiedId = n
             ]);
             unifiedId = result.rows[0].id;
         }
-        
+
         await pool.query(`
             INSERT INTO artist_source_links (unified_artist_id, scraped_artist_id, match_confidence, is_primary, priority)
             VALUES ($1, $2, 1.0, $3, $4)
@@ -4794,79 +4794,79 @@ async function linkToUnified(type, scrapedId, scrapedData, existingUnifiedId = n
                 priority = EXCLUDED.priority,
                 is_primary = EXCLUDED.is_primary
         `, [unifiedId, scrapedId, priority === 1, priority]);
-        
+
         await refreshUnifiedArtist(unifiedId);
     }
-    
+
     return unifiedId;
 }
 
 // Find matching unified event
 async function findMatchingUnifiedEvent(scrapedData, minConfidence = 0.7) {
     if (!scrapedData.date) return null;
-    
+
     const potentialMatches = await pool.query(`
         SELECT ue.* FROM unified_events ue
         WHERE ue.date = $1
         AND (LOWER(ue.venue_city) = LOWER($2) OR LOWER(ue.venue_name) ILIKE $3)
     `, [scrapedData.date, scrapedData.venue_city || '', `%${scrapedData.venue_name || ''}%`]);
-    
+
     let bestMatch = null;
     let bestScore = 0;
-    
+
     for (const potential of potentialMatches.rows) {
         const titleScore = stringSimilarity(scrapedData.title, potential.title);
         const venueScore = stringSimilarity(scrapedData.venue_name, potential.venue_name);
         const score = (titleScore * 0.6) + (venueScore * 0.4);
-        
+
         if (score > bestScore && score >= minConfidence) {
             bestScore = score;
             bestMatch = potential;
         }
     }
-    
+
     return bestMatch;
 }
 
 // Find matching unified venue
 async function findMatchingUnifiedVenue(scrapedData, minConfidence = 0.7) {
     if (!scrapedData.name) return null;
-    
+
     const potentialMatches = await pool.query(`
         SELECT uv.* FROM unified_venues uv
         WHERE LOWER(uv.city) = LOWER($1) OR similarity(LOWER(uv.name), LOWER($2)) > 0.3
     `, [scrapedData.city || '', scrapedData.name]);
-    
+
     let bestMatch = null;
     let bestScore = 0;
-    
+
     for (const potential of potentialMatches.rows) {
         const nameScore = stringSimilarity(scrapedData.name, potential.name);
-        const cityScore = scrapedData.city && potential.city ? 
+        const cityScore = scrapedData.city && potential.city ?
             (scrapedData.city.toLowerCase() === potential.city.toLowerCase() ? 1 : 0) : 0;
         const score = (nameScore * 0.8) + (cityScore * 0.2);
-        
+
         if (score > bestScore && score >= minConfidence) {
             bestScore = score;
             bestMatch = potential;
         }
     }
-    
+
     return bestMatch;
 }
 
 // Find matching unified artist
 async function findMatchingUnifiedArtist(scrapedData, minConfidence = 0.85) {
     if (!scrapedData.name) return null;
-    
+
     const potentialMatches = await pool.query(`
         SELECT ua.* FROM unified_artists ua
         WHERE similarity(LOWER(ua.name), LOWER($1)) > 0.5
     `, [scrapedData.name]);
-    
+
     let bestMatch = null;
     let bestScore = 0;
-    
+
     for (const potential of potentialMatches.rows) {
         const score = stringSimilarity(scrapedData.name, potential.name);
         if (score > bestScore && score >= minConfidence) {
@@ -4874,7 +4874,7 @@ async function findMatchingUnifiedArtist(scrapedData, minConfidence = 0.85) {
             bestMatch = potential;
         }
     }
-    
+
     return bestMatch;
 }
 
@@ -4888,11 +4888,11 @@ async function refreshUnifiedEvent(unifiedId) {
         WHERE esl.unified_event_id = $1
         ORDER BY esl.priority ASC, esl.is_primary DESC
     `, [unifiedId]);
-    
+
     if (sourcesResult.rows.length === 0) return;
-    
+
     const { merged, fieldSources } = mergeSourceData(sourcesResult.rows);
-    
+
     await pool.query(`
         UPDATE unified_events SET
             title = COALESCE($1, title),
@@ -4926,13 +4926,13 @@ async function refreshUnifiedVenue(unifiedId) {
         WHERE vsl.unified_venue_id = $1
         ORDER BY vsl.priority ASC
     `, [unifiedId]);
-    
+
     if (sourcesResult.rows.length === 0) return;
-    
+
     const { merged, fieldSources } = mergeSourceData(sourcesResult.rows, [
         'name', 'address', 'city', 'country', 'latitude', 'longitude', 'content_url', 'capacity'
     ]);
-    
+
     await pool.query(`
         UPDATE unified_venues SET
             name = COALESCE($1, name),
@@ -4962,13 +4962,13 @@ async function refreshUnifiedArtist(unifiedId) {
         WHERE asl.unified_artist_id = $1
         ORDER BY asl.priority ASC
     `, [unifiedId]);
-    
+
     if (sourcesResult.rows.length === 0) return;
-    
+
     const { merged, fieldSources } = mergeSourceData(sourcesResult.rows, [
         'name', 'genres', 'country', 'image_url', 'content_url'
     ]);
-    
+
     await pool.query(`
         UPDATE unified_artists SET
             name = COALESCE($1, name),
@@ -4980,7 +4980,7 @@ async function refreshUnifiedArtist(unifiedId) {
             updated_at = CURRENT_TIMESTAMP
         WHERE id = $7
     `, [
-        merged.name, merged.genres, merged.country, merged.image_url, 
+        merged.name, merged.genres, merged.country, merged.image_url,
         merged.content_url, JSON.stringify(fieldSources), unifiedId
     ]);
 }
@@ -5001,26 +5001,26 @@ async function refreshMainEvent(eventId) {
                 ELSE 10 
             END ASC
     `, [eventId]);
-    
+
     if (sourcesResult.rows.length === 0) return;
-    
+
     const { merged, fieldSources } = mergeSourceData(sourcesResult.rows);
-    
+
     // Extract date as YYYY-MM-DD string (handles Date objects and ISO strings)
     let dateStr = null;
     if (merged.date) {
         const d = merged.date instanceof Date ? merged.date : new Date(merged.date);
         dateStr = d.toISOString().split('T')[0];
     }
-    
+
     // Combine date with time for timestamp fields
-    const startTimestamp = dateStr && merged.start_time 
-        ? `${dateStr} ${merged.start_time}` 
+    const startTimestamp = dateStr && merged.start_time
+        ? `${dateStr} ${merged.start_time}`
         : null;
-    const endTimestamp = dateStr && merged.end_time 
-        ? `${dateStr} ${merged.end_time}` 
+    const endTimestamp = dateStr && merged.end_time
+        ? `${dateStr} ${merged.end_time}`
         : null;
-    
+
     // Update main event with merged data
     await pool.query(`
         UPDATE events SET
@@ -5047,7 +5047,7 @@ async function refreshMainEvent(eventId) {
         merged.venue_latitude, merged.venue_longitude,
         JSON.stringify(fieldSources), eventId
     ]);
-    
+
     console.log(`[Refresh] Updated main event ${eventId} with merged data from ${sourcesResult.rows.length} sources`);
 }
 
@@ -5060,11 +5060,11 @@ async function autoRejectPastEvents() {
         AND publish_status = 'pending'
         RETURNING id, title, date
     `);
-    
+
     if (result.rows.length > 0) {
         console.log(`[Auto-Reject] Rejected ${result.rows.length} past events`);
     }
-    
+
     return { rejected: result.rows.length, events: result.rows.slice(0, 10) };
 }
 
@@ -5073,7 +5073,7 @@ async function autoRejectPastEvents() {
 async function matchAndLinkEvents(options = {}) {
     const { dryRun = false, minConfidence = 0.6 } = options;
     const { v4: uuidv4 } = require('uuid');
-    
+
     // Get unlinked scraped events (not in event_scraped_links)
     const unlinkedResult = await pool.query(`
         SELECT se.* FROM scraped_events se
@@ -5083,13 +5083,13 @@ async function matchAndLinkEvents(options = {}) {
         ORDER BY se.date DESC, se.venue_city
         LIMIT 500
     `);
-    
+
     const unlinked = unlinkedResult.rows;
     let matched = 0, created = 0;
     const results = [];
-    
+
     console.log(`[Match] Processing ${unlinked.length} unlinked scraped events`);
-    
+
     for (const scraped of unlinked) {
         // Try to find matching main event
         const potentialMatches = await pool.query(`
@@ -5104,25 +5104,25 @@ async function matchAndLinkEvents(options = {}) {
                 OR LOWER(e.venue_name) ILIKE $3
             )
         `, [scraped.date, scraped.venue_city || '', `%${(scraped.venue_name || '').substring(0, 15)}%`]);
-        
+
         let bestMatch = null;
         let bestScore = 0;
-        
+
         for (const potential of potentialMatches.rows) {
             // Skip if already linked from same source
             if (potential.existing_sources?.includes(scraped.source_code)) continue;
-            
+
             // Calculate match score
             const titleScore = stringSimilarity(scraped.title || '', potential.title || '');
             const venueScore = stringSimilarity(scraped.venue_name || '', potential.venue_name || '');
             const score = (titleScore * 0.7) + (venueScore * 0.3);
-            
+
             if (score > bestScore && score >= minConfidence) {
                 bestScore = score;
                 bestMatch = potential;
             }
         }
-        
+
         // If no match, check other scraped events that are already linked
         if (!bestMatch) {
             const similarScraped = await pool.query(`
@@ -5134,19 +5134,19 @@ async function matchAndLinkEvents(options = {}) {
                 AND (LOWER(se.venue_city) = LOWER($3) OR LOWER(se.venue_name) ILIKE $4)
                 LIMIT 50
             `, [scraped.date, scraped.id, scraped.venue_city || '', `%${(scraped.venue_name || '').substring(0, 15)}%`]);
-            
+
             for (const other of similarScraped.rows) {
                 const titleScore = stringSimilarity(scraped.title || '', other.title || '');
                 const venueScore = stringSimilarity(scraped.venue_name || '', other.venue_name || '');
                 const score = (titleScore * 0.7) + (venueScore * 0.3);
-                
+
                 if (score >= minConfidence && score > bestScore) {
                     bestScore = score;
                     bestMatch = { id: other.event_id, title: other.title };
                 }
             }
         }
-        
+
         if (bestMatch) {
             // Link to existing main event
             if (!dryRun) {
@@ -5155,7 +5155,7 @@ async function matchAndLinkEvents(options = {}) {
                     VALUES ($1, $2, $3)
                     ON CONFLICT (event_id, scraped_event_id) DO NOTHING
                 `, [bestMatch.id, scraped.id, bestScore]);
-                
+
                 // Refresh main event with merged data from all linked sources
                 await refreshMainEvent(bestMatch.id);
             }
@@ -5175,7 +5175,7 @@ async function matchAndLinkEvents(options = {}) {
                 WHERE e.date::date = $1::date
                 AND LOWER(e.venue_name) = LOWER($2)
             `, [scraped.date, scraped.venue_name || '']);
-            
+
             let foundNearDuplicate = null;
             for (const existing of nearDuplicateCheck.rows) {
                 const titleSim = stringSimilarity(scraped.title || '', existing.title || '');
@@ -5185,7 +5185,7 @@ async function matchAndLinkEvents(options = {}) {
                     break;
                 }
             }
-            
+
             if (foundNearDuplicate) {
                 // Link to existing event instead of creating new
                 if (!dryRun) {
@@ -5194,7 +5194,7 @@ async function matchAndLinkEvents(options = {}) {
                         VALUES ($1, $2, $3)
                         ON CONFLICT (event_id, scraped_event_id) DO NOTHING
                     `, [foundNearDuplicate.id, scraped.id, 0.5]);
-                    
+
                     await refreshMainEvent(foundNearDuplicate.id);
                 }
                 matched++;
@@ -5209,27 +5209,27 @@ async function matchAndLinkEvents(options = {}) {
                 // Create new main event
                 if (!dryRun) {
                     const eventId = uuidv4();
-                    
+
                     // Extract date as YYYY-MM-DD string (handles Date objects and ISO strings)
                     let dateStr = null;
                     if (scraped.date) {
                         const d = scraped.date instanceof Date ? scraped.date : new Date(scraped.date);
                         dateStr = d.toISOString().split('T')[0];
                     }
-                    
+
                     // Combine date with time for timestamp fields
-                    const startTimestamp = dateStr && scraped.start_time 
-                        ? `${dateStr} ${scraped.start_time}` 
+                    const startTimestamp = dateStr && scraped.start_time
+                        ? `${dateStr} ${scraped.start_time}`
                         : null;
-                    const endTimestamp = dateStr && scraped.end_time 
-                        ? `${dateStr} ${scraped.end_time}` 
+                    const endTimestamp = dateStr && scraped.end_time
+                        ? `${dateStr} ${scraped.end_time}`
                         : null;
-                    
+
                     // Convert artists_json to string for events table
                     const artistsStr = scraped.artists_json && scraped.artists_json.length > 0
                         ? JSON.stringify(scraped.artists_json)
                         : null;
-                    
+
                     await pool.query(`
                         INSERT INTO events (
                             id, source_code, source_id, title, date, start_time, end_time, 
@@ -5254,14 +5254,14 @@ async function matchAndLinkEvents(options = {}) {
                         scraped.venue_country,
                         artistsStr
                     ]);
-                    
+
                     // Link to the new main event
                     await pool.query(`
                         INSERT INTO event_scraped_links (event_id, scraped_event_id, match_confidence)
                         VALUES ($1, $2, 1.0)
                         ON CONFLICT (event_id, scraped_event_id) DO NOTHING
                     `, [eventId, scraped.id]);
-                    
+
                     created++;
                     results.push({
                         action: 'created',
@@ -5272,19 +5272,19 @@ async function matchAndLinkEvents(options = {}) {
             }
         }
     }
-    
+
     // Auto-reject past events after processing
     const autoRejectResult = await autoRejectPastEvents();
-    
+
     console.log(`[Match] Processed ${unlinked.length}: ${created} created, ${matched} matched, ${autoRejectResult.rejected} auto-rejected`);
-    
+
     return { processed: unlinked.length, matched, created, autoRejected: autoRejectResult.rejected, results: results.slice(0, 20) };
 }
 
 // Deduplicate main events that have the same date/venue and similar titles
 async function deduplicateMainEvents() {
     let merged = 0;
-    
+
     // Find potential duplicates
     const duplicates = await pool.query(`
         SELECT e1.id as id1, e2.id as id2, e1.title as title1, e2.title as title2,
@@ -5299,13 +5299,13 @@ async function deduplicateMainEvents() {
         )
         LIMIT 100
     `);
-    
+
     for (const dup of duplicates.rows) {
         const titleSim = stringSimilarity(dup.title1 || '', dup.title2 || '');
-        
+
         if (titleSim >= 0.6) {
             console.log(`[Dedupe] Merging duplicate events: "${dup.title1}" and "${dup.title2}"`);
-            
+
             // Move all scraped links from id2 to id1
             await pool.query(`
                 UPDATE event_scraped_links 
@@ -5313,17 +5313,17 @@ async function deduplicateMainEvents() {
                 WHERE event_id = $2
                 ON CONFLICT (event_id, scraped_event_id) DO NOTHING
             `, [dup.id1, dup.id2]);
-            
+
             // Delete orphaned links
             await pool.query(`DELETE FROM event_scraped_links WHERE event_id = $1`, [dup.id2]);
-            
+
             // Delete the duplicate event
             await pool.query(`DELETE FROM events WHERE id = $1`, [dup.id2]);
-            
+
             merged++;
         }
     }
-    
+
     return { merged };
 }
 
@@ -5336,7 +5336,7 @@ async function deduplicateUnifiedEvents() {
 // Match scraped venues to unified venues
 async function matchAndLinkVenues(options = {}) {
     const { dryRun = false, minConfidence = 0.8 } = options;
-    
+
     const unlinkedResult = await pool.query(`
         SELECT sv.* FROM scraped_venues sv
         WHERE NOT EXISTS (
@@ -5344,9 +5344,9 @@ async function matchAndLinkVenues(options = {}) {
         )
         LIMIT 200
     `);
-    
+
     let matched = 0, created = 0;
-    
+
     for (const scraped of unlinkedResult.rows) {
         // Find potential matches by city and name similarity
         const potentialMatches = await pool.query(`
@@ -5357,21 +5357,21 @@ async function matchAndLinkVenues(options = {}) {
                 OR LOWER(uv.name) ILIKE $3
             )
         `, [scraped.city, scraped.name, `%${scraped.name}%`]);
-        
+
         let bestMatch = null;
         let bestScore = 0;
-        
+
         for (const potential of potentialMatches.rows) {
             const nameScore = stringSimilarity(scraped.name, potential.name);
             const addressScore = stringSimilarity(scraped.address, potential.address);
             const score = (nameScore * 0.7) + (addressScore * 0.3);
-            
+
             if (score > bestScore && score >= minConfidence) {
                 bestScore = score;
                 bestMatch = potential;
             }
         }
-        
+
         if (bestMatch) {
             if (!dryRun) {
                 await pool.query(`
@@ -5387,9 +5387,9 @@ async function matchAndLinkVenues(options = {}) {
                     INSERT INTO unified_venues (name, address, city, country, latitude, longitude, website)
                     VALUES ($1, $2, $3, $4, $5, $6, $7)
                     RETURNING id
-                `, [scraped.name, scraped.address, scraped.city, scraped.country, 
-                    scraped.latitude, scraped.longitude, scraped.content_url]);
-                
+                `, [scraped.name, scraped.address, scraped.city, scraped.country,
+                scraped.latitude, scraped.longitude, scraped.content_url]);
+
                 await pool.query(`
                     INSERT INTO venue_source_links (unified_venue_id, scraped_venue_id, match_confidence, is_primary)
                     VALUES ($1, $2, 1.0, true)
@@ -5398,7 +5398,7 @@ async function matchAndLinkVenues(options = {}) {
             created++;
         }
     }
-    
+
     return { processed: unlinkedResult.rows.length, matched, created };
 }
 
@@ -5410,9 +5410,9 @@ async function matchAndLinkVenues(options = {}) {
 app.post('/scrape/events', async (req, res) => {
     try {
         const { sources = ['ra', 'ticketmaster'], city, limit = 100, match = true } = req.body;
-        
+
         if (!city) {
-            return res.status(400).json({ 
+            return res.status(400).json({
                 error: 'City required',
                 availableCities: {
                     ra: Object.keys(RA_AREA_MAP),
@@ -5420,14 +5420,14 @@ app.post('/scrape/events', async (req, res) => {
                 }
             });
         }
-        
+
         const results = {};
         const sourceList = Array.isArray(sources) ? sources : [sources];
-        
+
         for (const source of sourceList) {
             try {
                 let events = [];
-                
+
                 if (source === 'ra') {
                     events = await scrapeResidentAdvisor(city, { limit });
                 } else if (source === 'ticketmaster') {
@@ -5436,7 +5436,7 @@ app.post('/scrape/events', async (req, res) => {
                     results[source] = { error: `Unknown source: ${source}` };
                     continue;
                 }
-                
+
                 const saveResult = await saveScrapedEvents(events);
                 results[source] = {
                     fetched: events.length,
@@ -5447,13 +5447,13 @@ app.post('/scrape/events', async (req, res) => {
                 results[source] = { error: err.message };
             }
         }
-        
+
         // Optionally run matching
         let matchResult = null;
         if (match) {
             matchResult = await matchAndLinkEvents({ dryRun: false });
         }
-        
+
         res.json({
             success: true,
             city,
@@ -5470,17 +5470,17 @@ app.post('/scrape/events', async (req, res) => {
 app.post('/scrape/ticketmaster', async (req, res) => {
     try {
         const { city, limit = 100, classificationName = 'Music' } = req.body;
-        
+
         if (!city) {
-            return res.status(400).json({ 
+            return res.status(400).json({
                 error: 'City required',
                 availableCities: Object.keys(TICKETMASTER_CITY_MAP)
             });
         }
-        
+
         const events = await scrapeTicketmaster(city, { limit, classificationName });
         const saveResult = await saveScrapedEvents(events);
-        
+
         res.json({
             success: true,
             city,
@@ -5498,10 +5498,10 @@ app.post('/scrape/ticketmaster', async (req, res) => {
 app.post('/scrape/match', async (req, res) => {
     try {
         const { dryRun = false, minConfidence = 0.6 } = req.body;
-        
+
         const eventResult = await matchAndLinkEvents({ dryRun, minConfidence });
         const venueResult = await matchAndLinkVenues({ dryRun, minConfidence: 0.8 });
-        
+
         res.json({
             success: true,
             dryRun,
@@ -5532,7 +5532,7 @@ app.post('/scrape/auto-reject', async (req, res) => {
 app.post('/scrape/merge-duplicates', async (req, res) => {
     try {
         const { dryRun = false } = req.body;
-        
+
         // Find potential duplicate events
         const duplicates = await pool.query(`
             SELECT e1.id as id1, e2.id as id2, 
@@ -5546,13 +5546,13 @@ app.post('/scrape/merge-duplicates', async (req, res) => {
             WHERE similarity(LOWER(COALESCE(e1.title, '')), LOWER(COALESCE(e2.title, ''))) > 0.5
             LIMIT 200
         `);
-        
+
         let merged = 0;
         const mergeResults = [];
-        
+
         for (const dup of duplicates.rows) {
             const titleSim = stringSimilarity(dup.title1 || '', dup.title2 || '');
-            
+
             if (titleSim >= 0.5) {
                 // Keep the older event (id1), merge links from id2 to id1
                 if (!dryRun) {
@@ -5566,17 +5566,17 @@ app.post('/scrape/merge-duplicates', async (req, res) => {
                             WHERE event_id = $1 AND scraped_event_id = event_scraped_links.scraped_event_id
                         )
                     `, [dup.id1, dup.id2]);
-                    
+
                     // Delete any remaining links for id2
                     await pool.query(`DELETE FROM event_scraped_links WHERE event_id = $1`, [dup.id2]);
-                    
+
                     // Delete the duplicate event
                     await pool.query(`DELETE FROM events WHERE id = $1`, [dup.id2]);
-                    
+
                     // Refresh the kept event
                     await refreshMainEvent(dup.id1);
                 }
-                
+
                 merged++;
                 mergeResults.push({
                     kept: { id: dup.id1, title: dup.title1 },
@@ -5587,7 +5587,7 @@ app.post('/scrape/merge-duplicates', async (req, res) => {
                 });
             }
         }
-        
+
         res.json({
             success: true,
             dryRun,
@@ -5617,16 +5617,16 @@ app.post('/scrape/backfill-artists', async (req, res) => {
             FROM events e
             WHERE e.artists IS NULL
         `);
-        
+
         let updated = 0;
         const results = [];
-        
+
         for (const event of eventsToUpdate.rows) {
             if (event.artists_json && event.artists_json.length > 0) {
                 await pool.query(`
                     UPDATE events SET artists = $1 WHERE id = $2
                 `, [JSON.stringify(event.artists_json), event.id]);
-                
+
                 updated++;
                 results.push({
                     id: event.id,
@@ -5634,7 +5634,7 @@ app.post('/scrape/backfill-artists', async (req, res) => {
                 });
             }
         }
-        
+
         res.json({
             success: true,
             updated,
@@ -5650,7 +5650,7 @@ app.post('/scrape/backfill-artists', async (req, res) => {
 // Deduplicate venues in the main venues table
 async function deduplicateVenues() {
     let merged = 0;
-    
+
     // Find potential duplicates by name similarity in the same city
     const duplicates = await pool.query(`
         SELECT v1.id as id1, v2.id as id2, v1.name as name1, v2.name as name2,
@@ -5663,43 +5663,43 @@ async function deduplicateVenues() {
            OR LOWER(REPLACE(v1.name, ' ', '')) = LOWER(REPLACE(v2.name, ' ', ''))
         LIMIT 100
     `);
-    
+
     for (const dup of duplicates.rows) {
         const nameSim = stringSimilarity(dup.name1 || '', dup.name2 || '');
-        
+
         if (nameSim >= 0.7) {
             console.log(`Merging duplicate venues: "${dup.name1}" and "${dup.name2}" in ${dup.city} (similarity: ${nameSim.toFixed(2)})`);
-            
+
             // Determine which one to keep (prefer the one with more data)
             const score1 = (dup.lat1 ? 1 : 0) + (dup.addr1 ? 1 : 0);
             const score2 = (dup.lat2 ? 1 : 0) + (dup.addr2 ? 1 : 0);
             const [keepId, deleteId] = score1 >= score2 ? [dup.id1, dup.id2] : [dup.id2, dup.id1];
-            
+
             // Update events to point to the kept venue
             await pool.query(`
                 UPDATE events SET venue_id = $1 WHERE venue_id = $2
             `, [keepId, deleteId]);
-            
+
             // Update venue_source_links if they exist
             try {
                 await pool.query(`
                     UPDATE venue_source_links SET unified_venue_id = $1 WHERE unified_venue_id = $2
                 `, [keepId, deleteId]);
             } catch (e) { /* table might not exist */ }
-            
+
             // Merge any missing data from deleted venue to kept venue
             const [keptVenue, deletedVenue] = await Promise.all([
                 pool.query('SELECT * FROM venues WHERE id = $1', [keepId]),
                 pool.query('SELECT * FROM venues WHERE id = $1', [deleteId])
             ]);
-            
+
             if (keptVenue.rows[0] && deletedVenue.rows[0]) {
                 const kept = keptVenue.rows[0];
                 const deleted = deletedVenue.rows[0];
                 const updates = [];
                 const params = [];
                 let paramIdx = 1;
-                
+
                 // Fill in missing fields from the duplicate
                 if (!kept.address && deleted.address) {
                     updates.push(`address = $${paramIdx++}`);
@@ -5717,26 +5717,26 @@ async function deduplicateVenues() {
                     updates.push(`content_url = $${paramIdx++}`);
                     params.push(deleted.content_url);
                 }
-                
+
                 if (updates.length > 0) {
                     params.push(keepId);
                     await pool.query(`UPDATE venues SET ${updates.join(', ')} WHERE id = $${paramIdx}`, params);
                 }
             }
-            
+
             // Delete the duplicate venue
             await pool.query('DELETE FROM venues WHERE id = $1', [deleteId]);
             merged++;
         }
     }
-    
+
     return { merged };
 }
 
 // Deduplicate artists in the main artists table
 async function deduplicateArtists() {
     let merged = 0;
-    
+
     // Find potential duplicates by name similarity
     const duplicates = await pool.query(`
         SELECT a1.id as id1, a2.id as id2, a1.name as name1, a2.name as name2
@@ -5746,46 +5746,117 @@ async function deduplicateArtists() {
            OR LOWER(REPLACE(a1.name, ' ', '')) = LOWER(REPLACE(a2.name, ' ', ''))
         LIMIT 100
     `);
-    
+
     for (const dup of duplicates.rows) {
         const nameSim = stringSimilarity(dup.name1 || '', dup.name2 || '');
-        
+
         if (nameSim >= 0.85) {
             console.log(`Merging duplicate artists: "${dup.name1}" and "${dup.name2}" (similarity: ${nameSim.toFixed(2)})`);
-            
+
             // Keep the first one (id1)
             const keepId = dup.id1;
             const deleteId = dup.id2;
-            
+
             // Update artist_source_links if they exist
             try {
                 await pool.query(`
                     UPDATE artist_source_links SET unified_artist_id = $1 WHERE unified_artist_id = $2
                 `, [keepId, deleteId]);
             } catch (e) { /* table might not exist */ }
-            
+
             // Delete the duplicate artist
             await pool.query('DELETE FROM artists WHERE id = $1', [deleteId]);
             merged++;
         }
     }
-    
+
     return { merged };
 }
+
+// ============================================
+// SYNC JOB HELPERS
+// ============================================
+
+let currentSyncJob = null;
+
+function createSyncJob(cities, sources) {
+    currentSyncJob = {
+        id: Date.now().toString(),
+        startTime: new Date(),
+        status: 'running',
+        cities,
+        sources,
+        progress: {
+            currentCity: null,
+            currentSource: null,
+            phase: 'initializing',
+            citiesProcessed: 0,
+            percentComplete: 0
+        },
+        results: null,
+        error: null
+    };
+    return currentSyncJob;
+}
+
+function updateSyncProgress(update) {
+    if (currentSyncJob && currentSyncJob.status === 'running') {
+        currentSyncJob.progress = { ...currentSyncJob.progress, ...update };
+        currentSyncJob.lastUpdated = new Date();
+    }
+}
+
+function completeSyncJob(results, error = null) {
+    if (currentSyncJob) {
+        currentSyncJob.endTime = new Date();
+        currentSyncJob.status = error ? 'failed' : 'completed';
+        currentSyncJob.results = results;
+        currentSyncJob.error = error;
+    }
+}
+
+// Placeholder enrichment functions
+async function enrichMissingVenueData(limit) {
+    console.log(`[Enrichment] Placeholder: enrichMissingVenueData called with limit ${limit}`);
+    return { saved: 0 };
+}
+
+async function enrichMissingArtistData(limit) {
+    console.log(`[Enrichment] Placeholder: enrichMissingArtistData called with limit ${limit}`);
+    return { saved: 0 };
+}
+
+// Get sync status
+app.get('/sync/status', (req, res) => {
+    if (!currentSyncJob) {
+        return res.json({ status: 'idle' });
+    }
+    res.json(currentSyncJob);
+});
+
+// Stop sync job
+app.post('/sync/stop', (req, res) => {
+    if (currentSyncJob && currentSyncJob.status === 'running') {
+        currentSyncJob.status = 'stopped';
+        res.json({ success: true, message: 'Sync job stopping...' });
+    } else {
+        res.json({ success: false, message: 'No running sync job' });
+    }
+});
 
 // ============== Sync Pipeline Endpoint ==============
 // Full sync pipeline: scrape → match → enrich → dedupe
 app.post('/sync/pipeline', async (req, res) => {
     try {
         const { cities = [], sources = ['ra', 'ticketmaster'], enrichAfter = true, dedupeAfter = true } = req.body;
-        
+
         if (!cities || cities.length === 0) {
             return res.status(400).json({ error: 'At least one city is required' });
         }
-        
+
         // Check if a sync job is already running
         if (currentSyncJob && currentSyncJob.status === 'running') {
-            return res.status(409).json({ 
+            return res.status(409).json({
                 error: 'Sync job already in progress',
                 currentJob: {
                     status: currentSyncJob.status,
@@ -5795,12 +5866,12 @@ app.post('/sync/pipeline', async (req, res) => {
                 }
             });
         }
-        
+
         console.log(`[Sync Pipeline] Starting for ${cities.length} cities:`, cities);
-        
+
         // Initialize sync job tracking
         createSyncJob(cities, sources);
-        
+
         const results = {
             scrape: {
                 cities_processed: 0,
@@ -5814,7 +5885,7 @@ app.post('/sync/pipeline', async (req, res) => {
             enrich: null,
             dedupe: null
         };
-        
+
         // Send immediate response with job ID
         res.json({
             success: true,
@@ -5822,14 +5893,14 @@ app.post('/sync/pipeline', async (req, res) => {
             jobId: currentSyncJob.id,
             totalCities: cities.length
         });
-        
+
         // Process each city with a pause between (run async)
         (async () => {
             try {
                 for (let i = 0; i < cities.length; i++) {
                     const city = cities[i].toLowerCase();
                     console.log(`[Sync Pipeline] Processing city ${i + 1}/${cities.length}: ${city}`);
-                    
+
                     // Update progress
                     updateSyncProgress({
                         currentCity: city,
@@ -5838,87 +5909,87 @@ app.post('/sync/pipeline', async (req, res) => {
                         citiesProcessed: i,
                         percentComplete: Math.floor((i / cities.length) * 100)
                     });
-            
-            try {
-                const cityResults = {};
-                
-                for (const source of sources) {
+
                     try {
-                        // Update current source
-                        updateSyncProgress({ currentSource: source });
-                        
-                        let events = [];
-                        const startTime = Date.now();
-                        
-                        if (source === 'ra') {
-                            events = await scrapeResidentAdvisor(city, { limit: 100 });
-                        } else if (source === 'ticketmaster') {
-                            events = await scrapeTicketmaster(city, { limit: 100 });
+                        const cityResults = {};
+
+                        for (const source of sources) {
+                            try {
+                                // Update current source
+                                updateSyncProgress({ currentSource: source });
+
+                                let events = [];
+                                const startTime = Date.now();
+
+                                if (source === 'ra') {
+                                    events = await scrapeResidentAdvisor(city, { limit: 100 });
+                                } else if (source === 'ticketmaster') {
+                                    events = await scrapeTicketmaster(city, { limit: 100 });
+                                }
+
+                                const saveResult = await saveScrapedEvents(events);
+                                const duration = Date.now() - startTime;
+
+                                cityResults[source] = {
+                                    fetched: events.length,
+                                    ...saveResult
+                                };
+
+                                results.scrape.total_fetched += events.length;
+                                results.scrape.total_inserted += saveResult.inserted || 0;
+                                results.scrape.total_updated += saveResult.updated || 0;
+
+                                // Log to scrape history
+                                await logScrapeHistory({
+                                    city,
+                                    source_code: source,
+                                    events_fetched: events.length,
+                                    events_inserted: saveResult.inserted || 0,
+                                    events_updated: saveResult.updated || 0,
+                                    venues_created: saveResult.venues_created || 0,
+                                    artists_created: saveResult.artists_created || 0,
+                                    duration_ms: duration
+                                });
+                            } catch (sourceErr) {
+                                console.error(`[Sync Pipeline] Error scraping ${source} for ${city}:`, sourceErr.message);
+                                cityResults[source] = { error: sourceErr.message };
+
+                                // Log error to history
+                                await logScrapeHistory({
+                                    city,
+                                    source_code: source,
+                                    error: sourceErr.message
+                                });
+                            }
                         }
-                        
-                        const saveResult = await saveScrapedEvents(events);
-                        const duration = Date.now() - startTime;
-                        
-                        cityResults[source] = {
-                            fetched: events.length,
-                            ...saveResult
-                        };
-                        
-                        results.scrape.total_fetched += events.length;
-                        results.scrape.total_inserted += saveResult.inserted || 0;
-                        results.scrape.total_updated += saveResult.updated || 0;
-                        
-                        // Log to scrape history
-                        await logScrapeHistory({
-                            city,
-                            source_code: source,
-                            events_fetched: events.length,
-                            events_inserted: saveResult.inserted || 0,
-                            events_updated: saveResult.updated || 0,
-                            venues_created: saveResult.venues_created || 0,
-                            artists_created: saveResult.artists_created || 0,
-                            duration_ms: duration
-                        });
-                    } catch (sourceErr) {
-                        console.error(`[Sync Pipeline] Error scraping ${source} for ${city}:`, sourceErr.message);
-                        cityResults[source] = { error: sourceErr.message };
-                        
-                        // Log error to history
-                        await logScrapeHistory({
-                            city,
-                            source_code: source,
-                            error: sourceErr.message
-                        });
-                    }
-                }
-                
-                results.scrape.by_city[city] = cityResults;
-                results.scrape.cities_processed++;
-                
-                // Ensure city exists in database
-                await pool.query(`
+
+                        results.scrape.by_city[city] = cityResults;
+                        results.scrape.cities_processed++;
+
+                        // Ensure city exists in database
+                        await pool.query(`
                     INSERT INTO cities (name, country)
                     VALUES ($1, $2)
                     ON CONFLICT (name) DO NOTHING
                 `, [city.charAt(0).toUpperCase() + city.slice(1), 'Unknown']);
-                
-            } catch (cityErr) {
-                console.error(`[Sync Pipeline] Error processing ${city}:`, cityErr.message);
-                results.scrape.errors.push({ city, error: cityErr.message });
-            }
-            
-            // Pause between cities to avoid rate limiting (2 seconds)
-            if (i < cities.length - 1) {
-                await new Promise(resolve => setTimeout(resolve, 2000));
-            }
-        }
-        
+
+                    } catch (cityErr) {
+                        console.error(`[Sync Pipeline] Error processing ${city}:`, cityErr.message);
+                        results.scrape.errors.push({ city, error: cityErr.message });
+                    }
+
+                    // Pause between cities to avoid rate limiting (2 seconds)
+                    if (i < cities.length - 1) {
+                        await new Promise(resolve => setTimeout(resolve, 2000));
+                    }
+                }
+
                 // Update progress after city completion
                 updateSyncProgress({
                     citiesProcessed: i + 1,
                     percentComplete: Math.floor(((i + 1) / cities.length) * 100)
                 });
-                
+
                 // Run matching to link scraped events to main events
                 updateSyncProgress({ phase: 'matching' });
                 console.log('[Sync Pipeline] Running matching...');
@@ -5928,7 +5999,7 @@ app.post('/sync/pipeline', async (req, res) => {
                     console.error('[Sync Pipeline] Matching error:', matchErr.message);
                     results.match = { error: matchErr.message };
                 }
-                
+
                 // Enrich venues and artists if enabled
                 if (enrichAfter) {
                     updateSyncProgress({ phase: 'enriching' });
@@ -5947,7 +6018,7 @@ app.post('/sync/pipeline', async (req, res) => {
                         results.enrich = { error: enrichErr.message };
                     }
                 }
-                
+
                 // Deduplicate if enabled
                 if (dedupeAfter) {
                     updateSyncProgress({ phase: 'deduplicating' });
@@ -5968,18 +6039,18 @@ app.post('/sync/pipeline', async (req, res) => {
                         results.dedupe = { error: dedupeErr.message };
                     }
                 }
-                
+
                 console.log('[Sync Pipeline] Complete!', results);
-                
+
                 // Complete the sync job
                 completeSyncJob(results);
-                
+
             } catch (error) {
                 console.error('[Sync Pipeline] Fatal error:', error);
                 completeSyncJob(null, error.message);
             }
         })();
-        
+
     } catch (error) {
         console.error('[Sync Pipeline] Fatal error:', error);
         res.status(500).json({ error: error.message });
@@ -5991,7 +6062,7 @@ app.post('/scrape/deduplicate', async (req, res) => {
     try {
         const { type = 'all' } = req.body;
         const results = {};
-        
+
         if (type === 'all' || type === 'events') {
             results.events = await deduplicateUnifiedEvents();
         }
@@ -6001,7 +6072,7 @@ app.post('/scrape/deduplicate', async (req, res) => {
         if (type === 'all' || type === 'artists') {
             results.artists = await deduplicateArtists();
         }
-        
+
         res.json({
             success: true,
             results,
@@ -6017,12 +6088,12 @@ app.post('/scrape/deduplicate', async (req, res) => {
 app.get('/scraped/events', async (req, res) => {
     try {
         const { source, city, linked, limit = 100, offset = 0 } = req.query;
-        
+
         // Use event_scraped_links (not event_source_links) for link checking
         let query = 'SELECT se.*, EXISTS(SELECT 1 FROM event_scraped_links esl WHERE esl.scraped_event_id = se.id) as is_linked FROM scraped_events se WHERE 1=1';
         const params = [];
         let paramIndex = 1;
-        
+
         if (source) {
             query += ` AND se.source_code = $${paramIndex++}`;
             params.push(source);
@@ -6036,22 +6107,22 @@ app.get('/scraped/events', async (req, res) => {
         } else if (linked === 'false') {
             query += ` AND NOT EXISTS(SELECT 1 FROM event_scraped_links esl WHERE esl.scraped_event_id = se.id)`;
         }
-        
+
         query += ` ORDER BY se.date ASC LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
         params.push(parseInt(limit), parseInt(offset));
-        
+
         const result = await pool.query(query, params);
-        
+
         // Build count query separately
         let countQuery = 'SELECT COUNT(*) FROM scraped_events se WHERE 1=1';
         if (source) countQuery += ` AND se.source_code = $1`;
         if (city) countQuery += ` AND LOWER(se.venue_city) = LOWER($${source ? 2 : 1})`;
         if (linked === 'true') countQuery += ` AND EXISTS(SELECT 1 FROM event_scraped_links esl WHERE esl.scraped_event_id = se.id)`;
         else if (linked === 'false') countQuery += ` AND NOT EXISTS(SELECT 1 FROM event_scraped_links esl WHERE esl.scraped_event_id = se.id)`;
-        
+
         const countParams = params.slice(0, -2);
         const countResult = await pool.query(countQuery, countParams);
-        
+
         res.json({
             data: result.rows,
             total: parseInt(countResult.rows[0].count),
@@ -6066,7 +6137,7 @@ app.get('/scraped/events', async (req, res) => {
                 let query = 'SELECT se.*, false as is_linked FROM scraped_events se WHERE 1=1';
                 const params = [];
                 let paramIndex = 1;
-                
+
                 if (source) {
                     query += ` AND se.source_code = $${paramIndex++}`;
                     params.push(source);
@@ -6076,16 +6147,16 @@ app.get('/scraped/events', async (req, res) => {
                     params.push(city);
                 }
                 // Skip linked filter if table doesn't exist
-                
+
                 query += ` ORDER BY se.date ASC LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
                 params.push(parseInt(limit), parseInt(offset));
-                
+
                 const result = await pool.query(query, params);
-                
+
                 let countQuery = 'SELECT COUNT(*) FROM scraped_events se WHERE 1=1';
                 const countParams = params.slice(0, -2);
                 const countResult = await pool.query(countQuery, countParams.length > 0 ? countParams : []);
-                
+
                 res.json({
                     data: result.rows,
                     total: parseInt(countResult.rows[0].count),
@@ -6141,7 +6212,7 @@ app.delete('/scraped/venues', async (req, res) => {
 app.get('/unified/events', async (req, res) => {
     try {
         const { city, published, limit = 100, offset = 0 } = req.query;
-        
+
         let query = `
             SELECT ue.*,
                 (SELECT json_agg(json_build_object(
@@ -6159,7 +6230,7 @@ app.get('/unified/events', async (req, res) => {
         `;
         const params = [];
         let paramIndex = 1;
-        
+
         if (city) {
             query += ` AND LOWER(ue.venue_city) = LOWER($${paramIndex++})`;
             params.push(city);
@@ -6169,12 +6240,12 @@ app.get('/unified/events', async (req, res) => {
         } else if (published === 'false') {
             query += ` AND ue.is_published = false`;
         }
-        
+
         query += ` ORDER BY ue.date ASC LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
         params.push(parseInt(limit), parseInt(offset));
-        
+
         const result = await pool.query(query, params);
-        
+
         res.json({
             data: result.rows,
             total: result.rows.length,
@@ -6219,11 +6290,11 @@ app.get('/unified/events/:id', async (req, res) => {
             FROM unified_events ue
             WHERE ue.id = $1
         `, [req.params.id]);
-        
+
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Event not found' });
         }
-        
+
         res.json(result.rows[0]);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -6235,18 +6306,18 @@ app.patch('/unified/events/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const updates = req.body;
-        
+
         // Check if unified event exists
         const existing = await pool.query('SELECT * FROM unified_events WHERE id = $1', [id]);
         if (existing.rows.length === 0) {
             return res.status(404).json({ error: 'Event not found' });
         }
-        
-        const dataFields = ['title', 'date', 'start_time', 'end_time', 'description', 
+
+        const dataFields = ['title', 'date', 'start_time', 'end_time', 'description',
             'flyer_front', 'ticket_url', 'price_info', 'venue_name',
             'venue_address', 'venue_city', 'venue_country'];
         const metaFields = ['is_published', 'is_featured', 'unified_venue_id'];
-        
+
         // Separate data updates from meta updates
         const dataUpdates = {};
         const metaUpdates = {};
@@ -6254,7 +6325,7 @@ app.patch('/unified/events/:id', async (req, res) => {
             if (dataFields.includes(key)) dataUpdates[key] = value;
             if (metaFields.includes(key)) metaUpdates[key] = value;
         }
-        
+
         // If there are data updates, create/update 'original' source entry
         if (Object.keys(dataUpdates).length > 0) {
             // Check if original source already exists
@@ -6263,7 +6334,7 @@ app.patch('/unified/events/:id', async (req, res) => {
                 JOIN scraped_events se ON se.id = esl.scraped_event_id
                 WHERE esl.unified_event_id = $1 AND se.source_code = 'original'
             `, [id]);
-            
+
             if (existingOriginal.rows.length > 0) {
                 // Update existing original source entry
                 const originalId = existingOriginal.rows[0].id;
@@ -6284,7 +6355,7 @@ app.patch('/unified/events/:id', async (req, res) => {
                 const unified = existing.rows[0];
                 const mergedData = { ...unified, ...dataUpdates };
                 const originalId = `original_${id}_${Date.now()}`;
-                
+
                 await pool.query(`
                     INSERT INTO scraped_events (
                         id, source_code, source_event_id, title, date, start_time, end_time,
@@ -6297,18 +6368,18 @@ app.patch('/unified/events/:id', async (req, res) => {
                     mergedData.ticket_url, mergedData.venue_name, mergedData.venue_address,
                     mergedData.venue_city, mergedData.venue_country
                 ]);
-                
+
                 // Link to unified event with highest priority
                 await pool.query(`
                     INSERT INTO event_source_links (scraped_event_id, unified_event_id, match_confidence, priority, is_primary)
                     VALUES ($1, $2, 1.0, 1, true)
                 `, [originalId, id]);
             }
-            
+
             // Refresh unified data from all sources
             await refreshUnifiedEvent(id);
         }
-        
+
         // Apply meta updates directly to unified event
         if (Object.keys(metaUpdates).length > 0) {
             const metaClauses = [];
@@ -6327,7 +6398,7 @@ app.patch('/unified/events/:id', async (req, res) => {
                 WHERE id = $${idx}
             `, metaValues);
         }
-        
+
         // Return updated event with sources
         const result = await pool.query(`
             SELECT ue.*,
@@ -6340,7 +6411,7 @@ app.patch('/unified/events/:id', async (req, res) => {
                 WHERE esl.unified_event_id = ue.id) as source_references
             FROM unified_events ue WHERE ue.id = $1
         `, [id]);
-        
+
         res.json(result.rows[0]);
     } catch (error) {
         console.error('Error updating unified event:', error);
@@ -6352,7 +6423,7 @@ app.patch('/unified/events/:id', async (req, res) => {
 app.get('/scraped/venues', async (req, res) => {
     try {
         const { source, city, linked, search, limit = 100, offset = 0 } = req.query;
-        
+
         let query = `
             SELECT sv.*, 
                 EXISTS(SELECT 1 FROM venue_source_links vsl WHERE vsl.scraped_venue_id = sv.id) as is_linked,
@@ -6362,7 +6433,7 @@ app.get('/scraped/venues', async (req, res) => {
         `;
         const params = [];
         let paramIndex = 1;
-        
+
         if (source) {
             query += ` AND sv.source_code = $${paramIndex++}`;
             params.push(source);
@@ -6380,12 +6451,12 @@ app.get('/scraped/venues', async (req, res) => {
         } else if (linked === 'false') {
             query += ` AND NOT EXISTS(SELECT 1 FROM venue_source_links vsl WHERE vsl.scraped_venue_id = sv.id)`;
         }
-        
+
         const dataQuery = query + ` ORDER BY sv.name ASC LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
         params.push(parseInt(limit), parseInt(offset));
-        
+
         const result = await pool.query(dataQuery, params);
-        
+
         // Count query
         const countParams = params.slice(0, -2);
         let countQuery = `SELECT COUNT(*) FROM scraped_venues sv WHERE 1=1`;
@@ -6395,9 +6466,9 @@ app.get('/scraped/venues', async (req, res) => {
         if (search) countQuery += ` AND (sv.name ILIKE $${countParamIndex++} OR sv.address ILIKE $${countParamIndex - 1})`;
         if (linked === 'true') countQuery += ` AND EXISTS(SELECT 1 FROM venue_source_links vsl WHERE vsl.scraped_venue_id = sv.id)`;
         else if (linked === 'false') countQuery += ` AND NOT EXISTS(SELECT 1 FROM venue_source_links vsl WHERE vsl.scraped_venue_id = sv.id)`;
-        
+
         const countResult = await pool.query(countQuery, countParams);
-        
+
         res.json({
             data: result.rows,
             total: parseInt(countResult.rows[0].count),
@@ -6414,7 +6485,7 @@ app.get('/scraped/venues', async (req, res) => {
 app.get('/scraped/artists', async (req, res) => {
     try {
         const { source, search, linked, limit = 100, offset = 0 } = req.query;
-        
+
         let query = `
             SELECT sa.*, 
                 EXISTS(SELECT 1 FROM artist_source_links asl WHERE asl.scraped_artist_id = sa.id) as is_linked,
@@ -6424,7 +6495,7 @@ app.get('/scraped/artists', async (req, res) => {
         `;
         const params = [];
         let paramIndex = 1;
-        
+
         if (source) {
             query += ` AND sa.source_code = $${paramIndex++}`;
             params.push(source);
@@ -6438,12 +6509,12 @@ app.get('/scraped/artists', async (req, res) => {
         } else if (linked === 'false') {
             query += ` AND NOT EXISTS(SELECT 1 FROM artist_source_links asl WHERE asl.scraped_artist_id = sa.id)`;
         }
-        
+
         const dataQuery = query + ` ORDER BY sa.name ASC LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
         params.push(parseInt(limit), parseInt(offset));
-        
+
         const result = await pool.query(dataQuery, params);
-        
+
         // Count query
         const countParams = params.slice(0, -2);
         let countQuery = `SELECT COUNT(*) FROM scraped_artists sa WHERE 1=1`;
@@ -6452,9 +6523,9 @@ app.get('/scraped/artists', async (req, res) => {
         if (search) countQuery += ` AND sa.name ILIKE $${countParamIndex++}`;
         if (linked === 'true') countQuery += ` AND EXISTS(SELECT 1 FROM artist_source_links asl WHERE asl.scraped_artist_id = sa.id)`;
         else if (linked === 'false') countQuery += ` AND NOT EXISTS(SELECT 1 FROM artist_source_links asl WHERE asl.scraped_artist_id = sa.id)`;
-        
+
         const countResult = await pool.query(countQuery, countParams);
-        
+
         res.json({
             data: result.rows,
             total: parseInt(countResult.rows[0].count),
@@ -6471,7 +6542,7 @@ app.get('/scraped/artists', async (req, res) => {
 app.get('/unified/venues', async (req, res) => {
     try {
         const { city, search, limit = 100, offset = 0 } = req.query;
-        
+
         let query = `
             SELECT uv.*,
                 (SELECT json_agg(json_build_object(
@@ -6489,7 +6560,7 @@ app.get('/unified/venues', async (req, res) => {
         `;
         const params = [];
         let paramIndex = 1;
-        
+
         if (city) {
             query += ` AND LOWER(uv.city) = LOWER($${paramIndex++})`;
             params.push(city);
@@ -6498,21 +6569,21 @@ app.get('/unified/venues', async (req, res) => {
             query += ` AND (uv.name ILIKE $${paramIndex++} OR uv.address ILIKE $${paramIndex - 1})`;
             params.push(`%${search}%`);
         }
-        
+
         const dataQuery = query + ` ORDER BY uv.name ASC LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
         params.push(parseInt(limit), parseInt(offset));
-        
+
         const result = await pool.query(dataQuery, params);
-        
+
         // Count
         const countParams = params.slice(0, -2);
         let countQuery = `SELECT COUNT(*) FROM unified_venues uv WHERE 1=1`;
         let countParamIndex = 1;
         if (city) countQuery += ` AND LOWER(uv.city) = LOWER($${countParamIndex++})`;
         if (search) countQuery += ` AND (uv.name ILIKE $${countParamIndex++} OR uv.address ILIKE $${countParamIndex - 1})`;
-        
+
         const countResult = await pool.query(countQuery, countParams);
-        
+
         res.json({
             data: result.rows,
             total: parseInt(countResult.rows[0].count),
@@ -6550,11 +6621,11 @@ app.get('/unified/venues/:id', async (req, res) => {
             FROM unified_venues uv
             WHERE uv.id = $1
         `, [req.params.id]);
-        
+
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Venue not found' });
         }
-        
+
         res.json(result.rows[0]);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -6566,18 +6637,18 @@ app.patch('/unified/venues/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const updates = req.body;
-        
+
         const existing = await pool.query('SELECT * FROM unified_venues WHERE id = $1', [id]);
         if (existing.rows.length === 0) {
             return res.status(404).json({ error: 'Venue not found' });
         }
-        
+
         const dataFields = ['name', 'address', 'city', 'country', 'latitude', 'longitude', 'website', 'capacity'];
         const dataUpdates = {};
         for (const [key, value] of Object.entries(updates)) {
             if (dataFields.includes(key)) dataUpdates[key] = value;
         }
-        
+
         if (Object.keys(dataUpdates).length > 0) {
             // Check if original source already exists
             const existingOriginal = await pool.query(`
@@ -6585,7 +6656,7 @@ app.patch('/unified/venues/:id', async (req, res) => {
                 JOIN scraped_venues sv ON sv.id = vsl.scraped_venue_id
                 WHERE vsl.unified_venue_id = $1 AND sv.source_code = 'original'
             `, [id]);
-            
+
             if (existingOriginal.rows.length > 0) {
                 const originalId = existingOriginal.rows[0].id;
                 const updateClauses = [];
@@ -6604,7 +6675,7 @@ app.patch('/unified/venues/:id', async (req, res) => {
                 const unified = existing.rows[0];
                 const mergedData = { ...unified, ...dataUpdates };
                 const originalId = `original_venue_${id}_${Date.now()}`;
-                
+
                 await pool.query(`
                     INSERT INTO scraped_venues (
                         id, source_code, source_venue_id, name, address, city, country, latitude, longitude, content_url, capacity
@@ -6614,16 +6685,16 @@ app.patch('/unified/venues/:id', async (req, res) => {
                     mergedData.country, mergedData.latitude, mergedData.longitude,
                     mergedData.website, mergedData.capacity
                 ]);
-                
+
                 await pool.query(`
                     INSERT INTO venue_source_links (scraped_venue_id, unified_venue_id, match_confidence, priority)
                     VALUES ($1, $2, 1.0, 1)
                 `, [originalId, id]);
             }
-            
+
             await refreshUnifiedVenue(id);
         }
-        
+
         const result = await pool.query(`
             SELECT uv.*,
                 (SELECT json_agg(json_build_object(
@@ -6634,7 +6705,7 @@ app.patch('/unified/venues/:id', async (req, res) => {
                 WHERE vsl.unified_venue_id = uv.id) as source_references
             FROM unified_venues uv WHERE uv.id = $1
         `, [id]);
-        
+
         res.json(result.rows[0]);
     } catch (error) {
         console.error('Error updating unified venue:', error);
@@ -6646,7 +6717,7 @@ app.patch('/unified/venues/:id', async (req, res) => {
 app.get('/unified/artists', async (req, res) => {
     try {
         const { search, limit = 100, offset = 0 } = req.query;
-        
+
         let query = `
             SELECT ua.*,
                 (SELECT json_agg(json_build_object(
@@ -6665,24 +6736,24 @@ app.get('/unified/artists', async (req, res) => {
         `;
         const params = [];
         let paramIndex = 1;
-        
+
         if (search) {
             query += ` AND ua.name ILIKE $${paramIndex++}`;
             params.push(`%${search}%`);
         }
-        
+
         const dataQuery = query + ` ORDER BY ua.name ASC LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
         params.push(parseInt(limit), parseInt(offset));
-        
+
         const result = await pool.query(dataQuery, params);
-        
+
         // Count
         const countParams = params.slice(0, -2);
         let countQuery = `SELECT COUNT(*) FROM unified_artists ua WHERE 1=1`;
         if (search) countQuery += ` AND ua.name ILIKE $1`;
-        
+
         const countResult = await pool.query(countQuery, countParams);
-        
+
         res.json({
             data: result.rows,
             total: parseInt(countResult.rows[0].count),
@@ -6717,11 +6788,11 @@ app.get('/unified/artists/:id', async (req, res) => {
             FROM unified_artists ua
             WHERE ua.id = $1
         `, [req.params.id]);
-        
+
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Artist not found' });
         }
-        
+
         res.json(result.rows[0]);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -6733,25 +6804,25 @@ app.patch('/unified/artists/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const updates = req.body;
-        
+
         const existing = await pool.query('SELECT * FROM unified_artists WHERE id = $1', [id]);
         if (existing.rows.length === 0) {
             return res.status(404).json({ error: 'Artist not found' });
         }
-        
+
         const dataFields = ['name', 'genres', 'country', 'image_url', 'website'];
         const dataUpdates = {};
         for (const [key, value] of Object.entries(updates)) {
             if (dataFields.includes(key)) dataUpdates[key] = value;
         }
-        
+
         if (Object.keys(dataUpdates).length > 0) {
             const existingOriginal = await pool.query(`
                 SELECT sa.id FROM artist_source_links asl
                 JOIN scraped_artists sa ON sa.id = asl.scraped_artist_id
                 WHERE asl.unified_artist_id = $1 AND sa.source_code = 'original'
             `, [id]);
-            
+
             if (existingOriginal.rows.length > 0) {
                 const originalId = existingOriginal.rows[0].id;
                 const updateClauses = [];
@@ -6770,7 +6841,7 @@ app.patch('/unified/artists/:id', async (req, res) => {
                 const unified = existing.rows[0];
                 const mergedData = { ...unified, ...dataUpdates };
                 const originalId = `original_artist_${id}_${Date.now()}`;
-                
+
                 await pool.query(`
                     INSERT INTO scraped_artists (
                         id, source_code, source_artist_id, name, genres, country, image_url, content_url
@@ -6779,16 +6850,16 @@ app.patch('/unified/artists/:id', async (req, res) => {
                     originalId, id, mergedData.name, mergedData.genres, mergedData.country,
                     mergedData.image_url, mergedData.website
                 ]);
-                
+
                 await pool.query(`
                     INSERT INTO artist_source_links (scraped_artist_id, unified_artist_id, match_confidence, priority)
                     VALUES ($1, $2, 1.0, 1)
                 `, [originalId, id]);
             }
-            
+
             await refreshUnifiedArtist(id);
         }
-        
+
         const result = await pool.query(`
             SELECT ua.*,
                 (SELECT json_agg(json_build_object(
@@ -6799,7 +6870,7 @@ app.patch('/unified/artists/:id', async (req, res) => {
                 WHERE asl.unified_artist_id = ua.id) as source_references
             FROM unified_artists ua WHERE ua.id = $1
         `, [id]);
-        
+
         res.json(result.rows[0]);
     } catch (error) {
         console.error('Error updating unified artist:', error);
@@ -6831,7 +6902,7 @@ app.get('/scrape/stats', async (req, res) => {
                 (SELECT city FROM scrape_history WHERE error IS NULL ORDER BY created_at DESC LIMIT 1) as last_scraped_city,
                 (SELECT source_code FROM scrape_history WHERE error IS NULL ORDER BY created_at DESC LIMIT 1) as last_scraped_source
         `);
-        
+
         res.json(stats.rows[0]);
     } catch (error) {
         console.error('Stats error:', error);
@@ -6873,7 +6944,7 @@ app.get('/scrape/stats', async (req, res) => {
 app.get('/db/debug/links', async (req, res) => {
     try {
         const { event_id, limit = 10 } = req.query;
-        
+
         let result;
         if (event_id) {
             result = await pool.query(`
@@ -6891,7 +6962,7 @@ app.get('/db/debug/links', async (req, res) => {
                 LIMIT $1
             `, [parseInt(limit)]);
         }
-        
+
         res.json({
             count: result.rows.length,
             data: result.rows
@@ -6905,7 +6976,7 @@ app.get('/db/debug/links', async (req, res) => {
 app.get('/scrape/history', async (req, res) => {
     try {
         const { days = 30, groupBy = 'day' } = req.query;
-        
+
         let query;
         if (groupBy === 'hour') {
             query = `
@@ -6945,9 +7016,9 @@ app.get('/scrape/history', async (req, res) => {
                 ORDER BY timestamp DESC
             `;
         }
-        
+
         const result = await pool.query(query);
-        
+
         // Also get totals
         const totalsResult = await pool.query(`
             SELECT 
@@ -6962,7 +7033,7 @@ app.get('/scrape/history', async (req, res) => {
             FROM scrape_history
             WHERE error IS NULL
         `);
-        
+
         res.json({
             history: result.rows,
             totals: totalsResult.rows[0],
@@ -6977,7 +7048,7 @@ app.get('/scrape/history', async (req, res) => {
 app.get('/scrape/recent', async (req, res) => {
     try {
         const { limit = 20 } = req.query;
-        
+
         const result = await pool.query(`
             SELECT 
                 id,
@@ -6995,7 +7066,7 @@ app.get('/scrape/recent', async (req, res) => {
             ORDER BY created_at DESC
             LIMIT $1
         `, [parseInt(limit)]);
-        
+
         res.json(result.rows);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -7031,7 +7102,7 @@ app.get('/scrape/cities', (req, res) => {
         ...Object.keys(RA_AREA_MAP),
         ...Object.keys(TICKETMASTER_CITY_MAP)
     ]);
-    
+
     const cities = Array.from(allCities).sort().map(city => {
         const hasRA = RA_AREA_MAP[city] !== undefined;
         const hasTM = TICKETMASTER_CITY_MAP[city] !== undefined;
@@ -7046,15 +7117,15 @@ app.get('/scrape/cities', (req, res) => {
             tm_country: TICKETMASTER_CITY_MAP[city]?.countryCode || null
         };
     });
-    
+
     // Group by country/region
-    const german = cities.filter(c => 
-        TICKETMASTER_CITY_MAP[c.key]?.countryCode === 'DE' || 
-        ['berlin', 'hamburg', 'cologne', 'frankfurt', 'munich', 'düsseldorf', 'dusseldorf', 
-         'stuttgart', 'leipzig', 'dresden', 'hannover', 'hanover', 'nuremberg', 'nürnberg',
-         'mannheim', 'freiburg', 'münster', 'munster', 'dortmund', 'essen', 'bremen'].includes(c.key)
+    const german = cities.filter(c =>
+        TICKETMASTER_CITY_MAP[c.key]?.countryCode === 'DE' ||
+        ['berlin', 'hamburg', 'cologne', 'frankfurt', 'munich', 'düsseldorf', 'dusseldorf',
+            'stuttgart', 'leipzig', 'dresden', 'hannover', 'hanover', 'nuremberg', 'nürnberg',
+            'mannheim', 'freiburg', 'münster', 'munster', 'dortmund', 'essen', 'bremen'].includes(c.key)
     );
-    
+
     res.json({
         total: cities.length,
         cities,
@@ -7088,18 +7159,18 @@ async function startServer() {
     try {
         // Initialize database (create if not exists, run migrations)
         await initializeDatabase();
-        
+
         // Initialize database extensions
         await initDatabaseExtensions();
-        
+
         // Initialize default admin user
         await initializeDefaultAdmin();
-        
+
         // Start the HTTP server
         app.listen(PORT, async () => {
             console.log(`Puppeteer service running on port ${PORT}`);
             console.log(`Proxy list loaded: ${PROXY_LIST.length} proxies`);
-            
+
             try {
                 console.log('Launching browser with first proxy...');
                 currentProxy = getNextProxy();

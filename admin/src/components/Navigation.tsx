@@ -47,7 +47,7 @@ export function Navigation() {
               className={clsx(
                 'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
                 isActive
-                  ? 'bg-indigo-50 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300'
+                  ? 'bg-indigo-50 dark:bg-gray-800 text-indigo-700 dark:text-gray-100'
                   : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100'
               )}
             >
@@ -56,10 +56,10 @@ export function Navigation() {
             </Link>
           );
         })}
-        
+
         {/* Spacer */}
         <div className="flex-1" />
-        
+
         {/* User info and logout */}
         {user && (
           <div className="flex items-center gap-3">
