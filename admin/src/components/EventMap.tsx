@@ -248,13 +248,27 @@ export default function EventMap({
       }
     });
 
+    // Handle map click to set coordinates (when in edit mode with single event)
+    map.on('click', (e: L.LeafletMouseEvent) => {
+      // Only trigger if we have a single event (edit mode)
+      if (events.length === 1 && onEventClickRef.current) {
+        // Create a temporary event object with the clicked coordinates
+        const clickedEvent = {
+          ...events[0],
+          latitude: e.latlng.lat,
+          longitude: e.latlng.lng
+        };
+        onEventClickRef.current(clickedEvent);
+      }
+    });
+
     setCurrentZoom(initialZoom);
 
     return () => {
       map.remove();
       mapRef.current = null;
     };
-  }, [cityConfig, selectedCity]);
+  }, [cityConfig, selectedCity, events.length]);
 
   // Create a stable key for events to detect actual changes
   const eventsKey = useMemo(() => {
@@ -297,26 +311,33 @@ export default function EventMap({
         });
 
         // Determine marker styling based on status and live state
-        let bgColor = 'bg-gray-400/60';
-        let borderColor = 'border-gray-300';
+        let bgColor = 'bg-white dark:bg-gray-900';
+        let borderColor = 'border-gray-300 dark:border-gray-700';
         let extraClass = '';
         
-        if (approvedCount === eventCount || (approvedCount > 0 && pendingCount === 0 && rejectedCount === 0)) {
-          bgColor = 'bg-emerald-500';
-          borderColor = 'border-emerald-600';
+        // Match list item backgrounds based on status
+        if (rejectedCount === eventCount) {
+          // All rejected
+          bgColor = 'bg-gray-50 dark:bg-gray-900/50';
+          borderColor = 'border-gray-400 dark:border-gray-600';
+        } else if (pendingCount > 0) {
+          // Has pending events
+          bgColor = 'pending-stripes';
+          borderColor = 'border-amber-500 dark:border-amber-600';
+        } else if (approvedCount === eventCount) {
+          // All approved
+          bgColor = 'bg-white dark:bg-gray-900';
+          borderColor = 'border-emerald-500 dark:border-emerald-600';
           if (hasLiveEvents) {
             extraClass = 'live-marker-pulse';
           }
-        } else if (pendingCount > 0) {
-          bgColor = 'pending-stripes';
-          borderColor = 'border-amber-500';
         }
 
         const icon = L.divIcon({
           className: 'venue-marker',
           html: `
             <div class="relative group cursor-pointer">
-              <div class="w-10 h-10 ${bgColor} ${extraClass} rounded-lg shadow-lg border-2 ${borderColor} flex items-center justify-center text-white font-bold text-sm hover:scale-110 transition-transform">
+              <div class="w-8 h-8 ${bgColor} ${extraClass} rounded-lg shadow-lg border-2 ${borderColor} flex items-center justify-center text-white font-bold text-xs hover:scale-110 transition-transform">
                 ${eventCount}
               </div>
               <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-900 text-white text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
@@ -324,8 +345,8 @@ export default function EventMap({
               </div>
             </div>
           `,
-          iconSize: [40, 40],
-          iconAnchor: [20, 20],
+          iconSize: [32, 32],
+          iconAnchor: [16, 16],
         });
 
         const marker = L.marker(data.coords, { icon });

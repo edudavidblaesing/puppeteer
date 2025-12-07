@@ -218,6 +218,11 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
   const [showArtistOverlay, setShowArtistOverlay] = useState(false);
   const [loadingArtist, setLoadingArtist] = useState(false);
 
+  // Geocoding state for event edit
+  const [isGeocoding, setIsGeocoding] = useState(false);
+  const [geocodeError, setGeocodeError] = useState<string>('');
+  const [mapEditMode, setMapEditMode] = useState(false);
+
   // Autocomplete state for event form
   const [artistSearch, setArtistSearch] = useState('');
   const [venueSearch, setVenueSearch] = useState('');
@@ -571,10 +576,87 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
   };
 
   // Edit handlers
+  // Geocode address to coordinates
+  const geocodeAddress = async () => {
+    if (!editForm.venue_address || !editForm.venue_city) {
+      setGeocodeError('Please provide at least address and city');
+      return;
+    }
+    
+    setIsGeocoding(true);
+    setGeocodeError('');
+    
+    try {
+      const addressParts = [
+        editForm.venue_address,
+        editForm.venue_city,
+        editForm.venue_country
+      ].filter(Boolean);
+      
+      const address = addressParts.join(', ');
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1`,
+        { headers: { 'User-Agent': 'SocialEventsAdmin/1.0' } }
+      );
+      
+      const data = await response.json();
+      
+      if (data && data.length > 0) {
+        setEditForm({
+          ...editForm,
+          latitude: parseFloat(data[0].lat),
+          longitude: parseFloat(data[0].lon)
+        });
+        setGeocodeError('');
+      } else {
+        setGeocodeError('Address not found. Try being more specific.');
+      }
+    } catch (error) {
+      console.error('Geocoding error:', error);
+      setGeocodeError('Failed to geocode address');
+    } finally {
+      setIsGeocoding(false);
+    }
+  };
+
+  // Reverse geocode coordinates to address
+  const reverseGeocode = async (lat: number, lon: number) => {
+    setIsGeocoding(true);
+    setGeocodeError('');
+    
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`,
+        { headers: { 'User-Agent': 'SocialEventsAdmin/1.0' } }
+      );
+      
+      const data = await response.json();
+      
+      if (data && data.address) {
+        const addr = data.address;
+        setEditForm({
+          ...editForm,
+          latitude: lat,
+          longitude: lon,
+          venue_address: addr.road || addr.pedestrian || addr.path || editForm.venue_address,
+          venue_city: addr.city || addr.town || addr.village || editForm.venue_city,
+          venue_country: addr.country || editForm.venue_country
+        });
+      }
+    } catch (error) {
+      console.error('Reverse geocoding error:', error);
+      setGeocodeError('Failed to get address from coordinates');
+    } finally {
+      setIsGeocoding(false);
+    }
+  };
+
   const handleEdit = (item: any) => {
     setEditingItem(item);
     setSourceReferences([]);
     setSelectedSourceFields({});
+    setGeocodeError('');
+    setMapEditMode(false);
 
     // Format date and time fields for events
     if (activeTab === 'events') {
@@ -1634,7 +1716,11 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                       return (
                         <div
                           key={event.id}
-                          onClick={() => { setActiveTabState('events'); handleEdit(event); }}
+                          onClick={() => { 
+                            setActiveTabState('events'); 
+                            setShowEditPanel(true);
+                            handleEdit(event); 
+                          }}
                           className={clsx(
                             "px-4 py-2.5 flex items-center gap-3 cursor-pointer border-b transition-colors pending-stripes bg-white dark:bg-gray-900 hover:bg-amber-50 dark:hover:bg-gray-800",
                             selectedIds.has(event.id) && 'border-l-2 border-l-indigo-500 dark:border-l-gray-400',
@@ -1805,7 +1891,21 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                     </div>
                     <div className="max-h-48 overflow-auto">
                       {scrapedEvents.slice(0, 10).map((event) => (
-                        <div key={event.id} className="px-4 py-2 border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 flex items-center gap-3">
+                        <div 
+                          key={event.id} 
+                          onClick={() => {
+                            // Find if there's a matching main event linked to this scraped event
+                            const mainEvent = events.find(e => 
+                              e.source_references?.some((ref: any) => ref.scraped_event_id === event.id)
+                            );
+                            if (mainEvent) {
+                              setActiveTabState('events');
+                              setShowEditPanel(true);
+                              handleEdit(mainEvent);
+                            }
+                          }}
+                          className="px-4 py-2 border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 flex items-center gap-3 cursor-pointer"
+                        >
                           {event.source_code === 'ra' ? (
                             <img src="/ra-logo.jpg" alt="RA" className="h-4 w-auto rounded-sm flex-shrink-0" title="Resident Advisor" />
                           ) : event.source_code === 'ticketmaster' ? (
@@ -2125,7 +2225,11 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                           return (
                             <div 
                               key={event.id}
-                              onClick={() => { setActiveTabState('events'); handleEdit(event); }}
+                              onClick={() => { 
+                                setActiveTabState('events'); 
+                                setShowEditPanel(true);
+                                handleEdit(event); 
+                              }}
                               className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition-colors"
                             >
                               <div className="w-8 h-8 rounded bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center flex-shrink-0">
@@ -2334,6 +2438,125 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                             </div>
                           </div>
                         )}
+
+                        {/* Interactive Map & Location Section */}
+                        <div className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-lg p-4 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                              Location & Coordinates
+                            </label>
+                            {(editForm.latitude && editForm.longitude) && (
+                              <button
+                                type="button"
+                                onClick={() => setMapEditMode(!mapEditMode)}
+                                className={clsx(
+                                  "px-3 py-1 text-xs rounded-lg font-medium transition-colors",
+                                  mapEditMode
+                                    ? "bg-indigo-500 text-white"
+                                    : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
+                                )}
+                              >
+                                {mapEditMode ? '✓ Edit Mode' : 'Edit on Map'}
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Coordinates input */}
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">Latitude</label>
+                              <input
+                                type="number"
+                                step="any"
+                                value={editForm.latitude || ''}
+                                onChange={(e) => setEditForm({ ...editForm, latitude: e.target.value ? parseFloat(e.target.value) : undefined })}
+                                placeholder="e.g. 52.5200"
+                                className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100 text-sm"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">Longitude</label>
+                              <input
+                                type="number"
+                                step="any"
+                                value={editForm.longitude || ''}
+                                onChange={(e) => setEditForm({ ...editForm, longitude: e.target.value ? parseFloat(e.target.value) : undefined })}
+                                placeholder="e.g. 13.4050"
+                                className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100 text-sm"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Geocoding controls */}
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={geocodeAddress}
+                              disabled={isGeocoding || !editForm.venue_address || !editForm.venue_city}
+                              className="flex-1 px-3 py-2 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-200 dark:hover:bg-indigo-900/50 rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                            >
+                              {isGeocoding ? (
+                                <RefreshCw className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <MapPin className="w-4 h-4" />
+                              )}
+                              Address → Coordinates
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => editForm.latitude && editForm.longitude && reverseGeocode(editForm.latitude, editForm.longitude)}
+                              disabled={isGeocoding || !editForm.latitude || !editForm.longitude}
+                              className="flex-1 px-3 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                            >
+                              {isGeocoding ? (
+                                <RefreshCw className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <Globe className="w-4 h-4" />
+                              )}
+                              Coordinates → Address
+                            </button>
+                          </div>
+
+                          {geocodeError && (
+                            <div className="text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg">
+                              {geocodeError}
+                            </div>
+                          )}
+
+                          {/* Map display */}
+                          {(editForm.latitude && editForm.longitude) ? (
+                            <div className="relative">
+                              <div className="h-64 rounded-lg overflow-hidden border dark:border-gray-700">
+                                <EventMap
+                                  events={[{ ...editingItem, latitude: editForm.latitude, longitude: editForm.longitude }]}
+                                  cities={cities}
+                                  onEventClick={(e) => {
+                                    if (mapEditMode && e.latitude && e.longitude) {
+                                      // Allow clicking on map to update coordinates when in edit mode
+                                      reverseGeocode(e.latitude, e.longitude);
+                                    }
+                                  }}
+                                  selectedCity={undefined}
+                                  onCityChange={() => {}}
+                                />
+                              </div>
+                              {mapEditMode && (
+                                <div className="absolute top-2 left-2 right-2 bg-indigo-500 text-white text-xs px-3 py-2 rounded-lg shadow-lg flex items-center gap-2">
+                                  <MapPin className="w-4 h-4" />
+                                  <span>Click on the map to set new coordinates</span>
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="h-32 border-2 border-dashed dark:border-gray-700 rounded-lg flex items-center justify-center text-gray-400 dark:text-gray-500">
+                              <div className="text-center">
+                                <MapPin className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                                <p className="text-sm">No coordinates set</p>
+                                <p className="text-xs">Enter address and click "Address → Coordinates"</p>
+                              </div>
+                            </div>
+                          )}
+                        </div>
 
                         {editForm.flyer_front && (
                           <img src={editForm.flyer_front} alt="" className="w-full h-48 object-cover rounded-lg" />
@@ -2729,7 +2952,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                               className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-gray-500 bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
                               placeholder="Type to search artists..."
                             />
-                            {showArtistDropdown && artistSuggestions.length > 0 && artistDropdownPos.width > 0 && (
+                            {showArtistDropdown && artistDropdownPos.width > 0 && (artistSuggestions.length > 0 || artistSearch.length >= 2) && (
                               <div 
                                 className="fixed z-[9999] bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-lg shadow-lg max-h-48 overflow-auto"
                                 style={{ top: `${artistDropdownPos.top}px`, left: `${artistDropdownPos.left}px`, width: `${artistDropdownPos.width}px` }}
@@ -2757,6 +2980,28 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                                     <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{artist.name}</span>
                                   </button>
                                 ))}
+                                {/* Add "Create new artist" option */}
+                                {artistSearch.length >= 2 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const currentArtists = editForm.artistsList || [];
+                                      const trimmedSearch = artistSearch.trim();
+                                      if (trimmedSearch && !currentArtists.includes(trimmedSearch)) {
+                                        const newArtists = [...currentArtists, trimmedSearch];
+                                        setEditForm({ ...editForm, artistsList: newArtists });
+                                      }
+                                      setArtistSearch('');
+                                      setShowArtistDropdown(false);
+                                    }}
+                                    className="w-full px-3 py-2 text-left hover:bg-indigo-50 dark:hover:bg-indigo-900/30 flex items-center gap-2 border-t-2 border-indigo-200 dark:border-indigo-700 bg-indigo-50/50 dark:bg-indigo-900/10"
+                                  >
+                                    <Plus className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                                    <span className="text-sm font-medium text-indigo-700 dark:text-indigo-400">
+                                      Create "{artistSearch}"
+                                    </span>
+                                  </button>
+                                )}
                               </div>
                             )}
                           </div>
@@ -2793,19 +3038,45 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                                   </button>
                                 ))}
                               {/* Reset to original if changed */}
-                              {editingItem && editingItem.artists !== (editForm.artistsList || []).join(', ') && editingItem.artists && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const artistsArray = editingItem.artists.split(',').map((a: string) => a.trim()).filter((a: string) => a);
-                                    setEditForm({ ...editForm, artistsList: artistsArray });
-                                  }}
-                                  className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded text-xs text-gray-500 transition-colors"
-                                >
-                                  <RotateCcw className="w-3 h-3" />
-                                  Reset
-                                </button>
-                              )}
+                              {(() => {
+                                if (!editingItem || !editingItem.artists) return null;
+                                
+                                // Parse original artists to array
+                                let originalArtists: string[] = [];
+                                try {
+                                  if (typeof editingItem.artists === 'string') {
+                                    // Try JSON parse first
+                                    try {
+                                      const parsed = JSON.parse(editingItem.artists);
+                                      originalArtists = Array.isArray(parsed) 
+                                        ? parsed.map((a: any) => a.name || a).filter(Boolean)
+                                        : editingItem.artists.split(',').map((a: string) => a.trim()).filter(Boolean);
+                                    } catch {
+                                      // Not JSON, treat as comma-separated
+                                      originalArtists = editingItem.artists.split(',').map((a: string) => a.trim()).filter(Boolean);
+                                    }
+                                  }
+                                } catch {
+                                  return null;
+                                }
+                                
+                                // Compare with current
+                                const currentArtists = editForm.artistsList || [];
+                                const hasChanged = JSON.stringify(originalArtists.sort()) !== JSON.stringify(currentArtists.sort());
+                                
+                                if (!hasChanged) return null;
+                                
+                                return (
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditForm({ ...editForm, artistsList: originalArtists })}
+                                    className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded text-xs text-gray-500 transition-colors"
+                                  >
+                                    <RotateCcw className="w-3 h-3" />
+                                    Reset
+                                  </button>
+                                );
+                              })()}
                             </div>
                           )}
                           {/* Selected artists display */}
