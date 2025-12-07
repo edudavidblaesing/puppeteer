@@ -2853,8 +2853,8 @@ app.post('/db/events/:id/sync-artists', async (req, res) => {
 // Version endpoint for deployment tracking
 app.get('/api-version', (req, res) => {
     res.json({ 
-        version: '1.0.4',
-        geocodingFix: 'address-cleanup-v2',
+        version: '1.0.5',
+        geocodingFix: 'https-module',
         deployedAt: new Date().toISOString()
     });
 });
