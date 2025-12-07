@@ -1663,6 +1663,9 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                                   {EVENT_TYPES.find(t => t.value === event.event_type)?.icon} {EVENT_TYPES.find(t => t.value === event.event_type)?.label}
                                 </span>
                               )}
+                              {(!event.latitude || !event.longitude) && (
+                                <MapPin className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400 flex-shrink-0" title="Missing coordinates" />
+                              )}
                             </div>
                             <div className="flex items-center gap-2 mt-0.5">
                               <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{event.venue_name} • {event.venue_city}</p>
