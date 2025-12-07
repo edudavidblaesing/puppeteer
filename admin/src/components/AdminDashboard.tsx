@@ -33,6 +33,7 @@ import {
   Ticket,
   Link,
   Loader,
+  Image as ImageIcon,
 } from 'lucide-react';
 
 // Dynamic import for EventMap (Leaflet requires client-side only)
@@ -85,7 +86,6 @@ import {
   executeSqlQuery,
   fetchRecentlyUpdatedEvents,
   fetchMapEvents,
-  triggerSyncWorkflow,
 } from '@/lib/api';
 import { MiniBarChart, MiniAreaChart, StatCard, RecentActivity, ActivityTimeline, EntityStats, Sparkline } from '@/components/ScrapeCharts';
 
@@ -223,6 +223,8 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
   const [isGeocoding, setIsGeocoding] = useState(false);
   const [geocodeError, setGeocodeError] = useState<string>('');
   const [mapEditMode, setMapEditMode] = useState(false);
+  const staticMapRef = useRef<HTMLDivElement>(null);
+  const staticMapInstance = useRef<any>(null);
 
   // Autocomplete state for event form
   const [artistSearch, setArtistSearch] = useState('');
@@ -911,7 +913,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
   const handleSyncWorkflow = async () => {
     setIsSyncing(true);
     setSyncResult(null);
-    setSyncProgress('Starting sync via n8n workflow...');
+    setSyncProgress('Starting sync pipeline...');
     try {
       // Get cities to sync
       let citiesToSync: string[] = [];
@@ -919,48 +921,93 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
         // Get all active cities from database
         setSyncProgress('Fetching cities from database...');
         const citiesData = await fetchCities();
-        citiesToSync = citiesData.map((c: any) => c.name);
+        citiesToSync = citiesData.map((c: any) => c.name.toLowerCase());
         if (citiesToSync.length === 0) {
           setSyncProgress('No cities in database');
           setIsSyncing(false);
           return;
         }
       } else {
-        citiesToSync = [scrapeCity.charAt(0).toUpperCase() + scrapeCity.slice(1)];
+        citiesToSync = [scrapeCity];
       }
 
-      setSyncProgress(`Triggering n8n workflow for ${citiesToSync.length} cities...`);
+      setSyncProgress(`Starting sync for ${citiesToSync.length} cities...`);
 
-      // Trigger n8n workflow
-      const result = await triggerSyncWorkflow({
+      const result = await syncEventsPipeline({
         cities: citiesToSync,
         sources: scrapeSources,
+        enrichAfter: true,
+        dedupeAfter: true,
       });
 
-      console.log('n8n workflow triggered:', result);
-      setSyncProgress('Workflow triggered! Check n8n for execution status.');
-      setSyncResult(result);
-      
-      // Reload data after a delay to see results
-      setTimeout(async () => {
-        setSyncProgress('Reloading data...');
-        await Promise.all([
-          loadScrapeData(),
-          loadEvents(),
-          loadArtists(),
-          loadVenues(),
-        ]);
-        setSyncProgress('');
-        setIsSyncing(false);
-      }, 5000);
+      // Job started, will be polled in useEffect
+      console.log('Sync job started:', result);
 
     } catch (error: any) {
-      console.error('n8n workflow trigger failed:', error);
+      console.error('Sync pipeline failed:', error);
       setSyncResult({ error: error.message });
       setSyncProgress('');
       setIsSyncing(false);
     }
   };
+
+  // Create static map for event edit
+  useEffect(() => {
+    if (!staticMapRef.current || !editForm.latitude || !editForm.longitude) return;
+
+    // Clean up existing map
+    if (staticMapInstance.current) {
+      staticMapInstance.current.remove();
+      staticMapInstance.current = null;
+    }
+
+    const L = require('leaflet');
+    const isDarkMode = document.documentElement.classList.contains('dark');
+    const tileUrl = isDarkMode 
+      ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+      : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+    
+    const map = L.map(staticMapRef.current, {
+      center: [editForm.latitude, editForm.longitude],
+      zoom: 15,
+      zoomControl: false,
+      dragging: false,
+      touchZoom: false,
+      scrollWheelZoom: false,
+      doubleClickZoom: false,
+      boxZoom: false,
+      keyboard: false,
+      tap: false
+    });
+    
+    L.tileLayer(tileUrl, {
+      attribution: '© OSM © CARTO',
+      subdomains: 'abcd',
+      maxZoom: 19,
+    }).addTo(map);
+    
+    // Add simple marker
+    const markerIcon = L.divIcon({
+      className: 'simple-marker',
+      html: '<div style="background: #6366f1; width: 24px; height: 24px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>',
+      iconSize: [24, 24],
+      iconAnchor: [12, 12],
+    });
+    
+    L.marker([editForm.latitude, editForm.longitude], { 
+      icon: markerIcon,
+      interactive: false 
+    }).addTo(map);
+    
+    staticMapInstance.current = map;
+
+    return () => {
+      if (staticMapInstance.current) {
+        staticMapInstance.current.remove();
+        staticMapInstance.current = null;
+      }
+    };
+  }, [editForm.latitude, editForm.longitude]);
 
   // Poll for sync status when syncing
   useEffect(() => {
@@ -1027,47 +1074,9 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
     };
   }, [isSyncing]);
 
-  // Match artists from scraped_artists to main artists table
-  const handleMatchArtists = async () => {
-    setIsMatchingArtists(true);
-    try {
-      const response = await fetch('http://localhost:4000/db/artists/match', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dryRun: false, minConfidence: 0.7 })
-      });
-      const result = await response.json();
-      console.log('Artist matching result:', result);
-      alert(`Matched ${result.matched} artists, created ${result.created} new artists from ${result.processed} scraped records.`);
-      await loadArtists(); // Reload artists to see updated count
-    } catch (error: any) {
-      console.error('Artist matching failed:', error);
-      alert('Artist matching failed: ' + error.message);
-    } finally {
-      setIsMatchingArtists(false);
-    }
-  };
+  // Artist matching happens automatically in n8n workflow
 
-  // Match venues from scraped_venues to main venues table
-  const handleMatchVenues = async () => {
-    setIsMatchingVenues(true);
-    try {
-      const response = await fetch('http://localhost:4000/db/venues/match', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dryRun: false, minConfidence: 0.7 })
-      });
-      const result = await response.json();
-      console.log('Venue matching result:', result);
-      alert(`Matched ${result.matched} venues, created ${result.created} new venues from ${result.processed} scraped records.`);
-      await loadVenues(); // Reload venues to see updated count
-    } catch (error: any) {
-      console.error('Venue matching failed:', error);
-      alert('Venue matching failed: ' + error.message);
-    } finally {
-      setIsMatchingVenues(false);
-    }
-  };
+  // Venue matching happens automatically in n8n workflow
 
   // Legacy: Multi-source scraping (keeping for backwards compatibility)
   const handleScrape = async () => {
@@ -1259,7 +1268,26 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
               </div>
             )}
           </div>
-          <div className="text-right flex-shrink-0 self-start pt-0.5">
+          <div className="text-right flex-shrink-0 self-start pt-0.5 flex flex-col items-end gap-1">
+            {/* Status indicators */}
+            <div className="flex items-center gap-1">
+              {(!item.latitude || !item.longitude) && (
+                <div title="Missing coordinates" className="w-4 h-4 flex items-center justify-center">
+                  <MapPin className="w-3 h-3 text-amber-500 dark:text-amber-400" />
+                </div>
+              )}
+              {!item.flyer_front && (
+                <div title="No flyer image" className="w-4 h-4 flex items-center justify-center">
+                  <ImageIcon className="w-3 h-3 text-gray-400 dark:text-gray-500" />
+                </div>
+              )}
+              {(!item.artistsList || item.artistsList.length === 0) && (
+                <div title="No artists" className="w-4 h-4 flex items-center justify-center">
+                  <Music className="w-3 h-3 text-gray-400 dark:text-gray-500" />
+                </div>
+              )}
+            </div>
+            {/* Date */}
             {isLive ? (
               <div className="flex items-center gap-1.5">
                 <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
@@ -1457,18 +1485,18 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
 
       {/* Secondary toolbar */}
       <header className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 flex-shrink-0 z-50">
-        <div className="flex items-center px-4 py-2 gap-3 bg-gray-50 dark:bg-gray-800">
+        <div className="flex flex-wrap items-center px-2 sm:px-4 py-2 gap-2 sm:gap-3 bg-gray-50 dark:bg-gray-800">
           {/* Refresh button */}
           <button onClick={loadData} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg text-gray-700 dark:text-gray-300" title="Refresh">
             <RefreshCw className={clsx('w-4 h-4', isLoading && 'animate-spin')} />
           </button>
 
           {/* Search */}
-          <div className="relative flex-1 max-w-md flex items-center gap-1">
+          <div className="relative flex-1 max-w-xs sm:max-w-md flex items-center gap-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
             <input
               type="text"
-              placeholder={`Search ${activeTab}...`}
+              placeholder={`Search...`}
               value={typeof searchQuery === 'string' ? searchQuery : ''}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-9 pr-4 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-gray-500 dark:focus:ring-gray-400 focus:border-gray-500 dark:focus:border-gray-400"
@@ -1489,7 +1517,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
             <select
               value={cityFilter}
               onChange={(e) => setCityFilter(e.target.value)}
-              className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+              className="hidden sm:block px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
             >
               <option value="">All Cities</option>
               {(citiesDropdown.length > 0 ? citiesDropdown : cities).map((city: any) => (
@@ -1514,14 +1542,15 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                 <option value="rejected">Rejected</option>
               </select>
 
-              <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none border-l border-gray-300 dark:border-gray-700 pl-3">
+              <label className="flex items-center gap-2 text-xs sm:text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none border-l border-gray-300 dark:border-gray-700 pl-2 sm:pl-3">
                 <input
                   type="checkbox"
                   checked={showPastEvents}
                   onChange={(e) => setShowPastEvents(e.target.checked)}
                   className="rounded border-gray-300 dark:border-gray-600 text-indigo-600 dark:text-indigo-500 focus:ring-indigo-500 dark:focus:ring-indigo-400 bg-white dark:bg-gray-900"
                 />
-                Show Old Past
+                <span className="hidden sm:inline">Show Old Past</span>
+                <span className="sm:hidden">Past</span>
               </label>
             </>
           )}
@@ -1550,61 +1579,21 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
 
           {/* Bulk actions */}
           {selectedIds.size > 0 && activeTab === 'events' && (
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-600">{selectedIds.size} selected</span>
-              <button onClick={() => handleBulkSetStatus('approved')} className="px-3 py-1.5 text-xs bg-green-100 text-green-700 rounded-lg hover:bg-green-200 flex items-center gap-1">
-                <Eye className="w-3 h-3" /> Approve
+            <div className="flex items-center gap-1 sm:gap-2 flex-wrap">
+              <span className="text-xs sm:text-sm text-gray-600">{selectedIds.size}</span>
+              <button onClick={() => handleBulkSetStatus('approved')} className="px-2 sm:px-3 py-1.5 text-xs bg-green-100 text-green-700 rounded-lg hover:bg-green-200 flex items-center gap-1">
+                <Eye className="w-3 h-3" /> <span className="hidden sm:inline">Approve</span>
               </button>
-              <button onClick={() => handleBulkSetStatus('rejected')} className="px-3 py-1.5 text-xs bg-red-100 text-red-700 rounded-lg hover:bg-red-200 flex items-center gap-1">
-                <EyeOff className="w-3 h-3" /> Reject
+              <button onClick={() => handleBulkSetStatus('rejected')} className="px-2 sm:px-3 py-1.5 text-xs bg-red-100 text-red-700 rounded-lg hover:bg-red-200 flex items-center gap-1">
+                <EyeOff className="w-3 h-3" /> <span className="hidden sm:inline">Reject</span>
               </button>
-              <button onClick={() => handleBulkSetStatus('pending')} className="px-3 py-1.5 text-xs bg-yellow-100 text-yellow-700 rounded-lg hover:bg-yellow-200 flex items-center gap-1">
-                Reset
+              <button onClick={() => handleBulkSetStatus('pending')} className="px-2 sm:px-3 py-1.5 text-xs bg-yellow-100 text-yellow-700 rounded-lg hover:bg-yellow-200 flex items-center gap-1">
+                <Clock className="w-3 h-3 sm:hidden" /><span className="hidden sm:inline">Reset</span>
               </button>
-              <button onClick={handleBulkDelete} className="px-3 py-1.5 text-xs bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 flex items-center gap-1">
-                <Trash2 className="w-3 h-3" /> Delete
+              <button onClick={handleBulkDelete} className="px-2 sm:px-3 py-1.5 text-xs bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 flex items-center gap-1">
+                <Trash2 className="w-3 h-3" /> <span className="hidden sm:inline">Delete</span>
               </button>
             </div>
-          )}
-
-          {/* Artist matching button */}
-          {activeTab === 'artists' && (
-            <button
-              onClick={handleMatchArtists}
-              disabled={isMatchingArtists}
-              className="px-3 py-1.5 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
-              title="Match scraped artists to main artists table"
-            >
-              {isMatchingArtists ? (
-                <>
-                  <Loader className="w-4 h-4 animate-spin" /> Matching...
-                </>
-              ) : (
-                <>
-                  <Link className="w-4 h-4" /> Match Artists
-                </>
-              )}
-            </button>
-          )}
-
-          {/* Venue matching button */}
-          {activeTab === 'venues' && (
-            <button
-              onClick={handleMatchVenues}
-              disabled={isMatchingVenues}
-              className="px-3 py-1.5 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
-              title="Match scraped venues to main venues table"
-            >
-              {isMatchingVenues ? (
-                <>
-                  <Loader className="w-4 h-4 animate-spin" /> Matching...
-                </>
-              ) : (
-                <>
-                  <Link className="w-4 h-4" /> Match Venues
-                </>
-              )}
-            </button>
           )}
 
           {/* Add button */}
@@ -1613,7 +1602,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
               onClick={handleCreate}
               className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-1"
             >
-              <Plus className="w-4 h-4" /> Add {activeTab === 'cities' ? 'city' : activeTab.slice(0, -1)}
+              <Plus className="w-4 h-4" /> <span className="hidden sm:inline">Add</span> <span className="hidden sm:inline">{activeTab === 'cities' ? 'city' : activeTab.slice(0, -1)}</span><span className="sm:hidden">+</span>
             </button>
           )}
         </div>
@@ -1626,7 +1615,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
           activeTab === 'scrape' ? (
             <div className="flex-1 flex">
               {/* LEFT SIDE - Pending Events TODO List */}
-              <div className="bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 flex flex-col w-[420px]">
+              <div className="bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 flex flex-col w-full sm:w-[420px] sm:max-w-md">
                 {/* List header */}
                 <div className="px-4 py-2 bg-gray-50 dark:bg-gray-800 border-b dark:border-gray-700 flex items-center justify-between flex-shrink-0 flex-wrap gap-2">
                   <div className="flex items-center gap-3">
@@ -2106,20 +2095,19 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                         {isSyncing ? (
                           <>
                             <RefreshCw className="w-5 h-5 animate-spin" />
-                            {syncProgress || 'Triggering n8n...'}
+                            {syncProgress || 'Running Pipeline...'}
                           </>
                         ) : (
                           <>
                             <CloudDownload className="w-5 h-5" />
-                            Trigger n8n Workflow ({scrapeCity === 'all' ? 'All Cities' : scrapeCity.charAt(0).toUpperCase() + scrapeCity.slice(1)})
+                            Sync {scrapeCity === 'all' ? 'All Cities' : scrapeCity.charAt(0).toUpperCase() + scrapeCity.slice(1)}
                           </>
                         )}
                       </button>
 
                       {/* Pipeline Info */}
                       <div className="px-4 py-3 bg-gray-100 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 text-xs text-gray-600 dark:text-gray-400">
-                        <span className="font-medium text-gray-900 dark:text-gray-100">n8n Workflow:</span> Scrape → Match & Link → Enrich → Deduplicate
-                        <p className="text-indigo-600 dark:text-indigo-400 mt-1">✓ Executions will appear in n8n dashboard</p>
+                        <span className="font-medium text-gray-900 dark:text-gray-100">Pipeline:</span> Scrape → Match & Link → Enrich → Deduplicate
                         {scrapeCity === 'all' && (
                           <p className="text-amber-600 dark:text-amber-500 mt-1">⚠️ Syncing all cities may take several minutes.</p>
                         )}
@@ -2296,7 +2284,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
           ) : (
             <div className="flex-1 flex overflow-hidden">
               {/* List Panel */}
-              <div className="bg-white dark:bg-gray-900 border-r dark:border-gray-800 flex flex-col w-96 h-full max-h-full">
+              <div className="bg-white dark:bg-gray-900 border-r dark:border-gray-800 flex flex-col w-full sm:w-96 sm:max-w-md h-full max-h-full">
                 {/* List header */}
                 <div className="px-4 py-2 bg-gray-50 dark:bg-gray-800 border-b dark:border-gray-700 flex items-center justify-between flex-shrink-0">
                   <span className="text-sm text-gray-600 dark:text-gray-400">
@@ -2356,25 +2344,25 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                 )}
               </div>
 
-              {/* Edit Panel */}
+              {/* Edit Panel - Full screen overlay on mobile, side panel on desktop */}
               {showEditPanel ? (
-                <div className="flex-1 bg-white dark:bg-gray-900 border-l dark:border-gray-800 flex flex-col h-full max-h-full">
+                <div className="absolute sm:relative inset-0 sm:flex-1 bg-white dark:bg-gray-900 border-l dark:border-gray-800 flex flex-col h-full max-h-full z-40 sm:z-auto">
                   <div className="bg-white dark:bg-gray-900 border-b dark:border-gray-800 px-4 py-3 flex items-center justify-between flex-shrink-0">
-                    <h2 className="font-semibold text-gray-900 dark:text-gray-100">
+                    <h2 className="font-semibold text-gray-900 dark:text-gray-100 text-base sm:text-lg">
                       {editingItem ? `Edit ${activeTab.slice(0, -1)}` : `New ${activeTab.slice(0, -1)}`}
                     </h2>
                     <div className="flex items-center gap-2">
                       {editingItem && (
                         <button
                           onClick={() => handleDelete(editingItem)}
-                          className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg"
+                          className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg touch-manipulation"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
                       )}
                       <button
                         onClick={() => { setShowEditPanel(false); setEditingItem(null); }}
-                        className="p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
+                        className="p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg touch-manipulation"
                       >
                         <X className="w-4 h-4" />
                       </button>
@@ -2460,20 +2448,6 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                               Location & Coordinates
                             </label>
-                            {(editForm.latitude && editForm.longitude) && (
-                              <button
-                                type="button"
-                                onClick={() => setMapEditMode(!mapEditMode)}
-                                className={clsx(
-                                  "px-3 py-1 text-xs rounded-lg font-medium transition-colors",
-                                  mapEditMode
-                                    ? "bg-indigo-500 text-white"
-                                    : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
-                                )}
-                              >
-                                {mapEditMode ? '✓ Edit Mode' : 'Edit on Map'}
-                              </button>
-                            )}
                           </div>
 
                           {/* Coordinates input */}
@@ -2503,32 +2477,34 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                           </div>
 
                           {/* Geocoding controls */}
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                             <button
                               type="button"
                               onClick={geocodeAddress}
                               disabled={isGeocoding || !editForm.venue_address || !editForm.venue_city}
-                              className="flex-1 px-3 py-2 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-200 dark:hover:bg-indigo-900/50 rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                              className="flex-1 px-3 py-3 sm:py-2 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-200 dark:hover:bg-indigo-900/50 rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 touch-manipulation"
                             >
                               {isGeocoding ? (
                                 <RefreshCw className="w-4 h-4 animate-spin" />
                               ) : (
                                 <MapPin className="w-4 h-4" />
                               )}
-                              Address → Coordinates
+                              <span className="hidden sm:inline">Address → Coordinates</span>
+                              <span className="sm:hidden">Address → Coords</span>
                             </button>
                             <button
                               type="button"
                               onClick={() => editForm.latitude && editForm.longitude && reverseGeocode(editForm.latitude, editForm.longitude)}
                               disabled={isGeocoding || !editForm.latitude || !editForm.longitude}
-                              className="flex-1 px-3 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                              className="flex-1 px-3 py-3 sm:py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 touch-manipulation"
                             >
                               {isGeocoding ? (
                                 <RefreshCw className="w-4 h-4 animate-spin" />
                               ) : (
                                 <Globe className="w-4 h-4" />
                               )}
-                              Coordinates → Address
+                              <span className="hidden sm:inline">Coordinates → Address</span>
+                              <span className="sm:hidden">Coords → Address</span>
                             </button>
                           </div>
 
@@ -2541,26 +2517,10 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                           {/* Map display */}
                           {(editForm.latitude && editForm.longitude) ? (
                             <div className="relative">
-                              <div className="h-64 rounded-lg overflow-hidden border dark:border-gray-700">
-                                <EventMap
-                                  events={[{ ...editingItem, latitude: editForm.latitude, longitude: editForm.longitude }]}
-                                  cities={cities}
-                                  onEventClick={(e) => {
-                                    if (mapEditMode && e.latitude && e.longitude) {
-                                      // Allow clicking on map to update coordinates when in edit mode
-                                      reverseGeocode(e.latitude, e.longitude);
-                                    }
-                                  }}
-                                  selectedCity={undefined}
-                                  onCityChange={() => {}}
-                                />
-                              </div>
-                              {mapEditMode && (
-                                <div className="absolute top-2 left-2 right-2 bg-indigo-500 text-white text-xs px-3 py-2 rounded-lg shadow-lg flex items-center gap-2">
-                                  <MapPin className="w-4 h-4" />
-                                  <span>Click on the map to set new coordinates</span>
-                                </div>
-                              )}
+                              <div 
+                                ref={staticMapRef}
+                                className="h-48 rounded-lg overflow-hidden border dark:border-gray-700 bg-gray-100 dark:bg-gray-800"
+                              />
                             </div>
                           ) : (
                             <div className="h-32 border-2 border-dashed dark:border-gray-700 rounded-lg flex items-center justify-center text-gray-400 dark:text-gray-500">

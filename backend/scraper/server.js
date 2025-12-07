@@ -7641,9 +7641,9 @@ app.get('/scrape/stats', async (req, res) => {
     try {
         const stats = await pool.query(`
             SELECT 
-                (SELECT COUNT(*) FROM scraped_events) as total_scraped_events,
-                (SELECT COUNT(*) FROM scraped_events WHERE source_code = 'ra') as ra_events,
-                (SELECT COUNT(*) FROM scraped_events WHERE source_code = 'ticketmaster') as ticketmaster_events,
+                (SELECT COUNT(DISTINCT source_event_id) FROM scraped_events) as total_scraped_events,
+                (SELECT COUNT(DISTINCT source_event_id) FROM scraped_events WHERE source_code = 'ra') as ra_events,
+                (SELECT COUNT(DISTINCT source_event_id) FROM scraped_events WHERE source_code = 'ticketmaster') as ticketmaster_events,
                 (SELECT COUNT(*) FROM scraped_venues) as total_scraped_venues,
                 (SELECT COUNT(*) FROM scraped_artists) as total_scraped_artists,
                 (SELECT COUNT(*) FROM events) as total_main_events,
@@ -7669,9 +7669,9 @@ app.get('/scrape/stats', async (req, res) => {
             try {
                 const basicStats = await pool.query(`
                     SELECT 
-                        (SELECT COUNT(*) FROM scraped_events) as total_scraped_events,
-                        (SELECT COUNT(*) FROM scraped_events WHERE source_code = 'ra') as ra_events,
-                        (SELECT COUNT(*) FROM scraped_events WHERE source_code = 'ticketmaster') as ticketmaster_events,
+                        (SELECT COUNT(DISTINCT source_event_id) FROM scraped_events) as total_scraped_events,
+                        (SELECT COUNT(DISTINCT source_event_id) FROM scraped_events WHERE source_code = 'ra') as ra_events,
+                        (SELECT COUNT(DISTINCT source_event_id) FROM scraped_events WHERE source_code = 'ticketmaster') as ticketmaster_events,
                         (SELECT COUNT(*) FROM scraped_venues) as total_scraped_venues,
                         (SELECT COUNT(*) FROM scraped_artists) as total_scraped_artists,
                         (SELECT COUNT(*) FROM events) as total_main_events,
@@ -7683,7 +7683,7 @@ app.get('/scrape/stats', async (req, res) => {
                         (SELECT COUNT(*) FROM artists) as total_main_artists,
                         0 as total_event_links,
                         0 as linked_scraped_events,
-                        (SELECT COUNT(*) FROM scraped_events) as unlinked_scraped_events,
+                        (SELECT COUNT(DISTINCT source_event_id) FROM scraped_events) as unlinked_scraped_events,
                         (SELECT MAX(created_at) FROM scrape_history WHERE error IS NULL) as last_scraped_at,
                         (SELECT city FROM scrape_history WHERE error IS NULL ORDER BY created_at DESC LIMIT 1) as last_scraped_city,
                         (SELECT source_code FROM scrape_history WHERE error IS NULL ORDER BY created_at DESC LIMIT 1) as last_scraped_source
