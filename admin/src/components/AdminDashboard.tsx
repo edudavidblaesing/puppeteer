@@ -1819,7 +1819,14 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                             </span>
                           )}
                           <span className="text-xs truncate flex-1 text-gray-900 dark:text-gray-100">{event.title}</span>
-                          <span className="text-[10px] text-gray-400 dark:text-gray-500">{event.date ? format(new Date(event.date), 'MMM d') : ''}</span>
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
+                            <span className="text-[10px] text-gray-400 dark:text-gray-500">{event.date ? format(new Date(event.date), 'MMM d') : ''}</span>
+                            {(!event.latitude || !event.longitude) && (
+                              <span title="Missing coordinates">
+                                <MapPin className="w-3 h-3 text-amber-500 dark:text-amber-400" />
+                              </span>
+                            )}
+                          </div>
                           {event.content_url && (
                             <a href={event.content_url} target="_blank" rel="noopener noreferrer" className="text-gray-400 dark:text-gray-500 hover:text-indigo-600 dark:hover:text-indigo-400" onClick={e => e.stopPropagation()}>
                               <ExternalLink className="w-3 h-3" />
@@ -2125,7 +2132,14 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                                 <RotateCcw className="w-4 h-4 text-amber-600 dark:text-amber-400" />
                               </div>
                               <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{event.title}</p>
+                                <div className="flex items-center gap-2">
+                                  <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{event.title}</p>
+                                  {(!event.latitude || !event.longitude) && (
+                                    <span title="Missing coordinates" className="flex-shrink-0">
+                                      <MapPin className="w-3 h-3 text-amber-500 dark:text-amber-400" />
+                                    </span>
+                                  )}
+                                </div>
                                 <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{event.venue_name} • {event.venue_city}</p>
                               </div>
                               <div className="flex items-center gap-2 flex-shrink-0">
