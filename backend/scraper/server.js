@@ -2265,6 +2265,87 @@ app.post('/db/venues/geocode', async (req, res) => {
     }
 });
 
+// Geocode events without coordinates
+app.post('/db/events/geocode', async (req, res) => {
+    try {
+        const { limit = 100, debug = false } = req.body;
+        
+        // Get events without coordinates
+        const events = await pool.query(`
+            SELECT id, title, venue_name, venue_address, venue_city, venue_country
+            FROM events
+            WHERE (latitude IS NULL OR longitude IS NULL)
+            AND venue_city IS NOT NULL
+            AND publish_status != 'rejected'
+            ORDER BY date DESC, created_at DESC
+            LIMIT $1
+        `, [limit]);
+        
+        let geocoded = 0;
+        let failed = 0;
+        const errors = [];
+        
+        for (const event of events.rows) {
+            try {
+                console.log(`[Geocode Event] ${event.title}`);
+                console.log(`[Geocode Event]   Venue: ${event.venue_name || 'Unknown'}`);
+                console.log(`[Geocode Event]   Location: ${event.venue_address || ''}, ${event.venue_city}, ${event.venue_country || ''}`);
+                
+                const coords = await geocodeAddress(event.venue_address, event.venue_city, event.venue_country);
+                console.log(`[Geocode Event]   Result:`, coords);
+                
+                if (coords) {
+                    await pool.query(`
+                        UPDATE events 
+                        SET latitude = $1, longitude = $2, updated_at = CURRENT_TIMESTAMP
+                        WHERE id = $3
+                    `, [coords.latitude, coords.longitude, event.id]);
+                    geocoded++;
+                    console.log(`[Geocode Event] ✓ ${event.title} -> ${coords.latitude}, ${coords.longitude}`);
+                } else {
+                    failed++;
+                    const msg = `No coordinates found for ${event.title}`;
+                    console.log(`[Geocode Event] ✗ ${msg}`);
+                    if (debug) errors.push(msg);
+                }
+            } catch (eventError) {
+                failed++;
+                const msg = `Error geocoding ${event.title}: ${eventError.message}`;
+                console.error(`[Geocode Event] ${msg}`);
+                if (debug) errors.push(msg);
+            }
+            
+            // Rate limit - 1.5 seconds per request
+            if (geocoded + failed < events.rows.length) {
+                await new Promise(resolve => setTimeout(resolve, 1500));
+            }
+        }
+        
+        // Check remaining events without coordinates
+        const remaining = await pool.query(`
+            SELECT COUNT(*) as count
+            FROM events
+            WHERE (latitude IS NULL OR longitude IS NULL)
+            AND publish_status != 'rejected'
+        `);
+        
+        const result = {
+            success: true,
+            processed: events.rows.length,
+            geocoded,
+            failed,
+            remaining: parseInt(remaining.rows[0].count)
+        };
+        
+        if (debug) result.errors = errors;
+        
+        res.json(result);
+    } catch (error) {
+        console.error('Event geocoding error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Test geocoding function directly
 app.post('/db/venues/test-geocode', async (req, res) => {
     try {
