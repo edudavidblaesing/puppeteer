@@ -1190,6 +1190,17 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
         return acc;
       }, [] as string[]) || [];
 
+      // Handle genres - could be array, string, or JSON string
+      let genresDisplay = '—';
+      if (item.genres) {
+        try {
+          const genres = typeof item.genres === 'string' ? JSON.parse(item.genres) : item.genres;
+          genresDisplay = Array.isArray(genres) ? genres.join(', ') : String(genres);
+        } catch {
+          genresDisplay = String(item.genres);
+        }
+      }
+
       return (
         <div
           key={item.id}
@@ -1208,7 +1219,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
           </div>
           <div className="flex-1 min-w-0">
             <p className="font-medium text-sm truncate text-gray-900 dark:text-gray-100">{item.name}</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{item.country || item.genres || '—'}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{item.country || genresDisplay}</p>
             {/* Source badges below country */}
             {sources.length > 0 && (
               <div className="flex items-center gap-1 mt-1">
@@ -1357,15 +1368,24 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
           </button>
 
           {/* Search */}
-          <div className="relative flex-1 max-w-md">
+          <div className="relative flex-1 max-w-md flex items-center gap-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
             <input
               type="text"
               placeholder={`Search ${activeTab}...`}
-              value={searchQuery}
+              value={typeof searchQuery === 'string' ? searchQuery : ''}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-9 pr-4 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-gray-500 dark:focus:ring-gray-400 focus:border-gray-500 dark:focus:border-gray-400"
             />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded text-gray-600 dark:text-gray-400 flex-shrink-0"
+                title="Clear search"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
           </div>
 
           {/* City filter (for events & venues) */}
