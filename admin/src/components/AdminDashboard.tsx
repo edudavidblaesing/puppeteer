@@ -85,6 +85,7 @@ import {
   executeSqlQuery,
   fetchRecentlyUpdatedEvents,
   fetchMapEvents,
+  triggerSyncWorkflow,
 } from '@/lib/api';
 import { MiniBarChart, MiniAreaChart, StatCard, RecentActivity, ActivityTimeline, EntityStats, Sparkline } from '@/components/ScrapeCharts';
 
@@ -910,7 +911,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
   const handleSyncWorkflow = async () => {
     setIsSyncing(true);
     setSyncResult(null);
-    setSyncProgress('Starting sync pipeline...');
+    setSyncProgress('Starting sync via n8n workflow...');
     try {
       // Get cities to sync
       let citiesToSync: string[] = [];
@@ -918,30 +919,43 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
         // Get all active cities from database
         setSyncProgress('Fetching cities from database...');
         const citiesData = await fetchCities();
-        citiesToSync = citiesData.map((c: any) => c.name.toLowerCase());
+        citiesToSync = citiesData.map((c: any) => c.name);
         if (citiesToSync.length === 0) {
           setSyncProgress('No cities in database');
           setIsSyncing(false);
           return;
         }
       } else {
-        citiesToSync = [scrapeCity];
+        citiesToSync = [scrapeCity.charAt(0).toUpperCase() + scrapeCity.slice(1)];
       }
 
-      setSyncProgress(`Starting sync for ${citiesToSync.length} cities...`);
+      setSyncProgress(`Triggering n8n workflow for ${citiesToSync.length} cities...`);
 
-      const result = await syncEventsPipeline({
+      // Trigger n8n workflow
+      const result = await triggerSyncWorkflow({
         cities: citiesToSync,
         sources: scrapeSources,
-        enrichAfter: true,
-        dedupeAfter: true,
       });
 
-      // Job started, will be polled in useEffect
-      console.log('Sync job started:', result);
+      console.log('n8n workflow triggered:', result);
+      setSyncProgress('Workflow triggered! Check n8n for execution status.');
+      setSyncResult(result);
+      
+      // Reload data after a delay to see results
+      setTimeout(async () => {
+        setSyncProgress('Reloading data...');
+        await Promise.all([
+          loadScrapeData(),
+          loadEvents(),
+          loadArtists(),
+          loadVenues(),
+        ]);
+        setSyncProgress('');
+        setIsSyncing(false);
+      }, 5000);
 
     } catch (error: any) {
-      console.error('Sync pipeline failed:', error);
+      console.error('n8n workflow trigger failed:', error);
       setSyncResult({ error: error.message });
       setSyncProgress('');
       setIsSyncing(false);
@@ -2092,19 +2106,20 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                         {isSyncing ? (
                           <>
                             <RefreshCw className="w-5 h-5 animate-spin" />
-                            {syncProgress || 'Running Pipeline...'}
+                            {syncProgress || 'Triggering n8n...'}
                           </>
                         ) : (
                           <>
                             <CloudDownload className="w-5 h-5" />
-                            Sync {scrapeCity === 'all' ? 'All Cities' : scrapeCity.charAt(0).toUpperCase() + scrapeCity.slice(1)}
+                            Trigger n8n Workflow ({scrapeCity === 'all' ? 'All Cities' : scrapeCity.charAt(0).toUpperCase() + scrapeCity.slice(1)})
                           </>
                         )}
                       </button>
 
                       {/* Pipeline Info */}
                       <div className="px-4 py-3 bg-gray-100 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 text-xs text-gray-600 dark:text-gray-400">
-                        <span className="font-medium text-gray-900 dark:text-gray-100">Pipeline:</span> Scrape → Match & Link → Enrich → Deduplicate
+                        <span className="font-medium text-gray-900 dark:text-gray-100">n8n Workflow:</span> Scrape → Match & Link → Enrich → Deduplicate
+                        <p className="text-indigo-600 dark:text-indigo-400 mt-1">✓ Executions will appear in n8n dashboard</p>
                         {scrapeCity === 'all' && (
                           <p className="text-amber-600 dark:text-amber-500 mt-1">⚠️ Syncing all cities may take several minutes.</p>
                         )}

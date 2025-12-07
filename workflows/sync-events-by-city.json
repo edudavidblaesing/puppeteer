@@ -49,7 +49,7 @@
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ city: $json.city, sources: $json.sources, limit: $json.limit, match: true }) }}",
+        "jsonBody": "={{ JSON.stringify({ city: $json.city, sources: $json.sources, limit: $json.limit, match: false }) }}",
         "options": {
           "timeout": 300000
         }
@@ -79,6 +79,56 @@
     {
       "parameters": {
         "method": "POST",
+        "url": "https://pptr.davidblaesing.com/scrape/deduplicate",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{ \"type\": \"all\" }",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "dedupe-all",
+      "name": "Deduplicate Scraped",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 200],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "scraper-api-key",
+          "name": "Scraper API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://pptr.davidblaesing.com/scrape/match",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{ \"minConfidence\": 0.6 }",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "match-all",
+      "name": "Match & Link to Main",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, 200],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "scraper-api-key",
+          "name": "Scraper API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
         "url": "https://pptr.davidblaesing.com/db/venues/enrich",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
@@ -93,7 +143,7 @@
       "name": "Enrich Venues",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [440, 200],
+      "position": [880, 200],
       "credentials": {
         "httpHeaderAuth": {
           "id": "scraper-api-key",
@@ -118,57 +168,29 @@
       "name": "Enrich Artists",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [660, 200],
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "scraper-api-key",
-          "name": "Scraper API Key"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "https://pptr.davidblaesing.com/scrape/deduplicate",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "{ \"type\": \"all\" }",
-        "options": {
-          "timeout": 120000
-        }
-      },
-      "id": "dedupe-all",
-      "name": "Deduplicate All",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [880, 200],
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "scraper-api-key",
-          "name": "Scraper API Key"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "https://pptr.davidblaesing.com/scrape/match",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "{ \"minConfidence\": 0.6 }",
-        "options": {
-          "timeout": 120000
-        }
-      },
-      "id": "match-all",
-      "name": "Match to Main",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
       "position": [1100, 200],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "scraper-api-key",
+          "name": "Scraper API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://pptr.davidblaesing.com/db/events/sync-venue-coords",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "sync-coords",
+      "name": "Sync Venue Coordinates",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1320, 200],
       "credentials": {
         "httpHeaderAuth": {
           "id": "scraper-api-key",
@@ -187,7 +209,7 @@
       "name": "Get Final Stats",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1320, 200],
+      "position": [1540, 200],
       "credentials": {
         "httpHeaderAuth": {
           "id": "scraper-api-key",
@@ -197,13 +219,13 @@
     },
     {
       "parameters": {
-        "jsCode": "const scrapeData = $('Aggregate Scrape Results').first().json;\nconst enrichVenues = $('Enrich Venues').first().json;\nconst enrichArtists = $('Enrich Artists').first().json;\nconst dedupeResult = $('Deduplicate All').first().json;\nconst matchResult = $('Match to Main').first().json;\nconst stats = $('Get Final Stats').first().json;\n\nreturn [{\n  json: {\n    success: true,\n    timestamp: new Date().toISOString(),\n    pipeline: 'sync-events',\n    scrape: {\n      cities: scrapeData.cities_scraped,\n      fetched: scrapeData.total_fetched,\n      inserted: scrapeData.total_inserted,\n      updated: scrapeData.total_updated,\n      by_source: scrapeData.by_source\n    },\n    enrich: {\n      venues_enriched: enrichVenues.saved || 0,\n      artists_enriched: enrichArtists.saved || 0\n    },\n    dedupe: {\n      events_merged: dedupeResult.results?.events?.merged || 0,\n      venues_merged: dedupeResult.results?.venues?.merged || 0,\n      artists_merged: dedupeResult.results?.artists?.merged || 0\n    },\n    match: {\n      events_matched: matchResult.events?.matched || 0,\n      events_created: matchResult.events?.created || 0\n    },\n    final_stats: stats,\n    status: 'completed'\n  }\n}];"
+        "jsCode": "const scrapeData = $('Aggregate Scrape Results').first().json;\nconst dedupeResult = $('Deduplicate Scraped').first().json;\nconst matchResult = $('Match & Link to Main').first().json;\nconst enrichVenues = $('Enrich Venues').first().json;\nconst enrichArtists = $('Enrich Artists').first().json;\nconst syncCoords = $('Sync Venue Coordinates').first().json;\nconst stats = $('Get Final Stats').first().json;\n\nreturn [{\n  json: {\n    success: true,\n    timestamp: new Date().toISOString(),\n    pipeline: 'sync-events',\n    scrape: {\n      cities: scrapeData.cities_scraped,\n      fetched: scrapeData.total_fetched,\n      inserted: scrapeData.total_inserted,\n      updated: scrapeData.total_updated,\n      by_source: scrapeData.by_source\n    },\n    dedupe: {\n      events_merged: dedupeResult.results?.events?.merged || 0,\n      venues_merged: dedupeResult.results?.venues?.merged || 0,\n      artists_merged: dedupeResult.results?.artists?.merged || 0\n    },\n    match: {\n      events_matched: matchResult.events?.matched || 0,\n      events_created: matchResult.events?.created || 0,\n      artists_matched: matchResult.artists?.matched || 0,\n      venues_matched: matchResult.venues?.matched || 0\n    },\n    enrich: {\n      venues_enriched: enrichVenues.saved || 0,\n      artists_enriched: enrichArtists.saved || 0\n    },\n    coordinates: {\n      events_synced: syncCoords.synced || 0\n    },\n    final_stats: stats,\n    status: 'completed'\n  }\n}];"
       },
       "id": "build-response",
       "name": "Build Response",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1540, 200]
+      "position": [1760, 200]
     },
     {
       "parameters": {
@@ -215,7 +237,7 @@
       "name": "Respond",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [1760, 200]
+      "position": [1980, 200]
     }
   ],
   "connections": {
@@ -267,6 +289,28 @@
       "main": [
         [
           {
+            "node": "Deduplicate Scraped",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deduplicate Scraped": {
+      "main": [
+        [
+          {
+            "node": "Match & Link to Main",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Match & Link to Main": {
+      "main": [
+        [
+          {
             "node": "Enrich Venues",
             "type": "main",
             "index": 0
@@ -289,25 +333,14 @@
       "main": [
         [
           {
-            "node": "Deduplicate All",
+            "node": "Sync Venue Coordinates",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Deduplicate All": {
-      "main": [
-        [
-          {
-            "node": "Match to Main",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Match to Main": {
+    "Sync Venue Coordinates": {
       "main": [
         [
           {
