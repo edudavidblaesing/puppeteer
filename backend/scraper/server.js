@@ -2063,6 +2063,30 @@ app.post('/db/events/publish', async (req, res) => {
 });
 
 // Set publish status for events (new: pending/approved/rejected)
+// Match and link artists
+app.post('/db/artists/match', async (req, res) => {
+    try {
+        const { dryRun = false, minConfidence = 0.7 } = req.body;
+        const result = await matchAndLinkArtists({ dryRun, minConfidence });
+        res.json({ success: true, ...result });
+    } catch (error) {
+        console.error('Artist matching error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Match and link venues
+app.post('/db/venues/match', async (req, res) => {
+    try {
+        const { dryRun = false, minConfidence = 0.7 } = req.body;
+        const result = await matchAndLinkVenues({ dryRun, minConfidence });
+        res.json({ success: true, ...result });
+    } catch (error) {
+        console.error('Venue matching error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 app.post('/db/events/publish-status', async (req, res) => {
     try {
         const { ids, status } = req.body;
@@ -5539,6 +5563,225 @@ async function matchAndLinkEvents(options = {}) {
     return { processed: unlinked.length, matched, created, autoRejected: autoRejectResult.rejected, results: results.slice(0, 20) };
 }
 
+// Match and link artists from scraped_artists to main artists table
+async function matchAndLinkArtists(options = {}) {
+    const { dryRun = false, minConfidence = 0.7 } = options;
+    const { v4: uuidv4 } = require('uuid');
+
+    // Get unlinked scraped artists (not in artist_scraped_links)
+    const unlinkedResult = await pool.query(`
+        SELECT sa.* FROM scraped_artists sa
+        WHERE NOT EXISTS (
+            SELECT 1 FROM artist_scraped_links asl WHERE asl.scraped_artist_id = sa.id
+        )
+        ORDER BY sa.name
+        LIMIT 1000
+    `);
+
+    const unlinked = unlinkedResult.rows;
+    let matched = 0, created = 0;
+    const results = [];
+
+    console.log(`[Match Artists] Processing ${unlinked.length} unlinked scraped artists`);
+
+    for (const scraped of unlinked) {
+        // Try to find matching main artist by name
+        const potentialMatches = await pool.query(`
+            SELECT a.*, 
+                   (SELECT array_agg(sa.source_code) FROM artist_scraped_links asl 
+                    JOIN scraped_artists sa ON sa.id = asl.scraped_artist_id 
+                    WHERE asl.artist_id = a.id) as existing_sources
+            FROM artists a
+            WHERE LOWER(a.name) = LOWER($1)
+            OR similarity(LOWER(a.name), LOWER($1)) > 0.6
+        `, [scraped.name || '']);
+
+        let bestMatch = null;
+        let bestScore = 0;
+
+        for (const potential of potentialMatches.rows) {
+            // Skip if already linked from same source
+            if (potential.existing_sources?.includes(scraped.source_code)) continue;
+
+            // Calculate match score based on name similarity
+            const nameScore = stringSimilarity(scraped.name || '', potential.name || '');
+            
+            if (nameScore > bestScore && nameScore >= minConfidence) {
+                bestScore = nameScore;
+                bestMatch = potential;
+            }
+        }
+
+        if (bestMatch) {
+            // Link to existing main artist
+            if (!dryRun) {
+                await pool.query(`
+                    INSERT INTO artist_scraped_links (artist_id, scraped_artist_id, match_confidence)
+                    VALUES ($1, $2, $3)
+                    ON CONFLICT (artist_id, scraped_artist_id) DO NOTHING
+                `, [bestMatch.id, scraped.id, bestScore]);
+            }
+            matched++;
+            results.push({
+                action: 'matched',
+                scraped: { id: scraped.id, name: scraped.name, source: scraped.source_code },
+                main: { id: bestMatch.id, name: bestMatch.name },
+                confidence: bestScore
+            });
+        } else {
+            // Create new main artist
+            if (!dryRun) {
+                const artistId = uuidv4();
+                
+                await pool.query(`
+                    INSERT INTO artists (id, source_code, source_id, name, country, content_url, image_url, created_at, updated_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                `, [
+                    artistId,
+                    scraped.source_code,
+                    scraped.source_artist_id,
+                    scraped.name,
+                    null, // country not in scraped_artists
+                    scraped.content_url,
+                    scraped.image_url
+                ]);
+
+                // Link scraped artist to new main artist
+                await pool.query(`
+                    INSERT INTO artist_scraped_links (artist_id, scraped_artist_id, match_confidence, is_primary)
+                    VALUES ($1, $2, 1.0, true)
+                `, [artistId, scraped.id]);
+
+                created++;
+                results.push({
+                    action: 'created',
+                    scraped: { id: scraped.id, name: scraped.name, source: scraped.source_code },
+                    main: { id: artistId, name: scraped.name }
+                });
+            }
+        }
+    }
+
+    console.log(`[Match Artists] Processed ${unlinked.length}: ${created} created, ${matched} matched`);
+
+    return { processed: unlinked.length, matched, created, results: results.slice(0, 50) };
+}
+
+// Match and link venues from scraped_venues to main venues table
+async function matchAndLinkVenues(options = {}) {
+    const { dryRun = false, minConfidence = 0.7 } = options;
+    const { v4: uuidv4 } = require('uuid');
+
+    // Get unlinked scraped venues (not in venue_scraped_links)
+    const unlinkedResult = await pool.query(`
+        SELECT sv.* FROM scraped_venues sv
+        WHERE NOT EXISTS (
+            SELECT 1 FROM venue_scraped_links vsl WHERE vsl.scraped_venue_id = sv.id
+        )
+        ORDER BY sv.name, sv.city
+        LIMIT 1000
+    `);
+
+    const unlinked = unlinkedResult.rows;
+    let matched = 0, created = 0;
+    const results = [];
+
+    console.log(`[Match Venues] Processing ${unlinked.length} unlinked scraped venues`);
+
+    for (const scraped of unlinked) {
+        // Try to find matching main venue by name and city
+        const potentialMatches = await pool.query(`
+            SELECT v.*, 
+                   (SELECT array_agg(sv.source_code) FROM venue_scraped_links vsl 
+                    JOIN scraped_venues sv ON sv.id = vsl.scraped_venue_id 
+                    WHERE vsl.venue_id = v.id) as existing_sources
+            FROM venues v
+            WHERE LOWER(v.city) = LOWER($1)
+            AND (
+                LOWER(v.name) = LOWER($2)
+                OR similarity(LOWER(v.name), LOWER($2)) > 0.6
+            )
+        `, [scraped.city || '', scraped.name || '']);
+
+        let bestMatch = null;
+        let bestScore = 0;
+
+        for (const potential of potentialMatches.rows) {
+            // Skip if already linked from same source
+            if (potential.existing_sources?.includes(scraped.source_code)) continue;
+
+            // Calculate match score based on name and address similarity
+            const nameScore = stringSimilarity(scraped.name || '', potential.name || '');
+            const addressScore = scraped.address && potential.address 
+                ? stringSimilarity(scraped.address || '', potential.address || '')
+                : 0;
+            const score = (nameScore * 0.8) + (addressScore * 0.2);
+            
+            if (score > bestScore && score >= minConfidence) {
+                bestScore = score;
+                bestMatch = potential;
+            }
+        }
+
+        if (bestMatch) {
+            // Link to existing main venue
+            if (!dryRun) {
+                await pool.query(`
+                    INSERT INTO venue_scraped_links (venue_id, scraped_venue_id, match_confidence)
+                    VALUES ($1, $2, $3)
+                    ON CONFLICT (venue_id, scraped_venue_id) DO NOTHING
+                `, [bestMatch.id, scraped.id, bestScore]);
+            }
+            matched++;
+            results.push({
+                action: 'matched',
+                scraped: { id: scraped.id, name: scraped.name, city: scraped.city, source: scraped.source_code },
+                main: { id: bestMatch.id, name: bestMatch.name },
+                confidence: bestScore
+            });
+        } else {
+            // Create new main venue
+            if (!dryRun) {
+                const venueId = uuidv4();
+                
+                await pool.query(`
+                    INSERT INTO venues (id, source_code, source_id, name, address, city, country, 
+                                      latitude, longitude, content_url, created_at, updated_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                `, [
+                    venueId,
+                    scraped.source_code,
+                    scraped.source_venue_id,
+                    scraped.name,
+                    scraped.address,
+                    scraped.city,
+                    scraped.country,
+                    scraped.latitude,
+                    scraped.longitude,
+                    scraped.content_url
+                ]);
+
+                // Link scraped venue to new main venue
+                await pool.query(`
+                    INSERT INTO venue_scraped_links (venue_id, scraped_venue_id, match_confidence, is_primary)
+                    VALUES ($1, $2, 1.0, true)
+                `, [venueId, scraped.id]);
+
+                created++;
+                results.push({
+                    action: 'created',
+                    scraped: { id: scraped.id, name: scraped.name, city: scraped.city, source: scraped.source_code },
+                    main: { id: venueId, name: scraped.name }
+                });
+            }
+        }
+    }
+
+    console.log(`[Match Venues] Processed ${unlinked.length}: ${created} created, ${matched} matched`);
+
+    return { processed: unlinked.length, matched, created, results: results.slice(0, 50) };
+}
+
 // Deduplicate main events that have the same date/venue and similar titles
 async function deduplicateMainEvents() {
     let merged = 0;
@@ -5758,12 +6001,14 @@ app.post('/scrape/match', async (req, res) => {
         const { dryRun = false, minConfidence = 0.6 } = req.body;
 
         const eventResult = await matchAndLinkEvents({ dryRun, minConfidence });
-        const venueResult = await matchAndLinkVenues({ dryRun, minConfidence: 0.8 });
+        const artistResult = await matchAndLinkArtists({ dryRun, minConfidence: 0.7 });
+        const venueResult = await matchAndLinkVenues({ dryRun, minConfidence: 0.7 });
 
         res.json({
             success: true,
             dryRun,
             events: eventResult,
+            artists: artistResult,
             venues: venueResult
         });
     } catch (error) {

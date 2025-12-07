@@ -404,8 +404,29 @@ interface ActivityTimelineProps {
 export function ActivityTimeline({ data, height = 160 }: ActivityTimelineProps) {
   if (data.length === 0) {
     return (
-      <div className="flex items-center justify-center text-gray-400 dark:text-gray-500 text-sm" style={{ height }}>
-        No activity data
+      <div className="flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 text-sm" style={{ height }}>
+        <div className="text-center">
+          <p className="font-medium mb-1">No scrape activity yet</p>
+          <p className="text-xs">Run a sync to see activity data here</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Check if there's any meaningful data
+  const hasData = data.some(d => 
+    (Number(d.events_fetched) || 0) > 0 || 
+    (Number(d.events_inserted) || 0) > 0 || 
+    (Number(d.events_updated) || 0) > 0
+  );
+
+  if (!hasData) {
+    return (
+      <div className="flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 text-sm" style={{ height }}>
+        <div className="text-center">
+          <p className="font-medium mb-1">No activity in selected period</p>
+          <p className="text-xs">Data entries exist but show no activity</p>
+        </div>
       </div>
     );
   }

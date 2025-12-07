@@ -31,6 +31,8 @@ import {
   RotateCcw,
   AlertTriangle,
   Ticket,
+  Link,
+  Loader,
 } from 'lucide-react';
 
 // Dynamic import for EventMap (Leaflet requires client-side only)
@@ -174,6 +176,10 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
   const [syncResult, setSyncResult] = useState<any>(null);
   const [syncProgress, setSyncProgress] = useState<string>('');
   const [syncJobStatus, setSyncJobStatus] = useState<any>(null);
+
+  // Artist/Venue matching state
+  const [isMatchingArtists, setIsMatchingArtists] = useState(false);
+  const [isMatchingVenues, setIsMatchingVenues] = useState(false);
 
   // Scrape history for charts
   const [scrapeHistory, setScrapeHistory] = useState<any[]>([]);
@@ -924,6 +930,48 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
     };
   }, [isSyncing]);
 
+  // Match artists from scraped_artists to main artists table
+  const handleMatchArtists = async () => {
+    setIsMatchingArtists(true);
+    try {
+      const response = await fetch('http://localhost:4000/db/artists/match', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dryRun: false, minConfidence: 0.7 })
+      });
+      const result = await response.json();
+      console.log('Artist matching result:', result);
+      alert(`Matched ${result.matched} artists, created ${result.created} new artists from ${result.processed} scraped records.`);
+      await loadArtists(); // Reload artists to see updated count
+    } catch (error: any) {
+      console.error('Artist matching failed:', error);
+      alert('Artist matching failed: ' + error.message);
+    } finally {
+      setIsMatchingArtists(false);
+    }
+  };
+
+  // Match venues from scraped_venues to main venues table
+  const handleMatchVenues = async () => {
+    setIsMatchingVenues(true);
+    try {
+      const response = await fetch('http://localhost:4000/db/venues/match', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dryRun: false, minConfidence: 0.7 })
+      });
+      const result = await response.json();
+      console.log('Venue matching result:', result);
+      alert(`Matched ${result.matched} venues, created ${result.created} new venues from ${result.processed} scraped records.`);
+      await loadVenues(); // Reload venues to see updated count
+    } catch (error: any) {
+      console.error('Venue matching failed:', error);
+      alert('Venue matching failed: ' + error.message);
+    } finally {
+      setIsMatchingVenues(false);
+    }
+  };
+
   // Legacy: Multi-source scraping (keeping for backwards compatibility)
   const handleScrape = async () => {
     setIsScraping(true);
@@ -1135,6 +1183,12 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
     }
 
     if (activeTab === 'artists') {
+      // Get unique sources from source_references
+      const sources = item.source_references?.reduce((acc: string[], ref: any) => {
+        if (ref.source_code && !acc.includes(ref.source_code)) acc.push(ref.source_code);
+        return acc;
+      }, [] as string[]) || [];
+
       return (
         <div
           key={item.id}
@@ -1153,14 +1207,29 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
           </div>
           <div className="flex-1 min-w-0">
             <p className="font-medium text-sm truncate text-gray-900 dark:text-gray-100">{item.name}</p>
-            <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-              <span>{item.country || item.genres || '—'}</span>
-              {item.source_references?.length > 0 && (
-                <span className="bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded">
-                  {item.source_references.length} sources
-                </span>
-              )}
-            </div>
+            <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{item.country || item.genres || '—'}</p>
+            {/* Source badges below country */}
+            {sources.length > 0 && (
+              <div className="flex items-center gap-1 mt-1">
+                {sources.map((source: string) => {
+                  if (source === 'ra') {
+                    return (
+                      <img key={source} src="/ra-logo.jpg" alt="RA" className="h-4 w-auto rounded-sm" title="Resident Advisor" />
+                    );
+                  }
+                  if (source === 'ticketmaster') {
+                    return (
+                      <img key={source} src="/ticketmaster-logo.png" alt="TM" className="h-4 w-auto rounded-sm" title="Ticketmaster" />
+                    );
+                  }
+                  return (
+                    <span key={source} className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
+                      {source.toUpperCase()}
+                    </span>
+                  );
+                })}
+              </div>
+            )}
           </div>
           {item.content_url && (
             <a href={item.content_url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-gray-400 hover:text-indigo-600">
@@ -1172,6 +1241,12 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
     }
 
     if (activeTab === 'venues') {
+      // Get unique sources from source_references
+      const sources = item.source_references?.reduce((acc: string[], ref: any) => {
+        if (ref.source_code && !acc.includes(ref.source_code)) acc.push(ref.source_code);
+        return acc;
+      }, [] as string[]) || [];
+
       return (
         <div
           key={item.id}
@@ -1187,12 +1262,29 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
           <div className="flex-1 min-w-0">
             <p className="font-medium text-sm truncate text-gray-900 dark:text-gray-100">{item.name}</p>
             <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{item.city || '—'}{item.country && `, ${item.country}`}</p>
+            {/* Source badges below location */}
+            {sources.length > 0 && (
+              <div className="flex items-center gap-1 mt-1">
+                {sources.map((source: string) => {
+                  if (source === 'ra') {
+                    return (
+                      <img key={source} src="/ra-logo.jpg" alt="RA" className="h-4 w-auto rounded-sm" title="Resident Advisor" />
+                    );
+                  }
+                  if (source === 'ticketmaster') {
+                    return (
+                      <img key={source} src="/ticketmaster-logo.png" alt="TM" className="h-4 w-auto rounded-sm" title="Ticketmaster" />
+                    );
+                  }
+                  return (
+                    <span key={source} className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
+                      {source.toUpperCase()}
+                    </span>
+                  );
+                })}
+              </div>
+            )}
           </div>
-          {item.source_references?.length > 0 && (
-            <span className="bg-indigo-100 dark:bg-gray-800 text-indigo-600 dark:text-gray-300 text-xs px-2 py-0.5 rounded">
-              {item.source_references.length} sources
-            </span>
-          )}
         </div>
       );
     }
@@ -1358,6 +1450,46 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
             </div>
           )}
 
+          {/* Artist matching button */}
+          {activeTab === 'artists' && (
+            <button
+              onClick={handleMatchArtists}
+              disabled={isMatchingArtists}
+              className="px-3 py-1.5 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Match scraped artists to main artists table"
+            >
+              {isMatchingArtists ? (
+                <>
+                  <Loader className="w-4 h-4 animate-spin" /> Matching...
+                </>
+              ) : (
+                <>
+                  <Link className="w-4 h-4" /> Match Artists
+                </>
+              )}
+            </button>
+          )}
+
+          {/* Venue matching button */}
+          {activeTab === 'venues' && (
+            <button
+              onClick={handleMatchVenues}
+              disabled={isMatchingVenues}
+              className="px-3 py-1.5 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Match scraped venues to main venues table"
+            >
+              {isMatchingVenues ? (
+                <>
+                  <Loader className="w-4 h-4 animate-spin" /> Matching...
+                </>
+              ) : (
+                <>
+                  <Link className="w-4 h-4" /> Match Venues
+                </>
+              )}
+            </button>
+          )}
+
           {/* Add button */}
           {activeTab !== 'scrape' && (
             <button
@@ -1379,37 +1511,78 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
               {/* LEFT SIDE - Pending Events TODO List */}
               <div className="bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 flex flex-col w-[420px]">
                 {/* List header */}
-                <div className="px-4 py-3 bg-gray-100 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between sticky top-0 z-10">
-                  <div className="flex items-center gap-2">
-                    <CloudDownload className="w-4 h-4 text-amber-600 dark:text-amber-500" />
-                    <span className="font-medium text-gray-900 dark:text-gray-100">Pending Events</span>
-                    <span className="px-2 py-0.5 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-xs rounded font-medium border border-amber-200 dark:border-amber-700">
-                      {scrapeStats?.pending_events || events.filter(e => e.publish_status === 'pending').length} to review
+                <div className="px-4 py-2 bg-gray-50 dark:bg-gray-800 border-b dark:border-gray-700 flex items-center justify-between flex-shrink-0">
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm text-gray-600 dark:text-gray-400">
+                      {events.filter(e => e.publish_status === 'pending').length} pending events
                     </span>
+                    <button
+                      onClick={async () => {
+                        const pastPendingEvents = events.filter(e => {
+                          if (e.publish_status !== 'pending' || !e.date) return false;
+                          const eventDate = new Date(e.date);
+                          const today = new Date();
+                          today.setHours(0, 0, 0, 0);
+                          return eventDate < today;
+                        });
+                        if (pastPendingEvents.length === 0) return;
+                        if (!confirm(`Reject ${pastPendingEvents.length} past pending events?`)) return;
+                        try {
+                          await setPublishStatus(pastPendingEvents.map(e => e.id), 'rejected');
+                          setEvents(events.map(ev => 
+                            pastPendingEvents.find(pe => pe.id === ev.id) 
+                              ? { ...ev, publish_status: 'rejected' } 
+                              : ev
+                          ));
+                        } catch (err) { console.error(err); }
+                      }}
+                      disabled={events.filter(e => {
+                        if (e.publish_status !== 'pending' || !e.date) return false;
+                        const eventDate = new Date(e.date);
+                        const today = new Date();
+                        today.setHours(0, 0, 0, 0);
+                        return eventDate < today;
+                      }).length === 0}
+                      className="px-2 py-1 text-xs bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded hover:bg-red-200 dark:hover:bg-red-900/50 disabled:opacity-50 disabled:cursor-not-allowed border border-red-200 dark:border-red-700"
+                      title="Reject all past pending events"
+                    >
+                      Reject Past
+                    </button>
                   </div>
-                  <button
-                    onClick={loadData}
-                    className="p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
-                    title="Refresh"
-                  >
-                    <RefreshCw className={clsx('w-4 h-4 text-amber-600 dark:text-amber-500', isLoading && 'animate-spin')} />
-                  </button>
+                  <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.size > 0 && events.filter(e => e.publish_status === 'pending').every(e => selectedIds.has(e.id))}
+                      onChange={(e) => {
+                        const pendingEvents = events.filter(e => e.publish_status === 'pending');
+                        if (e.target.checked) {
+                          setSelectedIds(new Set([...selectedIds, ...pendingEvents.map(e => e.id)]));
+                        } else {
+                          const newSelected = new Set(selectedIds);
+                          pendingEvents.forEach(e => newSelected.delete(e.id));
+                          setSelectedIds(newSelected);
+                        }
+                      }}
+                      className="rounded text-indigo-600"
+                    />
+                    Select all
+                  </label>
                 </div>
 
                 {/* Pending events list */}
-                <div className="flex-1 overflow-auto">
+                <div className="flex-1 overflow-auto min-h-0">
                   {isLoading ? (
                     <div className="flex items-center justify-center h-32">
                       <RefreshCw className="w-6 h-6 animate-spin text-gray-400 dark:text-gray-500" />
                     </div>
-                  ) : events.filter(e => e.publish_status === 'pending').length === 0 ? (
+                  ) : events.filter(e => e.publish_status === 'pending').slice((page - 1) * pageSize, page * pageSize).length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-48 text-gray-500 dark:text-gray-400 p-4">
                       <Check className="w-12 h-12 text-green-500 dark:text-green-600 mb-3" />
                       <p className="font-medium">All caught up!</p>
                       <p className="text-sm text-gray-400 dark:text-gray-500 text-center mt-1">No pending events to review.</p>
                     </div>
                   ) : (
-                    sortEventsSmart(events.filter(e => e.publish_status === 'pending')).map((event) => {
+                    sortEventsSmart(events.filter(e => e.publish_status === 'pending')).slice((page - 1) * pageSize, page * pageSize).map((event) => {
                       const timing = getTimingStyle(event);
                       const isPast = timing.isPast;
                       const isLive = timing.isLive;
@@ -1421,12 +1594,20 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                       return (
                         <div
                           key={event.id}
+                          onClick={() => { setActiveTabState('events'); handleEdit(event); }}
                           className={clsx(
-                            "px-4 py-2.5 flex items-center gap-3 border-b border-gray-200 dark:border-gray-700 transition-colors group cursor-pointer pending-stripes hover:bg-amber-50/50 dark:hover:bg-gray-800",
+                            "px-4 py-2.5 flex items-center gap-3 cursor-pointer border-b transition-colors pending-stripes bg-white dark:bg-gray-900 hover:bg-amber-50 dark:hover:bg-gray-800",
+                            selectedIds.has(event.id) && 'border-l-2 border-l-indigo-500 dark:border-l-gray-400',
                             isPast && "opacity-60"
                           )}
-                          onClick={() => { setActiveTabState('events'); handleEdit(event); }}
                         >
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(event.id)}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => { e.stopPropagation(); handleSelect(event.id); }}
+                            className="rounded text-indigo-600"
+                          />
                           <div className="w-10 h-10 rounded bg-gray-200 dark:bg-gray-700 flex items-center justify-center flex-shrink-0 overflow-hidden">
                             {event.flyer_front ? (
                               <img src={event.flyer_front} alt="" className="w-full h-full object-cover" />
@@ -1476,8 +1657,8 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                               </div>
                             )}
                           </div>
-                          <div className="text-right flex-shrink-0 self-start pt-0.5 flex items-center gap-2">
-                            <div>
+                          <div className="flex-shrink-0 flex items-center gap-2">
+                            <div className="text-right">
                               {isLive ? (
                                 <div className="flex items-center gap-1.5">
                                   <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
@@ -1489,9 +1670,9 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                                 </p>
                               )}
                             </div>
-                            {/* Approve/Decline buttons - only if not passed */}
+                            {/* Approve/Decline buttons - always visible */}
                             {!isPast && (
-                              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <div className="flex gap-1">
                                 <button
                                   onClick={async (e) => {
                                     e.stopPropagation();
@@ -1503,7 +1684,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                                   className="p-1.5 bg-green-100 dark:bg-green-900/30 hover:bg-green-200 dark:hover:bg-green-900/50 text-green-700 dark:text-green-400 rounded border border-green-200 dark:border-green-700"
                                   title="Approve"
                                 >
-                                  <CheckCircle className="w-4 h-4" />
+                                  <Check className="w-4 h-4" />
                                 </button>
                                 <button
                                   onClick={async (e) => {
@@ -1516,7 +1697,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                                   className="p-1.5 bg-red-100 dark:bg-red-900/30 hover:bg-red-200 dark:hover:bg-red-900/50 text-red-700 dark:text-red-400 rounded border border-red-200 dark:border-red-700"
                                   title="Reject"
                                 >
-                                  <XCircle className="w-4 h-4" />
+                                  <X className="w-4 h-4" />
                                 </button>
                               </div>
                             )}
@@ -1526,6 +1707,31 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                     })
                   )}
                 </div>
+
+                {/* Pagination */}
+                {Math.ceil(events.filter(e => e.publish_status === 'pending').length / pageSize) > 1 && (
+                  <div className="px-4 py-2 border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-800 flex items-center justify-between flex-shrink-0">
+                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                      Page {page}/{Math.ceil(events.filter(e => e.publish_status === 'pending').length / pageSize)}
+                    </span>
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => setPage(p => Math.max(1, p - 1))}
+                        disabled={page === 1}
+                        className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 text-gray-600 dark:text-gray-300"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => setPage(p => Math.min(Math.ceil(events.filter(e => e.publish_status === 'pending').length / pageSize), p + 1))}
+                        disabled={page >= Math.ceil(events.filter(e => e.publish_status === 'pending').length / pageSize)}
+                        className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 text-gray-600 dark:text-gray-300"
+                      >
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {/* Unlinked Scraped Events */}
                 {scrapedEvents.length > 0 && (
