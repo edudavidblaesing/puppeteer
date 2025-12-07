@@ -2265,12 +2265,109 @@ app.post('/db/venues/geocode', async (req, res) => {
     }
 });
 
-// Geocode events without coordinates
+// Geocode events without coordinates - background task
+let geocodingInProgress = false;
+let geocodingStats = { processed: 0, geocoded: 0, failed: 0, remaining: 0 };
+
 app.post('/db/events/geocode', async (req, res) => {
     try {
-        const { limit = 100, debug = false } = req.body;
+        const { limit = 100, background = true } = req.body;
         
-        // Get events without coordinates
+        // Check if geocoding is already running
+        if (geocodingInProgress) {
+            return res.json({
+                success: true,
+                message: 'Geocoding already in progress',
+                stats: geocodingStats
+            });
+        }
+        
+        // Get count of events without coordinates
+        const countResult = await pool.query(`
+            SELECT COUNT(*) as count
+            FROM events
+            WHERE (latitude IS NULL OR longitude IS NULL)
+            AND venue_city IS NOT NULL
+            AND publish_status != 'rejected'
+        `);
+        
+        const totalToGeocode = parseInt(countResult.rows[0].count);
+        
+        if (totalToGeocode === 0) {
+            return res.json({
+                success: true,
+                message: 'All events already have coordinates',
+                stats: { processed: 0, geocoded: 0, failed: 0, remaining: 0 }
+            });
+        }
+        
+        // If background mode, start async and return immediately
+        if (background) {
+            geocodingInProgress = true;
+            geocodingStats = { processed: 0, geocoded: 0, failed: 0, remaining: totalToGeocode };
+            
+            // Start background geocoding
+            (async () => {
+                try {
+                    const events = await pool.query(`
+                        SELECT id, title, venue_name, venue_address, venue_city, venue_country
+                        FROM events
+                        WHERE (latitude IS NULL OR longitude IS NULL)
+                        AND venue_city IS NOT NULL
+                        AND publish_status != 'rejected'
+                        ORDER BY date DESC, created_at DESC
+                        LIMIT $1
+                    `, [limit]);
+                    
+                    for (const event of events.rows) {
+                        try {
+                            console.log(`[Geocode ${geocodingStats.processed + 1}/${events.rows.length}] ${event.title}`);
+                            
+                            const coords = await geocodeAddress(event.venue_address, event.venue_city, event.venue_country);
+                            
+                            if (coords) {
+                                await pool.query(`
+                                    UPDATE events 
+                                    SET latitude = $1, longitude = $2, updated_at = CURRENT_TIMESTAMP
+                                    WHERE id = $3
+                                `, [coords.latitude, coords.longitude, event.id]);
+                                geocodingStats.geocoded++;
+                                console.log(`  ✓ ${coords.latitude}, ${coords.longitude}`);
+                            } else {
+                                geocodingStats.failed++;
+                                console.log(`  ✗ No coordinates found`);
+                            }
+                        } catch (eventError) {
+                            geocodingStats.failed++;
+                            console.error(`  Error: ${eventError.message}`);
+                        }
+                        
+                        geocodingStats.processed++;
+                        geocodingStats.remaining = totalToGeocode - geocodingStats.processed;
+                        
+                        // Rate limit
+                        if (geocodingStats.processed < events.rows.length) {
+                            await new Promise(resolve => setTimeout(resolve, 1500));
+                        }
+                    }
+                    
+                    console.log(`[Geocode] Complete: ${geocodingStats.geocoded} geocoded, ${geocodingStats.failed} failed`);
+                } catch (error) {
+                    console.error('[Geocode] Background error:', error);
+                } finally {
+                    geocodingInProgress = false;
+                }
+            })();
+            
+            return res.json({
+                success: true,
+                message: `Geocoding started in background for ${Math.min(limit, totalToGeocode)} events`,
+                totalToGeocode,
+                limit
+            });
+        }
+        
+        // Synchronous mode (for smaller batches)
         const events = await pool.query(`
             SELECT id, title, venue_name, venue_address, venue_city, venue_country
             FROM events
@@ -2279,20 +2376,14 @@ app.post('/db/events/geocode', async (req, res) => {
             AND publish_status != 'rejected'
             ORDER BY date DESC, created_at DESC
             LIMIT $1
-        `, [limit]);
+        `, [Math.min(limit, 10)]); // Max 10 for sync mode
         
         let geocoded = 0;
         let failed = 0;
-        const errors = [];
         
         for (const event of events.rows) {
             try {
-                console.log(`[Geocode Event] ${event.title}`);
-                console.log(`[Geocode Event]   Venue: ${event.venue_name || 'Unknown'}`);
-                console.log(`[Geocode Event]   Location: ${event.venue_address || ''}, ${event.venue_city}, ${event.venue_country || ''}`);
-                
                 const coords = await geocodeAddress(event.venue_address, event.venue_city, event.venue_country);
-                console.log(`[Geocode Event]   Result:`, coords);
                 
                 if (coords) {
                     await pool.query(`
@@ -2301,27 +2392,18 @@ app.post('/db/events/geocode', async (req, res) => {
                         WHERE id = $3
                     `, [coords.latitude, coords.longitude, event.id]);
                     geocoded++;
-                    console.log(`[Geocode Event] ✓ ${event.title} -> ${coords.latitude}, ${coords.longitude}`);
                 } else {
                     failed++;
-                    const msg = `No coordinates found for ${event.title}`;
-                    console.log(`[Geocode Event] ✗ ${msg}`);
-                    if (debug) errors.push(msg);
                 }
             } catch (eventError) {
                 failed++;
-                const msg = `Error geocoding ${event.title}: ${eventError.message}`;
-                console.error(`[Geocode Event] ${msg}`);
-                if (debug) errors.push(msg);
             }
             
-            // Rate limit - 1.5 seconds per request
             if (geocoded + failed < events.rows.length) {
                 await new Promise(resolve => setTimeout(resolve, 1500));
             }
         }
         
-        // Check remaining events without coordinates
         const remaining = await pool.query(`
             SELECT COUNT(*) as count
             FROM events
@@ -2329,21 +2411,25 @@ app.post('/db/events/geocode', async (req, res) => {
             AND publish_status != 'rejected'
         `);
         
-        const result = {
+        res.json({
             success: true,
             processed: events.rows.length,
             geocoded,
             failed,
             remaining: parseInt(remaining.rows[0].count)
-        };
-        
-        if (debug) result.errors = errors;
-        
-        res.json(result);
+        });
     } catch (error) {
         console.error('Event geocoding error:', error);
         res.status(500).json({ error: error.message });
     }
+});
+
+// Get geocoding status
+app.get('/db/events/geocode/status', (req, res) => {
+    res.json({
+        inProgress: geocodingInProgress,
+        stats: geocodingStats
+    });
 });
 
 // Test geocoding function directly
