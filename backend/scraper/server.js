@@ -7048,8 +7048,8 @@ app.get('/scraped/artists', async (req, res) => {
 
         let query = `
             SELECT sa.*, 
-                EXISTS(SELECT 1 FROM artist_source_links asl WHERE asl.scraped_artist_id = sa.id) as is_linked,
-                (SELECT ua.name FROM artist_source_links asl JOIN unified_artists ua ON ua.id = asl.unified_artist_id WHERE asl.scraped_artist_id = sa.id LIMIT 1) as linked_artist_name
+                EXISTS(SELECT 1 FROM artist_scraped_links asl WHERE asl.scraped_artist_id = sa.id) as is_linked,
+                (SELECT a.name FROM artist_scraped_links asl JOIN artists a ON a.id = asl.artist_id WHERE asl.scraped_artist_id = sa.id LIMIT 1) as linked_artist_name
             FROM scraped_artists sa 
             WHERE 1=1
         `;
@@ -7065,9 +7065,9 @@ app.get('/scraped/artists', async (req, res) => {
             params.push(`%${search}%`);
         }
         if (linked === 'true') {
-            query += ` AND EXISTS(SELECT 1 FROM artist_source_links asl WHERE asl.scraped_artist_id = sa.id)`;
+            query += ` AND EXISTS(SELECT 1 FROM artist_scraped_links asl WHERE asl.scraped_artist_id = sa.id)`;
         } else if (linked === 'false') {
-            query += ` AND NOT EXISTS(SELECT 1 FROM artist_source_links asl WHERE asl.scraped_artist_id = sa.id)`;
+            query += ` AND NOT EXISTS(SELECT 1 FROM artist_scraped_links asl WHERE asl.scraped_artist_id = sa.id)`;
         }
 
         const dataQuery = query + ` ORDER BY sa.name ASC LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
@@ -7081,8 +7081,8 @@ app.get('/scraped/artists', async (req, res) => {
         let countParamIndex = 1;
         if (source) countQuery += ` AND sa.source_code = $${countParamIndex++}`;
         if (search) countQuery += ` AND sa.name ILIKE $${countParamIndex++}`;
-        if (linked === 'true') countQuery += ` AND EXISTS(SELECT 1 FROM artist_source_links asl WHERE asl.scraped_artist_id = sa.id)`;
-        else if (linked === 'false') countQuery += ` AND NOT EXISTS(SELECT 1 FROM artist_source_links asl WHERE asl.scraped_artist_id = sa.id)`;
+        if (linked === 'true') countQuery += ` AND EXISTS(SELECT 1 FROM artist_scraped_links asl WHERE asl.scraped_artist_id = sa.id)`;
+        else if (linked === 'false') countQuery += ` AND NOT EXISTS(SELECT 1 FROM artist_scraped_links asl WHERE asl.scraped_artist_id = sa.id)`;
 
         const countResult = await pool.query(countQuery, countParams);
 
