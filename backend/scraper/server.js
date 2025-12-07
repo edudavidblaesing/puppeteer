@@ -4233,13 +4233,13 @@ app.get('/db/venues', async (req, res) => {
             paramIndex++;
         }
 
-        // Get count with same filters
+        // Get count with same filters - need address column for search filter
         let countQuery = `
-            SELECT COUNT(DISTINCT (LOWER(name), LOWER(city)))
+            SELECT DISTINCT LOWER(name) as name, LOWER(city) as city, address
             FROM (
-                SELECT v.name, v.city FROM venues v
+                SELECT v.name, v.city, v.address FROM venues v
                 UNION ALL
-                SELECT venue_name as name, venue_city as city FROM events WHERE venue_name IS NOT NULL AND venue_name != ''
+                SELECT venue_name as name, venue_city as city, venue_address as address FROM events WHERE venue_name IS NOT NULL AND venue_name != ''
             ) combined
             WHERE name IS NOT NULL AND city IS NOT NULL`;
         
@@ -4258,7 +4258,7 @@ app.get('/db/venues', async (req, res) => {
             countParamIndex++;
         }
         
-        // Need to wrap count query properly
+        // Wrap in a COUNT to get total unique venues
         const wrappedCountQuery = `SELECT COUNT(*) FROM (${countQuery}) subq`;
         const countResult = await pool.query(wrappedCountQuery, countParams);
         const total = parseInt(countResult.rows[0].count);
@@ -6081,6 +6081,16 @@ async function matchAndLinkEvents(options = {}) {
                     today.setHours(0, 0, 0, 0);
                     const isPastEvent = eventDate && eventDate < today;
                     const publishStatus = isPastEvent ? 'rejected' : 'pending';
+
+                    // Ensure city exists in database before creating event
+                    if (scraped.venue_city) {
+                        await pool.query(`
+                            INSERT INTO cities (name, country)
+                            VALUES ($1, $2)
+                            ON CONFLICT (name) DO UPDATE SET
+                                country = COALESCE(NULLIF(cities.country, 'Unknown'), EXCLUDED.country)
+                        `, [scraped.venue_city, scraped.venue_country || 'Unknown']);
+                    }
 
                     await pool.query(`
                         INSERT INTO events (
