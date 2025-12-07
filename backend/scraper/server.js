@@ -5348,15 +5348,14 @@ async function refreshMainEvent(eventId) {
             venue_country = COALESCE($11, venue_country),
             latitude = COALESCE($12, latitude),
             longitude = COALESCE($13, longitude),
-            field_sources = $14,
             updated_at = CURRENT_TIMESTAMP
-        WHERE id = $15
+        WHERE id = $14
     `, [
         merged.title, dateStr, startTimestamp, endTimestamp,
         merged.description, merged.flyer_front, merged.content_url,
         merged.venue_name, merged.venue_address, merged.venue_city, merged.venue_country,
         merged.venue_latitude, merged.venue_longitude,
-        JSON.stringify(fieldSources), eventId
+        eventId
     ]);
 
     console.log(`[Refresh] Updated main event ${eventId} with merged data from ${sourcesResult.rows.length} sources`);

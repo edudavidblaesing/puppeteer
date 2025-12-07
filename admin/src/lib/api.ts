@@ -721,3 +721,31 @@ export async function executeSqlQuery(query: string, params: any[] = []) {
   }
   return response.json();
 }
+
+// Match artists manually
+export async function matchArtists(params?: { dryRun?: boolean; minConfidence?: number }) {
+  const response = await fetch(`${API_URL}/db/artists/match`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(params || {}),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to match artists');
+  }
+  return response.json();
+}
+
+// Match venues manually
+export async function matchVenues(params?: { dryRun?: boolean; minConfidence?: number }) {
+  const response = await fetch(`${API_URL}/db/venues/match`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(params || {}),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to match venues');
+  }
+  return response.json();
+}

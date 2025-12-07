@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Database State Checker</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            max-width: 1200px;
+            margin: 40px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #00ff00;
+        }
+        h1, h2 { color: #00ff00; border-bottom: 2px solid #00ff00; padding-bottom: 10px; }
+        .section {
+            margin: 30px 0;
+            padding: 20px;
+            background: #0a0a0a;
+            border: 1px solid #00ff00;
+            border-radius: 8px;
+        }
+        pre {
+            background: #000;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+            border: 1px solid #00ff00;
+        }
+        button {
+            background: #00ff00;
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            margin: 10px 5px;
+            cursor: pointer;
+            font-weight: bold;
+            border-radius: 4px;
+        }
+        button:hover { background: #00cc00; }
+        .loading { color: #ffff00; }
+        .error { color: #ff0000; }
+        .success { color: #00ff00; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 10px 0;
+        }
+        th, td {
+            padding: 8px;
+            text-align: left;
+            border: 1px solid #00ff00;
+        }
+        th {
+            background: #003300;
+            color: #00ff00;
+            font-weight: bold;
+        }
+        tr:nth-child(even) { background: #0a0a0a; }
+    </style>
+</head>
+<body>
+    <h1>🔍 Database State Checker</h1>
+    
+    <div class="section">
+        <h2>Quick Actions</h2>
+        <button onclick="checkAll()">🔄 Check Everything</button>
+        <button onclick="runMatching()">🔗 Run Matching (Events, Artists, Venues)</button>
+        <button onclick="clearResults()">🗑️ Clear Results</button>
+    </div>
+
+    <div id="results"></div>
+
+    <script>
+        const API_URL = 'https://pptr.davidblaesing.com';
+        const API_KEY = 'your-secure-api-key-here';
+
+        const headers = {
+            'Content-Type': 'application/json',
+            'x-api-key': API_KEY
+        };
+
+        async function query(sql) {
+            const response = await fetch(`${API_URL}/admin/sql`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({ query: sql, params: [] })
+            });
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || 'Query failed');
+            }
+            return response.json();
+        }
+
+        async function checkAll() {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<div class="loading">⏳ Checking database state...</div>';
+
+            try {
+                // 1. Check scraped events
+                const scrapedEventsResult = await query(`
+                    SELECT 
+                        source_code,
+                        COUNT(*) as total,
+                        COUNT(*) FILTER (WHERE EXISTS(SELECT 1 FROM event_scraped_links esl WHERE esl.scraped_event_id = scraped_events.id)) as linked,
+                        COUNT(*) FILTER (WHERE NOT EXISTS(SELECT 1 FROM event_scraped_links esl WHERE esl.scraped_event_id = scraped_events.id)) as unlinked
+                    FROM scraped_events
+                    GROUP BY source_code
+                    ORDER BY source_code
+                `);
+
+                // 2. Check main events
+                const mainEventsResult = await query(`
+                    SELECT 
+                        publish_status,
+                        COUNT(*) as count
+                    FROM events
+                    GROUP BY publish_status
+                    ORDER BY publish_status
+                `);
+
+                // 3. Check scraped artists
+                const scrapedArtistsResult = await query(`
+                    SELECT 
+                        source_code,
+                        COUNT(*) as total,
+                        COUNT(*) FILTER (WHERE EXISTS(SELECT 1 FROM artist_scraped_links asl WHERE asl.scraped_artist_id = scraped_artists.id)) as linked,
+                        COUNT(*) FILTER (WHERE NOT EXISTS(SELECT 1 FROM artist_scraped_links asl WHERE asl.scraped_artist_id = scraped_artists.id)) as unlinked
+                    FROM scraped_artists
+                    GROUP BY source_code
+                    ORDER BY source_code
+                `);
+
+                // 4. Check main artists
+                const mainArtistsResult = await query(`SELECT COUNT(*) as count FROM artists`);
+
+                // 5. Check scraped venues
+                const scrapedVenuesResult = await query(`
+                    SELECT 
+                        source_code,
+                        COUNT(*) as total,
+                        COUNT(*) FILTER (WHERE EXISTS(SELECT 1 FROM venue_scraped_links vsl WHERE vsl.scraped_venue_id = scraped_venues.id)) as linked,
+                        COUNT(*) FILTER (WHERE NOT EXISTS(SELECT 1 FROM venue_scraped_links vsl WHERE vsl.scraped_venue_id = scraped_venues.id)) as unlinked
+                    FROM scraped_venues
+                    GROUP BY source_code
+                    ORDER BY source_code
+                `);
+
+                // 6. Check main venues
+                const mainVenuesResult = await query(`SELECT COUNT(*) as count FROM venues`);
+
+                // 7. Check sample events with source references
+                const sampleEventsResult = await query(`
+                    SELECT 
+                        e.id,
+                        e.title,
+                        e.venue_name,
+                        e.publish_status,
+                        e.date,
+                        (SELECT COUNT(*) FROM event_scraped_links esl WHERE esl.event_id = e.id) as source_count
+                    FROM events e
+                    ORDER BY e.date DESC
+                    LIMIT 10
+                `);
+
+                // Render results
+                let html = `
+                    <div class="section success">
+                        <h2>✅ Database State Report</h2>
+                        
+                        <h3>📊 Scraped Events by Source</h3>
+                        <table>
+                            <tr><th>Source</th><th>Total</th><th>Linked</th><th>Unlinked</th></tr>
+                            ${scrapedEventsResult.rows.map(r => `
+                                <tr>
+                                    <td>${r.source_code}</td>
+                                    <td>${r.total}</td>
+                                    <td style="color: ${r.linked > 0 ? '#00ff00' : '#ff0000'}">${r.linked}</td>
+                                    <td style="color: ${r.unlinked > 0 ? '#ff0000' : '#00ff00'}">${r.unlinked}</td>
+                                </tr>
+                            `).join('')}
+                        </table>
+
+                        <h3>📋 Main Events by Status</h3>
+                        <table>
+                            <tr><th>Status</th><th>Count</th></tr>
+                            ${mainEventsResult.rows.map(r => `
+                                <tr>
+                                    <td>${r.publish_status || 'NULL'}</td>
+                                    <td>${r.count}</td>
+                                </tr>
+                            `).join('')}
+                        </table>
+
+                        <h3>🎤 Scraped Artists by Source</h3>
+                        <table>
+                            <tr><th>Source</th><th>Total</th><th>Linked</th><th>Unlinked</th></tr>
+                            ${scrapedArtistsResult.rows.map(r => `
+                                <tr>
+                                    <td>${r.source_code}</td>
+                                    <td>${r.total}</td>
+                                    <td style="color: ${r.linked > 0 ? '#00ff00' : '#ff0000'}">${r.linked}</td>
+                                    <td style="color: ${r.unlinked > 0 ? '#ff0000' : '#00ff00'}">${r.unlinked}</td>
+                                </tr>
+                            `).join('')}
+                        </table>
+
+                        <h3>👥 Main Artists</h3>
+                        <p>Total Artists: <strong>${mainArtistsResult.rows[0].count}</strong></p>
+
+                        <h3>🏢 Scraped Venues by Source</h3>
+                        <table>
+                            <tr><th>Source</th><th>Total</th><th>Linked</th><th>Unlinked</th></tr>
+                            ${scrapedVenuesResult.rows.map(r => `
+                                <tr>
+                                    <td>${r.source_code}</td>
+                                    <td>${r.total}</td>
+                                    <td style="color: ${r.linked > 0 ? '#00ff00' : '#ff0000'}">${r.linked}</td>
+                                    <td style="color: ${r.unlinked > 0 ? '#ff0000' : '#00ff00'}">${r.unlinked}</td>
+                                </tr>
+                            `).join('')}
+                        </table>
+
+                        <h3>🏠 Main Venues</h3>
+                        <p>Total Venues: <strong>${mainVenuesResult.rows[0].count}</strong></p>
+
+                        <h3>📝 Sample Recent Events</h3>
+                        <table>
+                            <tr><th>Title</th><th>Venue</th><th>Date</th><th>Status</th><th>Sources</th></tr>
+                            ${sampleEventsResult.rows.map(r => `
+                                <tr>
+                                    <td>${r.title}</td>
+                                    <td>${r.venue_name}</td>
+                                    <td>${r.date}</td>
+                                    <td>${r.publish_status}</td>
+                                    <td style="color: ${r.source_count > 0 ? '#00ff00' : '#ff0000'}">${r.source_count}</td>
+                                </tr>
+                            `).join('')}
+                        </table>
+                    </div>
+                `;
+
+                resultsDiv.innerHTML = html;
+            } catch (error) {
+                resultsDiv.innerHTML = `<div class="section error"><h2>❌ Error</h2><pre>${error.message}</pre></div>`;
+            }
+        }
+
+        async function runMatching() {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<div class="loading">⏳ Running matching for events, artists, and venues...</div>';
+
+            try {
+                // Run all three matching functions
+                const [eventsResult, artistsResult, venuesResult] = await Promise.all([
+                    fetch(`${API_URL}/scrape/match`, {
+                        method: 'POST',
+                        headers,
+                        body: JSON.stringify({ dryRun: false })
+                    }).then(r => r.json()),
+                    fetch(`${API_URL}/db/artists/match`, {
+                        method: 'POST',
+                        headers,
+                        body: JSON.stringify({ dryRun: false })
+                    }).then(r => r.json()),
+                    fetch(`${API_URL}/db/venues/match`, {
+                        method: 'POST',
+                        headers,
+                        body: JSON.stringify({ dryRun: false })
+                    }).then(r => r.json())
+                ]);
+
+                resultsDiv.innerHTML = `
+                    <div class="section success">
+                        <h2>✅ Matching Complete</h2>
+                        
+                        <h3>📊 Events</h3>
+                        <pre>${JSON.stringify(eventsResult, null, 2)}</pre>
+
+                        <h3>🎤 Artists</h3>
+                        <pre>${JSON.stringify(artistsResult, null, 2)}</pre>
+
+                        <h3>🏢 Venues</h3>
+                        <pre>${JSON.stringify(venuesResult, null, 2)}</pre>
+
+                        <button onclick="checkAll()">🔄 Check State Again</button>
+                    </div>
+                `;
+            } catch (error) {
+                resultsDiv.innerHTML = `<div class="section error"><h2>❌ Error</h2><pre>${error.message}</pre></div>`;
+            }
+        }
+
+        function clearResults() {
+            document.getElementById('results').innerHTML = '';
+        }
+
+        // Auto-run on load
+        window.onload = checkAll;
+    </script>
+</body>
+</html>
