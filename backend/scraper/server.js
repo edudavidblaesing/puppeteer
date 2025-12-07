@@ -220,8 +220,22 @@ async function geocodeAddress(address, city, country) {
     if (!address && !city) return null;
     
     try {
-        // Build search query
-        const parts = [address, city, country].filter(Boolean);
+        // Clean up address to avoid redundancy
+        let cleanAddress = address || '';
+        
+        // Remove postal codes and country from address if already included
+        // e.g., "Street 123, 20359 Hamburg, Germany" -> "Street 123"
+        if (city && cleanAddress.toLowerCase().includes(city.toLowerCase())) {
+            // Split on commas or semicolons and take only parts before city mention
+            const parts = cleanAddress.split(/[,;]/);
+            const cityIndex = parts.findIndex(p => p.trim().toLowerCase().includes(city.toLowerCase()));
+            if (cityIndex > 0) {
+                cleanAddress = parts.slice(0, cityIndex).join(',').trim();
+            }
+        }
+        
+        // Build search query - avoid duplicating city/country
+        const parts = [cleanAddress, city, country].filter(Boolean);
         const query = encodeURIComponent(parts.join(', '));
         
         // Use Nominatim API with native fetch
