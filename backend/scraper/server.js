@@ -244,7 +244,13 @@ async function geocodeAddress(address, city, country) {
             const url = `https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=1`;
             console.log(`[Geocode] Query URL: ${url}`);
             
-            https.get(url, {
+            // Add timeout to prevent hanging
+            const timeout = setTimeout(() => {
+                console.error('[Geocoding] Request timeout');
+                resolve(null);
+            }, 10000); // 10 second timeout
+            
+            const req = https.get(url, {
                 headers: {
                     'User-Agent': 'SocialEvents/1.0'
                 }
@@ -256,6 +262,7 @@ async function geocodeAddress(address, city, country) {
                 });
                 
                 res.on('end', () => {
+                    clearTimeout(timeout);
                     try {
                         const result = JSON.parse(data);
                         
@@ -272,8 +279,18 @@ async function geocodeAddress(address, city, country) {
                         resolve(null);
                     }
                 });
-            }).on('error', (error) => {
+            });
+            
+            req.on('error', (error) => {
+                clearTimeout(timeout);
                 console.error('[Geocoding] HTTP error:', error.message);
+                resolve(null);
+            });
+            
+            req.on('timeout', () => {
+                req.destroy();
+                clearTimeout(timeout);
+                console.error('[Geocoding] Request timed out');
                 resolve(null);
             });
         } catch (error) {
