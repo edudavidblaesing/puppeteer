@@ -133,10 +133,21 @@ export async function fetchStats() {
   return response.json();
 }
 
-export async function fetchVenues(params?: { city?: string; limit?: number }) {
+export async function fetchVenues(params?: { 
+  city?: string; 
+  search?: string;
+  limit?: number;
+  offset?: number;
+  sort?: string;
+  order?: string;
+}) {
   const searchParams = new URLSearchParams();
   if (params?.city) searchParams.set('city', params.city);
+  if (params?.search) searchParams.set('search', params.search);
   if (params?.limit) searchParams.set('limit', params.limit.toString());
+  if (params?.offset) searchParams.set('offset', params.offset.toString());
+  if (params?.sort) searchParams.set('sort', params.sort);
+  if (params?.order) searchParams.set('order', params.order);
 
   const response = await fetch(`${API_URL}/db/venues?${searchParams}`, { headers });
   if (!response.ok) throw new Error('Failed to fetch venues');

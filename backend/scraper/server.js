@@ -1732,6 +1732,8 @@ app.get('/db/events', async (req, res) => {
 
         let query = `
             SELECT e.*, 
+                   v.latitude as venue_latitude,
+                   v.longitude as venue_longitude,
                    COALESCE(
                        (SELECT json_agg(json_build_object(
                            'id', se.id,
@@ -1745,6 +1747,7 @@ app.get('/db/events', async (req, res) => {
                        '[]'
                    ) as source_references
             FROM events e
+            LEFT JOIN venues v ON e.venue_id = v.id OR (v.name = e.venue_name AND v.city = e.venue_city)
             WHERE 1=1`;
         const params = [];
         let paramIndex = 1;
@@ -1863,7 +1866,14 @@ app.get('/db/events', async (req, res) => {
         // If event_scraped_links doesn't exist, query without it
         if (error.code === '42P01' && error.message.includes('event_scraped_links')) {
             try {
-                let query = 'SELECT e.* FROM events e WHERE 1=1';
+                let query = `
+                    SELECT e.*, 
+                           v.latitude as venue_latitude,
+                           v.longitude as venue_longitude
+                    FROM events e
+                    LEFT JOIN venues v ON e.venue_id = v.id OR (v.name = e.venue_name AND v.city = e.venue_city)
+                    WHERE 1=1
+                `;
                 const params = [];
                 let paramIndex = 1;
 
@@ -4186,7 +4196,7 @@ app.post('/db/cities/refresh-stats', async (req, res) => {
 // Falls back to extracting unique venues from events if venues table is empty
 app.get('/db/venues', async (req, res) => {
     try {
-        const { search, city, limit = 50, offset = 0, sort = 'name', order = 'asc' } = req.query;
+        const { search, city, limit = 100, offset = 0, sort = 'name', order = 'asc' } = req.query;
 
         // First check if venues table has data
         const venueCountCheck = await pool.query('SELECT COUNT(*) FROM venues');
@@ -4225,13 +4235,23 @@ app.get('/db/venues', async (req, res) => {
                 paramIndex++;
             }
 
-            // Get total count
-            const countQuery = `SELECT COUNT(*) FROM venues WHERE 1=1` + 
-                (search ? ` AND (name ILIKE $1 OR address ILIKE $1)` : '') +
-                (city && search ? ` AND city ILIKE $2` : city ? ` AND city ILIKE $1` : '');
+            // Get total count with same filters as main query
+            let countQuery = `SELECT COUNT(*) FROM venues v WHERE 1=1`;
             const countParams = [];
-            if (search) countParams.push(`%${search}%`);
-            if (city) countParams.push(`%${city}%`);
+            let countParamIndex = 1;
+            
+            if (search) {
+                countQuery += ` AND (v.name ILIKE $${countParamIndex} OR v.address ILIKE $${countParamIndex})`;
+                countParams.push(`%${search}%`);
+                countParamIndex++;
+            }
+            
+            if (city) {
+                countQuery += ` AND v.city ILIKE $${countParamIndex}`;
+                countParams.push(`%${city}%`);
+                countParamIndex++;
+            }
+            
             const countResult = await pool.query(countQuery, countParams);
             const total = parseInt(countResult.rows[0].count);
 

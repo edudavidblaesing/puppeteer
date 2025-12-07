@@ -125,12 +125,17 @@ export default function EventMap({
       if (!venues[venueName]) {
         let coords: [number, number] | null = null;
 
-        // First priority: Use actual coordinates from database if available
-        if (event.latitude && event.longitude) {
+        // First priority: Use venue coordinates from database (venue_latitude/venue_longitude)
+        if ((event as any).venue_latitude && (event as any).venue_longitude) {
+          coords = [(event as any).venue_latitude, (event as any).venue_longitude];
+        }
+
+        // Second priority: Use event coordinates if available (legacy)
+        if (!coords && event.latitude && event.longitude) {
           coords = [event.latitude, event.longitude];
         }
 
-        // Second priority: Try to find coordinates from known venues
+        // Third priority: Try to find coordinates from known venues
         if (!coords) {
           for (const [name, venueCoords] of Object.entries(VENUE_COORDS)) {
             if (venueName.toLowerCase().includes(name.toLowerCase())) {
@@ -151,9 +156,13 @@ export default function EventMap({
           pendingCount: 0,
           rejectedCount: 0,
         };
-      } else if (!venues[venueName].coords && event.latitude && event.longitude) {
-        // Update venue coords if we find an event with coordinates
-        venues[venueName].coords = [event.latitude, event.longitude];
+      } else if (!venues[venueName].coords) {
+        // Update venue coords if we find them in any event
+        if ((event as any).venue_latitude && (event as any).venue_longitude) {
+          venues[venueName].coords = [(event as any).venue_latitude, (event as any).venue_longitude];
+        } else if (event.latitude && event.longitude) {
+          venues[venueName].coords = [event.latitude, event.longitude];
+        }
       }
 
       venues[venueName].events.push(event);
