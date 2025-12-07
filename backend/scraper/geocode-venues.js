@@ -22,6 +22,7 @@ function geocodeAddress(address, city, country) {
                 return str
                     .trim()
                     .replace(/\s+/g, ' ') // Normalize whitespace
+                    .replace(/[,;]+/g, ',') // Normalize separators (semicolons to commas)
                     .replace(/,+/g, ',') // Remove duplicate commas
                     .replace(/^,|,$/g, ''); // Remove leading/trailing commas
             };
@@ -30,14 +31,59 @@ function geocodeAddress(address, city, country) {
             const cleanCity = cleanString(city);
             const cleanCountry = cleanString(country);
 
-            // Remove city and country from address if they appear there
-            if (cleanCity && cleanAddr.toLowerCase().includes(cleanCity.toLowerCase())) {
-                cleanAddr = cleanAddr.replace(new RegExp(cleanCity, 'gi'), '').replace(/\s+/g, ' ').trim();
+            // Parse address that might contain: "Street; District; Postal City; Country"
+            // Example: "Rigaer Strasse 31; Friedrichshain; 10247 Berlin; Germany"
+            if (cleanAddr) {
+                const parts = cleanAddr.split(',').map(p => p.trim()).filter(Boolean);
+                
+                // Remove parts that match city or country
+                const filteredParts = parts.filter(part => {
+                    const partLower = part.toLowerCase();
+                    
+                    // Remove if it's just the city name
+                    if (cleanCity && partLower === cleanCity.toLowerCase()) {
+                        return false;
+                    }
+                    
+                    // Remove if it's just the country name
+                    if (cleanCountry && partLower === cleanCountry.toLowerCase()) {
+                        return false;
+                    }
+                    
+                    // Remove if it contains "postal code + city" and we have the city separately
+                    if (cleanCity) {
+                        const cityPattern = new RegExp(`\\b\\d{4,5}\\s+${cleanCity.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+                        if (cityPattern.test(part)) {
+                            return false;
+                        }
+                    }
+                    
+                    // Remove if part ends with city or country
+                    if (cleanCity && partLower.endsWith(cleanCity.toLowerCase())) {
+                        // Check if it's postal + city pattern like "10247 Berlin"
+                        const withoutCity = part.slice(0, -(cleanCity.length)).trim();
+                        // If what remains is just a postal code, keep the postal code
+                        if (/^\d{4,5}$/.test(withoutCity)) {
+                            return true; // Keep the part, we'll extract postal later
+                        }
+                        return false;
+                    }
+                    
+                    return true;
+                });
+                
+                // Extract street address (usually first part) and postal code
+                const streetPart = filteredParts[0] || '';
+                const postalMatch = cleanAddr.match(/\b(\d{4,5})\b/);
+                const postal = postalMatch ? postalMatch[1] : '';
+                
+                // Rebuild clean address: Street, Postal (if found)
+                const addressParts = [streetPart, postal].filter(Boolean);
+                cleanAddr = addressParts.join(' ').trim();
+                
+                // Final cleanup
+                cleanAddr = cleanAddr.replace(/[,;]+$/, '').trim();
             }
-            if (cleanCountry && cleanAddr.toLowerCase().includes(cleanCountry.toLowerCase())) {
-                cleanAddr = cleanAddr.replace(new RegExp(cleanCountry, 'gi'), '').replace(/\s+/g, ' ').trim();
-            }
-            cleanAddr = cleanAddr.replace(/^,\s*|,\s*$/g, '').replace(/,\s*,/g, ',').trim();
 
             const parts = [cleanAddr, cleanCity, cleanCountry].filter(Boolean);
             const query = encodeURIComponent(parts.join(', '));

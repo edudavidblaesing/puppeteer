@@ -506,6 +506,7 @@ async function geocodeAddress(address, city, country) {
         return str
             .trim()
             .replace(/\s+/g, ' ') // Normalize whitespace
+            .replace(/[,;]+/g, ',') // Normalize separators (semicolons to commas)
             .replace(/,+/g, ',') // Remove duplicate commas
             .replace(/^,|,$/g, ''); // Remove leading/trailing commas
     };
@@ -514,14 +515,59 @@ async function geocodeAddress(address, city, country) {
     const cleanCity = cleanString(city);
     const cleanCountry = cleanString(country);
 
-    // Remove city and country from address if they appear there
-    if (cleanCity && cleanAddr.toLowerCase().includes(cleanCity.toLowerCase())) {
-        cleanAddr = cleanAddr.replace(new RegExp(cleanCity, 'gi'), '').replace(/\s+/g, ' ').trim();
+    // Parse address that might contain: "Street; District; Postal City; Country"
+    // Example: "Rigaer Strasse 31; Friedrichshain; 10247 Berlin; Germany"
+    if (cleanAddr) {
+        const parts = cleanAddr.split(',').map(p => p.trim()).filter(Boolean);
+        
+        // Remove parts that match city or country
+        const filteredParts = parts.filter(part => {
+            const partLower = part.toLowerCase();
+            
+            // Remove if it's just the city name
+            if (cleanCity && partLower === cleanCity.toLowerCase()) {
+                return false;
+            }
+            
+            // Remove if it's just the country name
+            if (cleanCountry && partLower === cleanCountry.toLowerCase()) {
+                return false;
+            }
+            
+            // Remove if it contains "postal code + city" and we have the city separately
+            if (cleanCity) {
+                const cityPattern = new RegExp(`\\b\\d{4,5}\\s+${cleanCity.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+                if (cityPattern.test(part)) {
+                    return false;
+                }
+            }
+            
+            // Remove if part ends with city or country
+            if (cleanCity && partLower.endsWith(cleanCity.toLowerCase())) {
+                // Check if it's postal + city pattern like "10247 Berlin"
+                const withoutCity = part.slice(0, -(cleanCity.length)).trim();
+                // If what remains is just a postal code, keep the postal code
+                if (/^\d{4,5}$/.test(withoutCity)) {
+                    return true; // Keep the part, we'll extract postal later
+                }
+                return false;
+            }
+            
+            return true;
+        });
+        
+        // Extract street address (usually first part) and postal code
+        const streetPart = filteredParts[0] || '';
+        const postalMatch = cleanAddr.match(/\b(\d{4,5})\b/);
+        const postal = postalMatch ? postalMatch[1] : '';
+        
+        // Rebuild clean address: Street, Postal (if found)
+        const addressParts = [streetPart, postal].filter(Boolean);
+        cleanAddr = addressParts.join(' ').trim();
+        
+        // Final cleanup
+        cleanAddr = cleanAddr.replace(/[,;]+$/, '').trim();
     }
-    if (cleanCountry && cleanAddr.toLowerCase().includes(cleanCountry.toLowerCase())) {
-        cleanAddr = cleanAddr.replace(new RegExp(cleanCountry, 'gi'), '').replace(/\s+/g, ' ').trim();
-    }
-    cleanAddr = cleanAddr.replace(/^,\s*|,\s*$/g, '').replace(/,\s*,/g, ',').trim();
 
     const fullAddress = [cleanAddr, cleanCity, cleanCountry].filter(Boolean).join(', ');
 
@@ -2197,10 +2243,10 @@ app.post('/db/events/publish', async (req, res) => {
 });
 
 // Set publish status for events (new: pending/approved/rejected)
-// Geocode venues without coordinates
+// Geocode specific venues (synchronous, for testing)
 app.post('/db/venues/geocode', async (req, res) => {
     try {
-        const { limit = 100, debug = false } = req.body;
+        const { limit = 10, debug = false } = req.body;
         
         // Get venues without coordinates
         const venues = await pool.query(`
@@ -2265,13 +2311,13 @@ app.post('/db/venues/geocode', async (req, res) => {
     }
 });
 
-// Geocode events without coordinates - background task
+// Geocode venues without coordinates - background task
 let geocodingInProgress = false;
-let geocodingStats = { processed: 0, geocoded: 0, failed: 0, remaining: 0 };
+let geocodingStats = { processed: 0, geocoded: 0, failed: 0, remaining: 0, failedVenues: [] };
 
-app.post('/db/events/geocode', async (req, res) => {
+app.post('/db/venues/geocode-all', async (req, res) => {
     try {
-        const { limit = 100, background = true } = req.body;
+        const { limit = 200, background = true } = req.body;
         
         // Check if geocoding is already running
         if (geocodingInProgress) {
@@ -2282,13 +2328,12 @@ app.post('/db/events/geocode', async (req, res) => {
             });
         }
         
-        // Get count of events without coordinates
+        // Get count of venues without coordinates
         const countResult = await pool.query(`
             SELECT COUNT(*) as count
-            FROM events
+            FROM venues
             WHERE (latitude IS NULL OR longitude IS NULL)
-            AND venue_city IS NOT NULL
-            AND publish_status != 'rejected'
+            AND (address IS NOT NULL OR city IS NOT NULL)
         `);
         
         const totalToGeocode = parseInt(countResult.rows[0].count);
@@ -2296,7 +2341,7 @@ app.post('/db/events/geocode', async (req, res) => {
         if (totalToGeocode === 0) {
             return res.json({
                 success: true,
-                message: 'All events already have coordinates',
+                message: 'All venues already have coordinates',
                 stats: { processed: 0, geocoded: 0, failed: 0, remaining: 0 }
             });
         }
@@ -2304,54 +2349,74 @@ app.post('/db/events/geocode', async (req, res) => {
         // If background mode, start async and return immediately
         if (background) {
             geocodingInProgress = true;
-            geocodingStats = { processed: 0, geocoded: 0, failed: 0, remaining: totalToGeocode };
+            geocodingStats = { processed: 0, geocoded: 0, failed: 0, remaining: totalToGeocode, failedVenues: [] };
             
             // Start background geocoding
             (async () => {
                 try {
-                    const events = await pool.query(`
-                        SELECT id, title, venue_name, venue_address, venue_city, venue_country
-                        FROM events
+                    const venues = await pool.query(`
+                        SELECT id, name, address, city, country
+                        FROM venues
                         WHERE (latitude IS NULL OR longitude IS NULL)
-                        AND venue_city IS NOT NULL
-                        AND publish_status != 'rejected'
-                        ORDER BY date DESC, created_at DESC
+                        AND (address IS NOT NULL OR city IS NOT NULL)
+                        ORDER BY name
                         LIMIT $1
                     `, [limit]);
                     
-                    for (const event of events.rows) {
+                    for (const venue of venues.rows) {
                         try {
-                            console.log(`[Geocode ${geocodingStats.processed + 1}/${events.rows.length}] ${event.title}`);
+                            console.log(`[Geocode ${geocodingStats.processed + 1}/${venues.rows.length}] ${venue.name}`);
+                            console.log(`  Address: ${venue.address || ''}, ${venue.city}, ${venue.country || ''}`);
                             
-                            const coords = await geocodeAddress(event.venue_address, event.venue_city, event.venue_country);
+                            const coords = await geocodeAddress(venue.address, venue.city, venue.country);
                             
                             if (coords) {
                                 await pool.query(`
-                                    UPDATE events 
+                                    UPDATE venues 
                                     SET latitude = $1, longitude = $2, updated_at = CURRENT_TIMESTAMP
                                     WHERE id = $3
-                                `, [coords.latitude, coords.longitude, event.id]);
+                                `, [coords.latitude, coords.longitude, venue.id]);
                                 geocodingStats.geocoded++;
                                 console.log(`  ✓ ${coords.latitude}, ${coords.longitude}`);
                             } else {
                                 geocodingStats.failed++;
+                                geocodingStats.failedVenues.push(venue.name);
                                 console.log(`  ✗ No coordinates found`);
                             }
-                        } catch (eventError) {
+                        } catch (venueError) {
                             geocodingStats.failed++;
-                            console.error(`  Error: ${eventError.message}`);
+                            geocodingStats.failedVenues.push(venue.name);
+                            console.error(`  Error: ${venueError.message}`);
                         }
                         
                         geocodingStats.processed++;
                         geocodingStats.remaining = totalToGeocode - geocodingStats.processed;
                         
                         // Rate limit
-                        if (geocodingStats.processed < events.rows.length) {
+                        if (geocodingStats.processed < venues.rows.length) {
                             await new Promise(resolve => setTimeout(resolve, 1500));
                         }
                     }
                     
-                    console.log(`[Geocode] Complete: ${geocodingStats.geocoded} geocoded, ${geocodingStats.failed} failed`);
+                    // Sync venue coordinates to events
+                    console.log('\n[Geocode] Syncing venue coordinates to events...');
+                    const syncResult = await pool.query(`
+                        UPDATE events e
+                        SET latitude = v.latitude,
+                            longitude = v.longitude,
+                            updated_at = CURRENT_TIMESTAMP
+                        FROM venues v
+                        WHERE e.venue_name = v.name
+                        AND e.venue_city = v.city
+                        AND v.latitude IS NOT NULL
+                        AND v.longitude IS NOT NULL
+                        AND (e.latitude IS NULL OR e.longitude IS NULL)
+                    `);
+                    console.log(`[Geocode] Synced ${syncResult.rowCount} events with venue coordinates`);
+                    console.log(`[Geocode] Complete: ${geocodingStats.geocoded} venues geocoded, ${geocodingStats.failed} failed`);
+                    if (geocodingStats.failedVenues.length > 0) {
+                        console.log(`[Geocode] Failed venues: ${geocodingStats.failedVenues.join(', ')}`);
+                    }
                 } catch (error) {
                     console.error('[Geocode] Background error:', error);
                 } finally {
@@ -2361,71 +2426,21 @@ app.post('/db/events/geocode', async (req, res) => {
             
             return res.json({
                 success: true,
-                message: `Geocoding started in background for ${Math.min(limit, totalToGeocode)} events`,
+                message: `Geocoding started in background for ${Math.min(limit, totalToGeocode)} venues`,
                 totalToGeocode,
                 limit
             });
         }
         
-        // Synchronous mode (for smaller batches)
-        const events = await pool.query(`
-            SELECT id, title, venue_name, venue_address, venue_city, venue_country
-            FROM events
-            WHERE (latitude IS NULL OR longitude IS NULL)
-            AND venue_city IS NOT NULL
-            AND publish_status != 'rejected'
-            ORDER BY date DESC, created_at DESC
-            LIMIT $1
-        `, [Math.min(limit, 10)]); // Max 10 for sync mode
-        
-        let geocoded = 0;
-        let failed = 0;
-        
-        for (const event of events.rows) {
-            try {
-                const coords = await geocodeAddress(event.venue_address, event.venue_city, event.venue_country);
-                
-                if (coords) {
-                    await pool.query(`
-                        UPDATE events 
-                        SET latitude = $1, longitude = $2, updated_at = CURRENT_TIMESTAMP
-                        WHERE id = $3
-                    `, [coords.latitude, coords.longitude, event.id]);
-                    geocoded++;
-                } else {
-                    failed++;
-                }
-            } catch (eventError) {
-                failed++;
-            }
-            
-            if (geocoded + failed < events.rows.length) {
-                await new Promise(resolve => setTimeout(resolve, 1500));
-            }
-        }
-        
-        const remaining = await pool.query(`
-            SELECT COUNT(*) as count
-            FROM events
-            WHERE (latitude IS NULL OR longitude IS NULL)
-            AND publish_status != 'rejected'
-        `);
-        
-        res.json({
-            success: true,
-            processed: events.rows.length,
-            geocoded,
-            failed,
-            remaining: parseInt(remaining.rows[0].count)
-        });
+        res.json({ success: false, message: 'Use background mode for venue geocoding' });
     } catch (error) {
-        console.error('Event geocoding error:', error);
+        console.error('Venue geocoding error:', error);
         res.status(500).json({ error: error.message });
     }
 });
 
 // Get geocoding status
-app.get('/db/events/geocode/status', (req, res) => {
+app.get('/db/venues/geocode/status', (req, res) => {
     res.json({
         inProgress: geocodingInProgress,
         stats: geocodingStats
