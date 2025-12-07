@@ -2512,14 +2512,13 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                     {/* Source References Section - show linked scraped sources */}
 
 
-                    {/* Event form - works for both events and scrape tabs */}
-                    {(activeTab === 'events' || activeTab === 'scrape') && (
-                      <>
-                        {/* Approve/Reject Switch */}
-                        {editingItem && (
-                          <div className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-lg p-4">
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Publish Status</label>
-                            <div className="grid grid-cols-3 gap-2 sm:gap-3">
+                    {/* Event form - works for scrape tab (events tab has its own panel) */}
+                    <>
+                      {/* Approve/Reject Switch */}
+                      {editingItem && (
+                        <div className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-lg p-4">
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Publish Status</label>
+                          <div className="grid grid-cols-3 gap-2 sm:gap-3">
                               <button
                                 type="button"
                                 onClick={async () => {
