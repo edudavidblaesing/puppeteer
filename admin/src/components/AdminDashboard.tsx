@@ -1664,7 +1664,9 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                                 </span>
                               )}
                               {(!event.latitude || !event.longitude) && (
-                                <MapPin className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400 flex-shrink-0" title="Missing coordinates" />
+                                <span title="Missing coordinates" className="flex-shrink-0">
+                                  <MapPin className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" />
+                                </span>
                               )}
                             </div>
                             <div className="flex items-center gap-2 mt-0.5">
