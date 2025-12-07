@@ -6618,12 +6618,23 @@ app.get('/scraped/events', async (req, res) => {
 
         // Build count query separately
         let countQuery = 'SELECT COUNT(*) FROM scraped_events se WHERE 1=1';
-        if (source) countQuery += ` AND se.source_code = $1`;
-        if (city) countQuery += ` AND LOWER(se.venue_city) = LOWER($${source ? 2 : 1})`;
-        if (linked === 'true') countQuery += ` AND EXISTS(SELECT 1 FROM event_scraped_links esl WHERE esl.scraped_event_id = se.id)`;
-        else if (linked === 'false') countQuery += ` AND NOT EXISTS(SELECT 1 FROM event_scraped_links esl WHERE esl.scraped_event_id = se.id)`;
-
-        const countParams = params.slice(0, -2);
+        const countParams = [];
+        let countParamIndex = 1;
+        
+        if (source) {
+            countQuery += ` AND se.source_code = $${countParamIndex++}`;
+            countParams.push(source);
+        }
+        if (city) {
+            countQuery += ` AND LOWER(se.venue_city) = LOWER($${countParamIndex++})`;
+            countParams.push(city);
+        }
+        if (linked === 'true') {
+            countQuery += ` AND EXISTS(SELECT 1 FROM event_scraped_links esl WHERE esl.scraped_event_id = se.id)`;
+        } else if (linked === 'false') {
+            countQuery += ` AND NOT EXISTS(SELECT 1 FROM event_scraped_links esl WHERE esl.scraped_event_id = se.id)`;
+        }
+        
         const countResult = await pool.query(countQuery, countParams);
 
         res.json({

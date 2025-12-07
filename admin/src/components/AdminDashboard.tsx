@@ -270,14 +270,15 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
   }, [showArtistDropdown, artistSuggestions.length]);
 
   // Load events data
-  const loadEvents = useCallback(async () => {
+  const loadEvents = useCallback(async (options?: { noLimit?: boolean }) => {
     try {
+      const eventLimit = options?.noLimit ? 10000 : pageSize;
       const [eventsData, statsData, citiesData, scrapedData] = await Promise.all([
         fetchEvents({
           city: cityFilter || undefined,
           search: searchQuery || undefined,
           status: statusFilter !== 'all' ? statusFilter : undefined,
-          limit: pageSize,
+          limit: eventLimit,
           offset: (page - 1) * pageSize,
           showPast: showPastEvents,
         }),
@@ -417,10 +418,10 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
       else if (activeTab === 'venues') await loadVenues();
       else if (activeTab === 'cities') await loadCities();
       else if (activeTab === 'scrape') {
-        // Load both scrape data AND events for pending list
+        // Load both scrape data AND all events for pending list (no pagination limit)
         await Promise.all([
           loadScrapeData(),
-          loadEvents()
+          loadEvents({ noLimit: true })
         ]);
       }
     } finally {
@@ -1511,7 +1512,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
               {/* LEFT SIDE - Pending Events TODO List */}
               <div className="bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 flex flex-col w-[420px]">
                 {/* List header */}
-                <div className="px-4 py-2 bg-gray-50 dark:bg-gray-800 border-b dark:border-gray-700 flex items-center justify-between flex-shrink-0">
+                <div className="px-4 py-2 bg-gray-50 dark:bg-gray-800 border-b dark:border-gray-700 flex items-center justify-between flex-shrink-0 flex-wrap gap-2">
                   <div className="flex items-center gap-3">
                     <span className="text-sm text-gray-600 dark:text-gray-400">
                       {events.filter(e => e.publish_status === 'pending').length} pending events
@@ -1568,6 +1569,25 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                     Select all
                   </label>
                 </div>
+
+                {/* Bulk actions for selected pending events */}
+                {selectedIds.size > 0 && (
+                  <div className="px-4 py-2 bg-indigo-50 dark:bg-indigo-900/20 border-b border-indigo-200 dark:border-indigo-700 flex items-center gap-2 flex-wrap">
+                    <span className="text-sm text-indigo-700 dark:text-indigo-300 font-medium">{selectedIds.size} selected</span>
+                    <button onClick={() => handleBulkSetStatus('approved')} className="px-2.5 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200 flex items-center gap-1 flex-shrink-0">
+                      <Eye className="w-3 h-3" /> Approve
+                    </button>
+                    <button onClick={() => handleBulkSetStatus('rejected')} className="px-2.5 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 flex items-center gap-1 flex-shrink-0">
+                      <EyeOff className="w-3 h-3" /> Reject
+                    </button>
+                    <button onClick={() => handleBulkSetStatus('pending')} className="px-2.5 py-1 text-xs bg-yellow-100 text-yellow-700 rounded hover:bg-yellow-200 flex-shrink-0">
+                      Reset
+                    </button>
+                    <button onClick={handleBulkDelete} className="px-2.5 py-1 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300 flex items-center gap-1 flex-shrink-0">
+                      <Trash2 className="w-3 h-3" /> Delete
+                    </button>
+                  </div>
+                )}
 
                 {/* Pending events list */}
                 <div className="flex-1 overflow-auto min-h-0">
