@@ -9,6 +9,9 @@ const jwt = require('jsonwebtoken');
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
+const { exec } = require('child_process');
+const { promisify } = require('util');
+const execAsync = promisify(exec);
 
 // JWT Secret
 const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
@@ -220,84 +223,51 @@ app.use('/db', requireApiKey);
 async function geocodeAddress(address, city, country) {
     if (!address && !city) return null;
     
-    return new Promise((resolve) => {
-        try {
-            // Clean up address to avoid redundancy
-            let cleanAddress = address || '';
-            
-            // Remove postal codes and country from address if already included
-            // e.g., "Street 123, 20359 Hamburg, Germany" -> "Street 123"
-            if (city && cleanAddress.toLowerCase().includes(city.toLowerCase())) {
-                // Split on commas or semicolons and take only parts before city mention
-                const parts = cleanAddress.split(/[,;]/);
-                const cityIndex = parts.findIndex(p => p.trim().toLowerCase().includes(city.toLowerCase()));
-                if (cityIndex > 0) {
-                    cleanAddress = parts.slice(0, cityIndex).join(',').trim();
-                }
+    try {
+        // Clean up address to avoid redundancy
+        let cleanAddress = address || '';
+        
+        // Remove postal codes and country from address if already included
+        // e.g., "Street 123, 20359 Hamburg, Germany" -> "Street 123"
+        if (city && cleanAddress.toLowerCase().includes(city.toLowerCase())) {
+            // Split on commas or semicolons and take only parts before city mention
+            const parts = cleanAddress.split(/[,;]/);
+            const cityIndex = parts.findIndex(p => p.trim().toLowerCase().includes(city.toLowerCase()));
+            if (cityIndex > 0) {
+                cleanAddress = parts.slice(0, cityIndex).join(',').trim();
             }
-            
-            // Build search query - avoid duplicating city/country
-            const parts = [cleanAddress, city, country].filter(Boolean);
-            const query = encodeURIComponent(parts.join(', '));
-            
-            // Use Nominatim API with https module
-            const url = `https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=1`;
-            console.log(`[Geocode] Query URL: ${url}`);
-            
-            // Add timeout to prevent hanging
-            const timeout = setTimeout(() => {
-                console.error('[Geocoding] Request timeout');
-                resolve(null);
-            }, 10000); // 10 second timeout
-            
-            const req = https.get(url, {
-                headers: {
-                    'User-Agent': 'SocialEvents/1.0'
-                }
-            }, (res) => {
-                let data = '';
-                
-                res.on('data', (chunk) => {
-                    data += chunk;
-                });
-                
-                res.on('end', () => {
-                    clearTimeout(timeout);
-                    try {
-                        const result = JSON.parse(data);
-                        
-                        if (result && result.length > 0) {
-                            resolve({
-                                latitude: parseFloat(result[0].lat),
-                                longitude: parseFloat(result[0].lon)
-                            });
-                        } else {
-                            resolve(null);
-                        }
-                    } catch (parseError) {
-                        console.error('[Geocoding] Parse error:', parseError.message);
-                        resolve(null);
-                    }
-                });
-            });
-            
-            req.on('error', (error) => {
-                clearTimeout(timeout);
-                console.error('[Geocoding] HTTP error:', error.message);
-                resolve(null);
-            });
-            
-            req.on('timeout', () => {
-                req.destroy();
-                clearTimeout(timeout);
-                console.error('[Geocoding] Request timed out');
-                resolve(null);
-            });
-        } catch (error) {
-            console.error('[Geocoding] Error:', error.message);
-            resolve(null);
         }
-    });
+        
+        // Build search query - avoid duplicating city/country
+        const parts = [cleanAddress, city, country].filter(Boolean);
+        const searchQuery = parts.join(', ');
+        const query = encodeURIComponent(searchQuery);
+        
+        // Use curl via exec for reliability (works in any Node version)
+        const url = `https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=1`;
+        const curlCmd = `curl -s -m 5 -H "User-Agent: SocialEvents/1.0" "${url}"`;
+        
+        const { stdout, stderr } = await execAsync(curlCmd);
+        
+        if (stderr) {
+            console.error('[Geocoding] curl error:', stderr);
+            return null;
+        }
+        
+        const result = JSON.parse(stdout);
+        
+        if (result && result.length > 0) {
+            return {
+                latitude: parseFloat(result[0].lat),
+                longitude: parseFloat(result[0].lon)
+            };
+        }
+        
+        return null;
+    } catch (error) {
+        console.error('[Geocoding] Error:', error.message);
+        return null;
+    }
 }
 
 // ============================================
