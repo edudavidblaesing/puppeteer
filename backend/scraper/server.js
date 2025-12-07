@@ -13,6 +13,7 @@ const { exec } = require('child_process');
 const { promisify } = require('util');
 const execAsync = promisify(exec);
 const cron = require('node-cron');
+const { v4: uuidv4 } = require('uuid');
 
 // JWT Secret
 const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
@@ -4193,162 +4194,265 @@ app.post('/db/cities/refresh-stats', async (req, res) => {
 // ============================================
 
 // List venues with search and pagination
-// Falls back to extracting unique venues from events if venues table is empty
+// Get venues - combines venues table with venues extracted from events
 app.get('/db/venues', async (req, res) => {
     try {
         const { search, city, limit = 100, offset = 0, sort = 'name', order = 'asc' } = req.query;
 
-        // First check if venues table has data
-        const venueCountCheck = await pool.query('SELECT COUNT(*) FROM venues');
-        const hasVenues = parseInt(venueCountCheck.rows[0].count) > 0;
-
-        if (hasVenues) {
-            // Use venues table with source references
-            let query = `
-                SELECT v.*,
-                       COALESCE(
-                           (SELECT json_agg(json_build_object(
-                               'id', sv.id,
-                               'source_code', sv.source_code,
-                               'name', sv.name,
-                               'confidence', vsl.match_confidence
-                           ))
-                           FROM venue_scraped_links vsl
-                           JOIN scraped_venues sv ON sv.id = vsl.scraped_venue_id
-                           WHERE vsl.venue_id = v.id),
-                           '[]'
-                       ) as source_references
+        // Always combine venues from both tables to show all venues
+        // This ensures Berlin venues (in events) and Hamburg venues (in venues table) both appear
+        let query = `
+            SELECT DISTINCT ON (LOWER(name), LOWER(city))
+                name, address, city, country, latitude, longitude,
+                (SELECT COUNT(*) FROM events e WHERE LOWER(e.venue_name) = LOWER(combined.name) AND LOWER(e.venue_city) = LOWER(combined.city)) as event_count
+            FROM (
+                -- Venues from venues table
+                SELECT v.name, v.address, v.city, v.country, v.latitude, v.longitude
                 FROM venues v
-                WHERE 1=1`;
-            const params = [];
-            let paramIndex = 1;
-
-            if (search) {
-                query += ` AND (v.name ILIKE $${paramIndex} OR v.address ILIKE $${paramIndex})`;
-                params.push(`%${search}%`);
-                paramIndex++;
-            }
-
-            if (city) {
-                query += ` AND v.city ILIKE $${paramIndex}`;
-                params.push(`%${city}%`);
-                paramIndex++;
-            }
-
-            // Get total count with same filters as main query
-            let countQuery = `SELECT COUNT(*) FROM venues v WHERE 1=1`;
-            const countParams = [];
-            let countParamIndex = 1;
-            
-            if (search) {
-                countQuery += ` AND (v.name ILIKE $${countParamIndex} OR v.address ILIKE $${countParamIndex})`;
-                countParams.push(`%${search}%`);
-                countParamIndex++;
-            }
-            
-            if (city) {
-                countQuery += ` AND v.city ILIKE $${countParamIndex}`;
-                countParams.push(`%${city}%`);
-                countParamIndex++;
-            }
-            
-            const countResult = await pool.query(countQuery, countParams);
-            const total = parseInt(countResult.rows[0].count);
-
-            // Add sorting and pagination
-            const validSorts = ['name', 'city', 'country', 'created_at', 'updated_at'];
-            const sortCol = validSorts.includes(sort) ? sort : 'name';
-            const sortOrder = order.toLowerCase() === 'desc' ? 'DESC' : 'ASC';
-
-            query += ` ORDER BY ${sortCol} ${sortOrder} LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
-            params.push(parseInt(limit), parseInt(offset));
-
-            const result = await pool.query(query, params);
-
-            res.json({
-                data: result.rows,
-                total,
-                limit: parseInt(limit),
-                offset: parseInt(offset)
-            });
-        } else {
-            // Fall back to extracting unique venues from events table
-            let query = `
-                SELECT DISTINCT ON (LOWER(venue_name), LOWER(venue_city))
-                    venue_name as name,
-                    venue_address as address,
-                    venue_city as city,
-                    venue_country as country,
-                    latitude,
-                    longitude,
-                    COUNT(*) OVER (PARTITION BY LOWER(venue_name), LOWER(venue_city)) as event_count
+                UNION ALL
+                -- Venues from events table (that might not be in venues yet)
+                SELECT venue_name as name, venue_address as address, venue_city as city, venue_country as country, 
+                       NULL as latitude, NULL as longitude
                 FROM events
                 WHERE venue_name IS NOT NULL AND venue_name != ''
-            `;
-            const params = [];
-            let paramIndex = 1;
+            ) combined
+            WHERE name IS NOT NULL AND city IS NOT NULL`;
+        
+        const params = [];
+        let paramIndex = 1;
 
-            if (search) {
-                query = `SELECT * FROM (${query}) v WHERE (v.name ILIKE $${paramIndex} OR v.address ILIKE $${paramIndex})`;
-                params.push(`%${search}%`);
-                paramIndex++;
-            }
-
-            if (city) {
-                if (search) {
-                    query += ` AND v.city ILIKE $${paramIndex}`;
-                } else {
-                    query = `SELECT * FROM (${query}) v WHERE v.city ILIKE $${paramIndex}`;
-                }
-                params.push(`%${city}%`);
-                paramIndex++;
-            }
-
-            // Wrap for sorting and pagination
-            const baseQuery = search || city ? query : `SELECT * FROM (${query}) v`;
-            const countQuery = `SELECT COUNT(*) FROM (${baseQuery.replace('SELECT *', 'SELECT 1')}) c`;
-
-            let countParams = [...params];
-            const countResult = await pool.query(`
-                SELECT COUNT(DISTINCT (LOWER(venue_name), LOWER(venue_city))) 
-                FROM events 
-                WHERE venue_name IS NOT NULL AND venue_name != ''
-                ${search ? `AND (venue_name ILIKE $1 OR venue_address ILIKE $1)` : ''}
-                ${city ? `AND venue_city ILIKE $${search ? 2 : 1}` : ''}
-            `, params.slice(0, (search ? 1 : 0) + (city ? 1 : 0)));
-            const total = parseInt(countResult.rows[0].count);
-
-            const sortOrder = order.toLowerCase() === 'desc' ? 'DESC' : 'ASC';
-            const finalQuery = `
-                SELECT DISTINCT ON (LOWER(venue_name), LOWER(venue_city))
-                    venue_name as name,
-                    venue_address as address,
-                    venue_city as city,
-                    venue_country as country,
-                    latitude,
-                    longitude,
-                    (SELECT COUNT(*) FROM events e2 WHERE LOWER(e2.venue_name) = LOWER(events.venue_name) AND LOWER(e2.venue_city) = LOWER(events.venue_city)) as event_count
-                FROM events
-                WHERE venue_name IS NOT NULL AND venue_name != ''
-                ${search ? `AND (venue_name ILIKE $1 OR venue_address ILIKE $1)` : ''}
-                ${city ? `AND venue_city ILIKE $${search ? 2 : 1}` : ''}
-                ORDER BY LOWER(venue_name), LOWER(venue_city), name ${sortOrder}
-                LIMIT $${params.length + 1} OFFSET $${params.length + 2}
-            `;
-            params.push(parseInt(limit), parseInt(offset));
-
-            const result = await pool.query(finalQuery, params);
-
-            res.json({
-                data: result.rows,
-                total,
-                limit: parseInt(limit),
-                offset: parseInt(offset),
-                source: 'events_derived'
-            });
+        if (search) {
+            query += ` AND (combined.name ILIKE $${paramIndex} OR combined.address ILIKE $${paramIndex})`;
+            params.push(`%${search}%`);
+            paramIndex++;
         }
+
+        if (city) {
+            query += ` AND combined.city ILIKE $${paramIndex}`;
+            params.push(`%${city}%`);
+            paramIndex++;
+        }
+
+        // Get count with same filters
+        let countQuery = `
+            SELECT COUNT(DISTINCT (LOWER(name), LOWER(city)))
+            FROM (
+                SELECT v.name, v.city FROM venues v
+                UNION ALL
+                SELECT venue_name as name, venue_city as city FROM events WHERE venue_name IS NOT NULL AND venue_name != ''
+            ) combined
+            WHERE name IS NOT NULL AND city IS NOT NULL`;
+        
+        const countParams = [];
+        let countParamIndex = 1;
+        
+        if (search) {
+            countQuery += ` AND (combined.name ILIKE $${countParamIndex} OR combined.address ILIKE $${countParamIndex})`;
+            countParams.push(`%${search}%`);
+            countParamIndex++;
+        }
+        
+        if (city) {
+            countQuery += ` AND combined.city ILIKE $${countParamIndex}`;
+            countParams.push(`%${city}%`);
+            countParamIndex++;
+        }
+        
+        // Need to wrap count query properly
+        const wrappedCountQuery = `SELECT COUNT(*) FROM (${countQuery}) subq`;
+        const countResult = await pool.query(wrappedCountQuery, countParams);
+        const total = parseInt(countResult.rows[0].count);
+
+        // Add sorting and pagination
+        const validSorts = ['name', 'city', 'country', 'event_count'];
+        const sortCol = validSorts.includes(sort) ? sort : 'name';
+        const sortOrder = order.toLowerCase() === 'desc' ? 'DESC' : 'ASC';
+
+        query += ` ORDER BY LOWER(name), LOWER(city), ${sortCol} ${sortOrder} LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
+        params.push(parseInt(limit), parseInt(offset));
+
+        const result = await pool.query(query, params);
+
+        res.json({
+            data: result.rows,
+            total,
+            limit: parseInt(limit),
+            offset: parseInt(offset),
+            source: 'combined'
+        });
     } catch (error) {
         console.error('Error fetching venues:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Sync venues from events - creates missing venues in venues table
+app.post('/db/venues/sync-from-events', async (req, res) => {
+    try {
+        // Get all unique venue combinations from events that don't exist in venues table
+        const missingVenues = await pool.query(`
+            SELECT DISTINCT 
+                e.venue_name,
+                e.venue_address,
+                e.venue_city,
+                e.venue_country,
+                COUNT(*) as event_count
+            FROM events e
+            WHERE e.venue_name IS NOT NULL 
+            AND e.venue_name != ''
+            AND NOT EXISTS (
+                SELECT 1 FROM venues v 
+                WHERE LOWER(v.name) = LOWER(e.venue_name) 
+                AND LOWER(v.city) = LOWER(e.venue_city)
+            )
+            GROUP BY e.venue_name, e.venue_address, e.venue_city, e.venue_country
+            ORDER BY COUNT(*) DESC
+        `);
+
+        let created = 0;
+        let errors = 0;
+        const results = [];
+
+        for (const venue of missingVenues.rows) {
+            try {
+                const venueId = uuidv4();
+                
+                // Try to geocode if no coordinates
+                let latitude = null;
+                let longitude = null;
+                
+                if (venue.venue_address && venue.venue_city) {
+                    console.log(`[Sync Venues] Geocoding ${venue.venue_name}, ${venue.venue_city}...`);
+                    const coords = await geocodeAddress(venue.venue_address, venue.venue_city, venue.venue_country);
+                    if (coords) {
+                        latitude = coords.latitude;
+                        longitude = coords.longitude;
+                        console.log(`[Sync Venues] Geocoded: ${latitude}, ${longitude}`);
+                    }
+                    // Small delay to respect rate limits
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                }
+                
+                await pool.query(`
+                    INSERT INTO venues (id, name, address, city, country, latitude, longitude, created_at, updated_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                `, [
+                    venueId,
+                    venue.venue_name,
+                    venue.venue_address,
+                    venue.venue_city,
+                    venue.venue_country,
+                    latitude,
+                    longitude
+                ]);
+
+                created++;
+                results.push({
+                    name: venue.venue_name,
+                    city: venue.venue_city,
+                    event_count: venue.event_count,
+                    geocoded: latitude && longitude ? true : false
+                });
+            } catch (error) {
+                console.error(`Error creating venue ${venue.venue_name}:`, error);
+                errors++;
+            }
+        }
+
+        res.json({
+            success: true,
+            found: missingVenues.rows.length,
+            created,
+            errors,
+            results: results.slice(0, 20) // Show first 20
+        });
+    } catch (error) {
+        console.error('Error syncing venues:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Link events to venues and geocode missing venues
+app.post('/db/venues/link-events', async (req, res) => {
+    try {
+        // First, ensure all venues exist
+        await pool.query(`
+            INSERT INTO venues (id, name, address, city, country, created_at, updated_at)
+            SELECT 
+                gen_random_uuid(),
+                e.venue_name,
+                e.venue_address,
+                e.venue_city,
+                e.venue_country,
+                CURRENT_TIMESTAMP,
+                CURRENT_TIMESTAMP
+            FROM (
+                SELECT DISTINCT ON (LOWER(venue_name), LOWER(venue_city))
+                    venue_name,
+                    venue_address,
+                    venue_city,
+                    venue_country
+                FROM events
+                WHERE venue_name IS NOT NULL 
+                AND venue_name != ''
+            ) e
+            WHERE NOT EXISTS (
+                SELECT 1 FROM venues v 
+                WHERE LOWER(v.name) = LOWER(e.venue_name) 
+                AND LOWER(v.city) = LOWER(e.venue_city)
+            )
+        `);
+
+        // Link events to venues by matching name and city
+        const linkResult = await pool.query(`
+            UPDATE events e
+            SET venue_id = v.id
+            FROM venues v
+            WHERE e.venue_id IS NULL
+            AND LOWER(e.venue_name) = LOWER(v.name)
+            AND LOWER(e.venue_city) = LOWER(v.city)
+            RETURNING e.id
+        `);
+
+        // Find venues without coordinates that have addresses
+        const venuesNeedingGeocode = await pool.query(`
+            SELECT DISTINCT v.id, v.name, v.address, v.city, v.country
+            FROM venues v
+            WHERE (v.latitude IS NULL OR v.longitude IS NULL)
+            AND v.address IS NOT NULL
+            AND v.address != ''
+            LIMIT 50
+        `);
+
+        let geocoded = 0;
+        for (const venue of venuesNeedingGeocode.rows) {
+            try {
+                console.log(`[Link Events] Geocoding ${venue.name}, ${venue.city}...`);
+                const coords = await geocodeAddress(venue.address, venue.city, venue.country);
+                if (coords) {
+                    await pool.query(`
+                        UPDATE venues 
+                        SET latitude = $1, longitude = $2, updated_at = CURRENT_TIMESTAMP
+                        WHERE id = $3
+                    `, [coords.latitude, coords.longitude, venue.id]);
+                    geocoded++;
+                    console.log(`[Link Events] Geocoded ${venue.name}: ${coords.latitude}, ${coords.longitude}`);
+                }
+                // Rate limit: 1 request per second
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            } catch (error) {
+                console.error(`Error geocoding venue ${venue.name}:`, error);
+            }
+        }
+
+        res.json({
+            success: true,
+            linked: linkResult.rowCount,
+            geocoded,
+            message: `Linked ${linkResult.rowCount} events to venues and geocoded ${geocoded} venues`
+        });
+    } catch (error) {
+        console.error('Error linking events to venues:', error);
         res.status(500).json({ error: error.message });
     }
 });
