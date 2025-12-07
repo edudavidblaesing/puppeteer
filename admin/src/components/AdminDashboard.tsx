@@ -552,14 +552,20 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
     return sorted;
   }, [events]);
 
+  // Get pending events count for scrape tab pagination
+  const pendingEventsCount = useMemo(() => {
+    return events.filter(e => e.publish_status === 'pending').length;
+  }, [events]);
+
   // Get current total based on tab
   const currentTotal = useMemo(() => {
     if (activeTab === 'events') return total;
+    if (activeTab === 'scrape') return pendingEventsCount; // Use filtered pending count
     if (activeTab === 'artists') return artistsTotal;
     if (activeTab === 'venues') return venuesTotal;
     if (activeTab === 'cities') return citiesTotal;
     return 0;
-  }, [activeTab, total, artistsTotal, venuesTotal, citiesTotal]);
+  }, [activeTab, total, pendingEventsCount, artistsTotal, venuesTotal, citiesTotal]);
 
   const totalPages = Math.ceil(currentTotal / pageSize);
 
@@ -2030,158 +2036,17 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                       </button>
                     </div>
                   </div>
-                  {/* Render same edit form content as events tab - we'll extract this later */}
-                  <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                    {/* Source References Section */}
-                    {editingItem?.source_references && editingItem.source_references.length > 0 && (
-                      <div className="bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
-                        <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
-                          <Link2 className="w-4 h-4 text-gray-500" />
-                          Linked Sources ({editingItem.source_references.length})
-                        </h3>
-                        <div className="space-y-2">
-                          {editingItem.source_references.map((ref: any, idx: number) => (
-                            <div key={idx} className="flex items-center justify-between p-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded">
-                              <div className="flex items-center gap-2 min-w-0 flex-1">
-                                {ref.source_code === 'ra' ? (
-                                  <img src="/ra-logo.jpg" alt="RA" className="h-4 w-auto rounded-sm flex-shrink-0" />
-                                ) : ref.source_code === 'ticketmaster' ? (
-                                  <img src="/ticketmaster-logo.png" alt="TM" className="h-4 w-auto rounded-sm flex-shrink-0" />
-                                ) : (
-                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 font-medium flex-shrink-0">
-                                    {ref.source_code?.toUpperCase()}
-                                  </span>
-                                )}
-                                <span className="text-xs text-gray-600 dark:text-gray-400 truncate">{ref.source_url || 'No URL'}</span>
-                              </div>
-                              {ref.source_url && (
-                                <a href={ref.source_url} target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 flex-shrink-0" onClick={e => e.stopPropagation()}>
-                                  <ExternalLink className="w-3.5 h-3.5" />
-                                </a>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    {/* Quick approve/reject for scrape page */}
-                    <div className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-lg p-4">
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Publish Status</label>
-                      <div className="grid grid-cols-3 gap-2 sm:gap-3">
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            try {
-                              await setPublishStatus([editingItem.id], 'approved');
-                              const updated = { ...editingItem, publish_status: 'approved' };
-                              setEvents(events.map(e => e.id === editingItem.id ? updated : e));
-                              setEditingItem(updated);
-                              setEditForm({ ...editForm, publish_status: 'approved' });
-                            } catch (error) { console.error('Failed to approve:', error); }
-                          }}
-                          className={clsx(
-                            "px-3 py-2.5 sm:py-3 rounded-lg border-2 text-sm font-medium transition-all touch-manipulation",
-                            editForm.publish_status === 'approved'
-                              ? "bg-green-50 dark:bg-green-900/30 border-green-500 dark:border-green-600 text-green-700 dark:text-green-300 ring-2 ring-green-200 dark:ring-green-800"
-                              : "bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:border-green-300 dark:hover:border-green-700"
-                          )}
-                        >
-                          <span className="text-lg mr-1.5">✓</span> Approved
-                        </button>
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            try {
-                              await setPublishStatus([editingItem.id], 'pending');
-                              const updated = { ...editingItem, publish_status: 'pending' };
-                              setEvents(events.map(e => e.id === editingItem.id ? updated : e));
-                              setEditingItem(updated);
-                              setEditForm({ ...editForm, publish_status: 'pending' });
-                            } catch (error) { console.error('Failed to set pending:', error); }
-                          }}
-                          className={clsx(
-                            "px-3 py-2.5 sm:py-3 rounded-lg border-2 text-sm font-medium transition-all touch-manipulation",
-                            editForm.publish_status === 'pending'
-                              ? "bg-yellow-50 dark:bg-yellow-900/30 border-yellow-500 dark:border-yellow-600 text-yellow-700 dark:text-yellow-300 ring-2 ring-yellow-200 dark:ring-yellow-800"
-                              : "bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:border-yellow-300 dark:hover:border-yellow-700"
-                          )}
-                        >
-                          <span className="text-lg mr-1.5">⏱</span> Pending
-                        </button>
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            try {
-                              await setPublishStatus([editingItem.id], 'rejected');
-                              const updated = { ...editingItem, publish_status: 'rejected' };
-                              setEvents(events.map(e => e.id === editingItem.id ? updated : e));
-                              setEditingItem(updated);
-                              setEditForm({ ...editForm, publish_status: 'rejected' });
-                            } catch (error) { console.error('Failed to reject:', error); }
-                          }}
-                          className={clsx(
-                            "px-3 py-2.5 sm:py-3 rounded-lg border-2 text-sm font-medium transition-all touch-manipulation",
-                            editForm.publish_status === 'rejected'
-                              ? "bg-red-50 dark:bg-red-900/30 border-red-500 dark:border-red-600 text-red-700 dark:text-red-300 ring-2 ring-red-200 dark:ring-red-800"
-                              : "bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:border-red-300 dark:hover:border-red-700"
-                          )}
-                        >
-                          <span className="text-lg mr-1.5">✕</span> Rejected
-                        </button>
-                      </div>
-                    </div>
-                    {/* Show basic event info readonly */}
-                    <div className="space-y-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Title</label>
-                        <p className="text-base text-gray-900 dark:text-gray-100 font-medium">{editingItem.title}</p>
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Date</label>
-                          <p className="text-sm text-gray-900 dark:text-gray-100">{editingItem.date ? format(new Date(editingItem.date), 'MMM d, yyyy') : '—'}</p>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Time</label>
-                          <p className="text-sm text-gray-900 dark:text-gray-100">{editingItem.start_time || '—'}</p>
-                        </div>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Venue</label>
-                        <p className="text-sm text-gray-900 dark:text-gray-100">{editingItem.venue_name} • {editingItem.venue_city}</p>
-                        {editingItem.venue_address && (
-                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{editingItem.venue_address}</p>
-                        )}
-                      </div>
-                      {editingItem.artistsList && editingItem.artistsList.length > 0 && (
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Artists ({editingItem.artistsList.length})</label>
-                          <div className="flex flex-wrap gap-1">
-                            {editingItem.artistsList.map((artist: any) => (
-                              <span key={artist.id || artist.name} className="text-xs px-2 py-1 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded">
-                                {artist.name}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      {(editingItem.latitude && editingItem.longitude) ? (
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Coordinates</label>
-                          <p className="text-xs font-mono text-gray-600 dark:text-gray-400">
-                            {editingItem.latitude.toFixed(6)}, {editingItem.longitude.toFixed(6)}
-                          </p>
-                        </div>
-                      ) : (
-                        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg p-3">
-                          <p className="text-sm text-amber-800 dark:text-amber-300 flex items-center gap-2">
-                            <AlertTriangle className="w-4 h-4" />
-                            Missing coordinates - switch to Events tab to geocode
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                  {/* Save button for scrape page */}
+                  {activeTab === 'scrape' && (
+                    <button
+                      onClick={handleSave}
+                      disabled={isSaving}
+                      className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2 touch-manipulation"
+                    >
+                      {isSaving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                      Save
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div className="flex-1 overflow-auto p-6 bg-gray-50 dark:bg-gray-900">
@@ -2244,6 +2109,25 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                             {historyTotals.total_scrape_runs} total runs
                           </span>
                         )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Next Auto-Scrape Info */}
+                  {scrapeStats?.next_scheduled_scrape && scrapeStats?.auto_scrape_enabled && (
+                    <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-700 rounded-lg p-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-3 h-3 bg-indigo-500 dark:bg-indigo-400 rounded-full" />
+                        <span className="text-sm text-gray-600 dark:text-gray-300">
+                          Next auto-scrape: <span className="font-medium text-indigo-900 dark:text-indigo-100">
+                            {new Date(scrapeStats.next_scheduled_scrape).toLocaleString('en-US', {
+                              month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                            })}
+                          </span>
+                          <span className="text-gray-500 dark:text-gray-400 ml-2">
+                            (Daily at 2:00 AM • Berlin & Hamburg)
+                          </span>
+                        </span>
                       </div>
                     </div>
                   )}
@@ -2407,16 +2291,16 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                     />
                     <StatCard 
                       label="Venues" 
-                      value={(scrapeStats?.total_main_venues || 0) + (scrapeStats?.total_scraped_venues || 0)}
-                      subtext={scrapeStats?.total_scraped_venues ? `${scrapeStats.total_scraped_venues} scraped` : undefined}
+                      value={scrapeStats?.total_main_venues || 0}
+                      subtext={scrapeStats?.total_scraped_venues ? `${scrapeStats.total_scraped_venues} from sources` : undefined}
                       sparkData={scrapeHistory.slice(-14).reverse().map(d => d.venues_created || 0)}
                       sparkColor="#6366f1"
                       icon={<Building2 className="w-4 h-4 sm:w-5 sm:h-5" />}
                     />
                     <StatCard 
                       label="Artists" 
-                      value={(scrapeStats?.total_main_artists || 0) + (scrapeStats?.total_scraped_artists || 0)}
-                      subtext={scrapeStats?.total_scraped_artists ? `${scrapeStats.total_scraped_artists} scraped` : undefined}
+                      value={scrapeStats?.total_main_artists || 0}
+                      subtext={scrapeStats?.total_scraped_artists ? `${scrapeStats.total_scraped_artists} from sources` : undefined}
                       sparkData={scrapeHistory.slice(-14).reverse().map(d => d.artists_created || 0)}
                       sparkColor="#8b5cf6"
                       icon={<Music className="w-4 h-4 sm:w-5 sm:h-5" />}
@@ -2624,8 +2508,8 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                     {/* Source References Section - show linked scraped sources */}
 
 
-                    {/* Event form */}
-                    {activeTab === 'events' && (
+                    {/* Event form - works for both events and scrape tabs */}
+                    {(activeTab === 'events' || activeTab === 'scrape') && (
                       <>
                         {/* Approve/Reject Switch */}
                         {editingItem && (

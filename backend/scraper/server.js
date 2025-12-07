@@ -12,6 +12,7 @@ const https = require('https');
 const { exec } = require('child_process');
 const { promisify } = require('util');
 const execAsync = promisify(exec);
+const cron = require('node-cron');
 
 // JWT Secret
 const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
@@ -738,6 +739,12 @@ if (TELEGRAM_TOKEN) {
 let browser = null;
 let page = null;
 let browserPromise = null;
+
+// Auto-scrape scheduling
+let nextScheduledScrape = null;
+let autoScrapeEnabled = true; // Can be toggled via API
+const CITIES_TO_SCRAPE = ['berlin', 'hamburg']; // Cities to auto-scrape
+const SOURCES_TO_SCRAPE = ['ra']; // Sources to auto-scrape
 
 async function initBrowser(forceNewProxy = false) {
     if (browser && !forceNewProxy) return browser;
@@ -7881,7 +7888,13 @@ app.get('/scrape/stats', async (req, res) => {
                 (SELECT source_code FROM scrape_history WHERE error IS NULL ORDER BY created_at DESC LIMIT 1) as last_scraped_source
         `);
 
-        res.json(stats.rows[0]);
+        const statsData = {
+            ...stats.rows[0],
+            next_scheduled_scrape: nextScheduledScrape,
+            auto_scrape_enabled: autoScrapeEnabled
+        };
+
+        res.json(statsData);
     } catch (error) {
         console.error('Stats error:', error);
         // If event_scraped_links doesn't exist, return basic stats
@@ -7915,6 +7928,51 @@ app.get('/scrape/stats', async (req, res) => {
         } else {
             res.json({ error: error.message, total_scraped_events: 0, total_main_events: 0 });
         }
+    }
+});
+
+// Auto-scrape configuration endpoints
+app.get('/scrape/auto-config', (req, res) => {
+    res.json({
+        enabled: autoScrapeEnabled,
+        cities: CITIES_TO_SCRAPE,
+        sources: SOURCES_TO_SCRAPE,
+        next_scheduled: nextScheduledScrape,
+        schedule: '2:00 AM daily'
+    });
+});
+
+app.post('/scrape/auto-config', verifyToken, (req, res) => {
+    const { enabled } = req.body;
+    
+    if (typeof enabled === 'boolean') {
+        autoScrapeEnabled = enabled;
+        console.log(`[Auto-Scrape] ${enabled ? 'Enabled' : 'Disabled'} by admin`);
+        
+        res.json({
+            success: true,
+            enabled: autoScrapeEnabled,
+            next_scheduled: enabled ? nextScheduledScrape : null
+        });
+    } else {
+        res.status(400).json({ error: 'Invalid configuration' });
+    }
+});
+
+// Trigger auto-scrape manually
+app.post('/scrape/auto-trigger', verifyToken, async (req, res) => {
+    try {
+        res.json({ 
+            success: true, 
+            message: 'Auto-scrape triggered. This will run in the background.' 
+        });
+        
+        // Run in background
+        performAutoScrape().catch(err => {
+            console.error('[Auto-Scrape] Manual trigger error:', err);
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
     }
 });
 
@@ -8039,7 +8097,8 @@ app.get('/scrape/recent', async (req, res) => {
                 venues_created,
                 artists_created,
                 duration_ms,
-                error
+                error,
+                scrape_type
             FROM scrape_history
             ORDER BY created_at DESC
             LIMIT $1
@@ -8055,8 +8114,8 @@ app.get('/scrape/recent', async (req, res) => {
 async function logScrapeHistory(data) {
     try {
         await pool.query(`
-            INSERT INTO scrape_history (city, source_code, events_fetched, events_inserted, events_updated, venues_created, artists_created, duration_ms, error, metadata)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            INSERT INTO scrape_history (city, source_code, events_fetched, events_inserted, events_updated, venues_created, artists_created, duration_ms, error, metadata, scrape_type)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         `, [
             data.city,
             data.source_code,
@@ -8067,7 +8126,8 @@ async function logScrapeHistory(data) {
             data.artists_created || 0,
             data.duration_ms || null,
             data.error || null,
-            JSON.stringify(data.metadata || {})
+            JSON.stringify(data.metadata || {}),
+            data.scrape_type || 'manual'
         ]);
     } catch (err) {
         console.error('Failed to log scrape history:', err.message);
@@ -8132,6 +8192,92 @@ async function initDatabaseExtensions() {
     }
 }
 
+// Calculate next scheduled scrape time
+function calculateNextScrapeTime() {
+    const now = new Date();
+    const next = new Date(now);
+    next.setHours(2, 0, 0, 0); // 2:00 AM
+    
+    // If it's already past 2 AM today, schedule for tomorrow
+    if (next <= now) {
+        next.setDate(next.getDate() + 1);
+    }
+    
+    return next.toISOString();
+}
+
+// Perform auto-scrape for all configured cities and sources
+async function performAutoScrape() {
+    if (!autoScrapeEnabled) {
+        console.log('[Auto-Scrape] Skipped - auto-scrape is disabled');
+        return;
+    }
+
+    console.log('[Auto-Scrape] Starting scheduled scrape...');
+    
+    for (const city of CITIES_TO_SCRAPE) {
+        for (const source of SOURCES_TO_SCRAPE) {
+            try {
+                console.log(`[Auto-Scrape] Scraping ${source} for ${city}...`);
+                
+                if (source === 'ra') {
+                    const events = await scrapeResidentAdvisor(city, { fullScrape: true });
+                    await saveScrapedEvents(events, { city, source_code: 'ra' });
+                    await logScrapeHistory({ city, source_code: 'ra', events_count: events.length, scrape_type: 'scheduled' });
+                    console.log(`[Auto-Scrape] Completed ${source}/${city}: ${events.length} events`);
+                } else if (source === 'ticketmaster') {
+                    const events = await scrapeTicketmaster(city, { fullScrape: true });
+                    await saveScrapedEvents(events, { city, source_code: 'ticketmaster' });
+                    await logScrapeHistory({ city, source_code: 'ticketmaster', events_count: events.length, scrape_type: 'scheduled' });
+                    console.log(`[Auto-Scrape] Completed ${source}/${city}: ${events.length} events`);
+                }
+                
+                // Wait between scrapes to avoid overloading
+                await new Promise(resolve => setTimeout(resolve, 5000));
+            } catch (error) {
+                console.error(`[Auto-Scrape] Error scraping ${source}/${city}:`, error.message);
+                await logScrapeHistory({ 
+                    city, 
+                    source_code: source, 
+                    events_count: 0,
+                    error: error.message,
+                    scrape_type: 'scheduled'
+                });
+            }
+        }
+    }
+    
+    console.log('[Auto-Scrape] Scheduled scrape completed');
+    
+    // Send notification if Telegram is configured
+    if (bot && TELEGRAM_CHAT_ID) {
+        try {
+            await bot.sendMessage(TELEGRAM_CHAT_ID, 
+                `🤖 Auto-scrape completed\nCities: ${CITIES_TO_SCRAPE.join(', ')}\nSources: ${SOURCES_TO_SCRAPE.join(', ')}`
+            );
+        } catch (err) {
+            console.error('[Auto-Scrape] Failed to send Telegram notification:', err);
+        }
+    }
+    
+    // Update next scheduled time
+    nextScheduledScrape = calculateNextScrapeTime();
+}
+
+// Initialize auto-scrape scheduler
+function initAutoScrapeScheduler() {
+    // Schedule scrape daily at 2:00 AM
+    cron.schedule('0 2 * * *', () => {
+        console.log('[Auto-Scrape] Cron triggered at 2:00 AM');
+        performAutoScrape();
+    });
+    
+    // Set initial next scheduled time
+    nextScheduledScrape = calculateNextScrapeTime();
+    
+    console.log(`[Auto-Scrape] Scheduler initialized. Next scrape at: ${nextScheduledScrape}`);
+}
+
 // Main startup function
 async function startServer() {
     try {
@@ -8143,6 +8289,9 @@ async function startServer() {
 
         // Initialize default admin user
         await initializeDefaultAdmin();
+
+        // Initialize auto-scrape scheduler
+        initAutoScrapeScheduler();
 
         // Start the HTTP server
         app.listen(PORT, async () => {
