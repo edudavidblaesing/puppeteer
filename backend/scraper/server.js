@@ -2207,6 +2207,26 @@ app.post('/db/venues/geocode', async (req, res) => {
     }
 });
 
+// Test geocoding function directly
+app.post('/db/venues/test-geocode', async (req, res) => {
+    try {
+        const { address, city, country } = req.body;
+        console.log('[Test Geocode] Input:', { address, city, country });
+        
+        const coords = await geocodeAddress(address, city, country);
+        console.log('[Test Geocode] Result:', coords);
+        
+        res.json({
+            success: true,
+            input: { address, city, country },
+            coordinates: coords
+        });
+    } catch (error) {
+        console.error('[Test Geocode] Error:', error);
+        res.status(500).json({ error: error.message, stack: error.stack });
+    }
+});
+
 // Update events with venue coordinates
 app.post('/db/events/sync-venue-coords', async (req, res) => {
     try {
