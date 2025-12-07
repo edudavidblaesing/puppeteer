@@ -3262,7 +3262,13 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                                       onClick={() => setEditForm({ ...editForm, city: source.city })}
                                       className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-700 rounded text-xs text-left transition-colors group max-w-full"
                                     >
-                                      <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
+                                      {source.source_code === 'ra' ? (
+                                        <img src="/ra-logo.jpg" alt="RA" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                      ) : source.source_code === 'ticketmaster' ? (
+                                        <img src="/ticketmaster-logo.png" alt="TM" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                      ) : (
+                                        <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
+                                      )}
                                       <span className="truncate max-w-[200px] text-gray-600 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
                                         {source.city}
                                       </span>
@@ -3309,7 +3315,13 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                                       onClick={() => setEditForm({ ...editForm, country: source.country })}
                                       className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-700 rounded text-xs text-left transition-colors group max-w-full"
                                     >
-                                      <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
+                                      {source.source_code === 'ra' ? (
+                                        <img src="/ra-logo.jpg" alt="RA" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                      ) : source.source_code === 'ticketmaster' ? (
+                                        <img src="/ticketmaster-logo.png" alt="TM" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                      ) : (
+                                        <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
+                                      )}
                                       <span className="truncate max-w-[200px] text-gray-600 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
                                         {source.country}
                                       </span>
@@ -3370,7 +3382,13 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                                     onClick={() => setEditForm({ ...editForm, content_url: source.content_url })}
                                     className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-700 rounded text-xs text-left transition-colors group max-w-full"
                                   >
-                                    <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
+                                    {source.source_code === 'ra' ? (
+                                      <img src="/ra-logo.jpg" alt="RA" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                    ) : source.source_code === 'ticketmaster' ? (
+                                      <img src="/ticketmaster-logo.png" alt="TM" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                    ) : (
+                                      <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
+                                    )}
                                     <span className="truncate max-w-[200px] text-gray-600 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
                                       Link
                                     </span>

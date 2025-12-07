@@ -31,12 +31,15 @@ let pool = null;
 async function initializeDatabase() {
     console.log('[DB Init] Starting database initialization...');
 
-    // First, connect to postgres to check/create the database
-    const adminPool = new Pool({
+    // Try connecting with postgres superuser first (for Docker), fall back to regular user
+    const adminUser = process.env.POSTGRES_USER || 'postgres';
+    const adminPassword = process.env.POSTGRES_PASSWORD || DB_CONFIG.password;
+    
+    let adminPool = new Pool({
         host: DB_CONFIG.host,
         port: DB_CONFIG.port,
-        user: DB_CONFIG.user,
-        password: DB_CONFIG.password,
+        user: adminUser,
+        password: adminPassword,
         database: 'postgres' // Connect to default postgres database
     });
 
@@ -51,12 +54,46 @@ async function initializeDatabase() {
             console.log(`[DB Init] Database '${DB_CONFIG.database}' does not exist. Creating...`);
             await adminPool.query(`CREATE DATABASE ${DB_CONFIG.database}`);
             console.log(`[DB Init] Database '${DB_CONFIG.database}' created successfully`);
+            
+            // Grant privileges to the app user if different from admin
+            if (adminUser !== DB_CONFIG.user) {
+                await adminPool.query(`GRANT ALL PRIVILEGES ON DATABASE ${DB_CONFIG.database} TO ${DB_CONFIG.user}`);
+                console.log(`[DB Init] Granted privileges to user '${DB_CONFIG.user}'`);
+            }
         } else {
             console.log(`[DB Init] Database '${DB_CONFIG.database}' exists`);
         }
     } catch (error) {
-        console.error('[DB Init] Error checking/creating database:', error.message);
-        throw error;
+        console.error('[DB Init] Error with admin connection:', error.message);
+        
+        // If admin connection failed, try with the regular user
+        console.log('[DB Init] Trying connection with regular user...');
+        await adminPool.end();
+        
+        adminPool = new Pool({
+            host: DB_CONFIG.host,
+            port: DB_CONFIG.port,
+            user: DB_CONFIG.user,
+            password: DB_CONFIG.password,
+            database: 'postgres'
+        });
+        
+        try {
+            const dbCheck = await adminPool.query(
+                "SELECT 1 FROM pg_database WHERE datname = $1",
+                [DB_CONFIG.database]
+            );
+
+            if (dbCheck.rows.length === 0) {
+                console.log(`[DB Init] Database '${DB_CONFIG.database}' does not exist. Creating with regular user...`);
+                await adminPool.query(`CREATE DATABASE ${DB_CONFIG.database}`);
+                console.log(`[DB Init] Database '${DB_CONFIG.database}' created successfully`);
+            }
+        } catch (innerError) {
+            console.error('[DB Init] Could not create database with regular user either:', innerError.message);
+            console.error('[DB Init] Please create the database manually or ensure user has CREATEDB privilege');
+            throw innerError;
+        }
     } finally {
         await adminPool.end();
     }
@@ -6493,11 +6530,21 @@ app.post('/sync/pipeline', async (req, res) => {
                     percentComplete: Math.floor(((i + 1) / cities.length) * 100)
                 });
 
-                // Run matching to link scraped events to main events
+                // Run matching to link scraped data to main tables
                 updateSyncProgress({ phase: 'matching' });
                 console.log('[Sync Pipeline] Running matching...');
                 try {
-                    results.match = await matchAndLinkEvents({ dryRun: false });
+                    const [eventMatch, artistMatch, venueMatch] = await Promise.all([
+                        matchAndLinkEvents({ dryRun: false }),
+                        matchAndLinkArtists({ dryRun: false, minConfidence: 0.7 }),
+                        matchAndLinkVenues({ dryRun: false, minConfidence: 0.7 })
+                    ]);
+                    results.match = {
+                        events: eventMatch,
+                        artists: artistMatch,
+                        venues: venueMatch
+                    };
+                    console.log(`[Sync Pipeline] Matched: ${eventMatch.matched} events, ${artistMatch.matched} artists, ${venueMatch.matched} venues`);
                 } catch (matchErr) {
                     console.error('[Sync Pipeline] Matching error:', matchErr.message);
                     results.match = { error: matchErr.message };

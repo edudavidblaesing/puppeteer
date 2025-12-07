@@ -21,6 +21,9 @@ services:
       - PGUSER=eventuser
       - PGPASSWORD=eventpass
       - PGDATABASE=socialevents
+      # Postgres admin credentials for database creation
+      - POSTGRES_USER=eventuser
+      - POSTGRES_PASSWORD=eventpass
     depends_on:
       postgres:
         condition: service_healthy
