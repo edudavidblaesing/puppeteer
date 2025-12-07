@@ -2218,8 +2218,10 @@ app.post('/db/venues/geocode', async (req, res) => {
                 if (debug) errors.push(msg);
             }
             
-            // Rate limit - 1 request per second for Nominatim
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            // Rate limit - 1.5 seconds per request for Nominatim (safer than 1s)
+            if (geocoded + failed < venues.rows.length) {
+                await new Promise(resolve => setTimeout(resolve, 1500));
+            }
         }
         
         const result = {
