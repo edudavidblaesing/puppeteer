@@ -114,7 +114,12 @@ export default function EventMap({
       rejectedCount: number;
     }> = {};
 
-    events.forEach((event) => {
+    // Filter events by selected city if one is selected
+    const filteredEvents = selectedCity 
+      ? events.filter(e => e.venue_city === selectedCity)
+      : events;
+
+    filteredEvents.forEach((event) => {
       const venueName = event.venue_name || 'Unknown Venue';
 
       if (!venues[venueName]) {
@@ -165,7 +170,7 @@ export default function EventMap({
     });
 
     return venues;
-  }, [events, cityConfig]);
+  }, [events, cityConfig, selectedCity]);
 
   // Get city coordinates
   const getCityCoords = useCallback((cityName: string): [number, number] | null => {

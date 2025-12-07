@@ -500,7 +500,30 @@ let lastGeocodeTime = 0;
 async function geocodeAddress(address, city, country) {
     if (!address && !city) return null;
 
-    const fullAddress = [address, city, country].filter(Boolean).join(', ');
+    // Clean and normalize address components
+    const cleanString = (str) => {
+        if (!str) return '';
+        return str
+            .trim()
+            .replace(/\s+/g, ' ') // Normalize whitespace
+            .replace(/,+/g, ',') // Remove duplicate commas
+            .replace(/^,|,$/g, ''); // Remove leading/trailing commas
+    };
+
+    let cleanAddr = cleanString(address);
+    const cleanCity = cleanString(city);
+    const cleanCountry = cleanString(country);
+
+    // Remove city and country from address if they appear there
+    if (cleanCity && cleanAddr.toLowerCase().includes(cleanCity.toLowerCase())) {
+        cleanAddr = cleanAddr.replace(new RegExp(cleanCity, 'gi'), '').replace(/\s+/g, ' ').trim();
+    }
+    if (cleanCountry && cleanAddr.toLowerCase().includes(cleanCountry.toLowerCase())) {
+        cleanAddr = cleanAddr.replace(new RegExp(cleanCountry, 'gi'), '').replace(/\s+/g, ' ').trim();
+    }
+    cleanAddr = cleanAddr.replace(/^,\s*|,\s*$/g, '').replace(/,\s*,/g, ',').trim();
+
+    const fullAddress = [cleanAddr, cleanCity, cleanCountry].filter(Boolean).join(', ');
 
     // Check cache first
     if (geocodeCache.has(fullAddress)) {
@@ -516,34 +539,49 @@ async function geocodeAddress(address, city, country) {
     lastGeocodeTime = Date.now();
 
     try {
-        const query = encodeURIComponent(fullAddress);
-        const response = await fetch(
-            `https://nominatim.openstreetmap.org/search?format=json&q=${query}&limit=1`,
-            {
-                headers: {
-                    'User-Agent': 'SocialEventsAdmin/1.0 (contact@example.com)'
+        // Try multiple search strategies
+        const searchStrategies = [
+            [cleanAddr, cleanCity, cleanCountry].filter(Boolean).join(', '), // Full address
+            [cleanAddr, cleanCity].filter(Boolean).join(', '), // Address + City only
+            [cleanCity, cleanCountry].filter(Boolean).join(', ') // City + Country fallback
+        ].filter(s => s.length > 0);
+
+        for (const searchAddress of searchStrategies) {
+            const query = encodeURIComponent(searchAddress);
+            const response = await fetch(
+                `https://nominatim.openstreetmap.org/search?format=json&q=${query}&limit=1`,
+                {
+                    headers: {
+                        'User-Agent': 'SocialEventsAdmin/1.0 (contact@example.com)'
+                    }
                 }
+            );
+
+            if (!response.ok) {
+                console.warn(`Geocoding failed for "${searchAddress}": ${response.status}`);
+                continue;
             }
-        );
 
-        if (!response.ok) {
-            console.warn(`Geocoding failed for "${fullAddress}": ${response.status}`);
-            return null;
-        }
+            const data = await response.json();
 
-        const data = await response.json();
+            if (data && data.length > 0) {
+                const result = {
+                    latitude: parseFloat(data[0].lat),
+                    longitude: parseFloat(data[0].lon)
+                };
+                geocodeCache.set(fullAddress, result);
+                console.log(`Geocoded "${searchAddress}" -> ${result.latitude}, ${result.longitude}`);
+                return result;
+            }
 
-        if (data && data.length > 0) {
-            const result = {
-                latitude: parseFloat(data[0].lat),
-                longitude: parseFloat(data[0].lon)
-            };
-            geocodeCache.set(fullAddress, result);
-            console.log(`Geocoded "${fullAddress}" -> ${result.latitude}, ${result.longitude}`);
-            return result;
+            // Small delay between strategies
+            if (searchStrategies.indexOf(searchAddress) < searchStrategies.length - 1) {
+                await new Promise(resolve => setTimeout(resolve, 300));
+            }
         }
 
         geocodeCache.set(fullAddress, null);
+        console.warn(`Could not geocode any strategy for: ${fullAddress}`);
         return null;
     } catch (error) {
         console.error(`Geocoding error for "${fullAddress}":`, error.message);

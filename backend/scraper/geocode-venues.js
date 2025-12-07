@@ -16,17 +16,30 @@ const pool = new Pool({
 function geocodeAddress(address, city, country) {
     return new Promise((resolve) => {
         try {
-            // Clean address
-            let cleanAddr = address || '';
-            if (city && cleanAddr.toLowerCase().includes(city.toLowerCase())) {
-                const parts = cleanAddr.split(/[,;]/);
-                const cityIdx = parts.findIndex(p => p.trim().toLowerCase().includes(city.toLowerCase()));
-                if (cityIdx > 0) {
-                    cleanAddr = parts.slice(0, cityIdx).join(',').trim();
-                }
-            }
+            // Clean and normalize address components
+            const cleanString = (str) => {
+                if (!str) return '';
+                return str
+                    .trim()
+                    .replace(/\s+/g, ' ') // Normalize whitespace
+                    .replace(/,+/g, ',') // Remove duplicate commas
+                    .replace(/^,|,$/g, ''); // Remove leading/trailing commas
+            };
 
-            const parts = [cleanAddr, city, country].filter(Boolean);
+            let cleanAddr = cleanString(address);
+            const cleanCity = cleanString(city);
+            const cleanCountry = cleanString(country);
+
+            // Remove city and country from address if they appear there
+            if (cleanCity && cleanAddr.toLowerCase().includes(cleanCity.toLowerCase())) {
+                cleanAddr = cleanAddr.replace(new RegExp(cleanCity, 'gi'), '').replace(/\s+/g, ' ').trim();
+            }
+            if (cleanCountry && cleanAddr.toLowerCase().includes(cleanCountry.toLowerCase())) {
+                cleanAddr = cleanAddr.replace(new RegExp(cleanCountry, 'gi'), '').replace(/\s+/g, ' ').trim();
+            }
+            cleanAddr = cleanAddr.replace(/^,\s*|,\s*$/g, '').replace(/,\s*,/g, ',').trim();
+
+            const parts = [cleanAddr, cleanCity, cleanCountry].filter(Boolean);
             const query = encodeURIComponent(parts.join(', '));
             const url = `https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=1`;
 

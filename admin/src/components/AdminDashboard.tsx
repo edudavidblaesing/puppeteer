@@ -590,29 +590,79 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
     setGeocodeError('');
     
     try {
-      const addressParts = [
-        editForm.venue_address,
-        editForm.venue_city,
-        editForm.venue_country
-      ].filter(Boolean);
+      // Clean and normalize address components
+      const cleanAddress = (str: string) => {
+        return str
+          .trim()
+          .replace(/\s+/g, ' ') // Normalize whitespace
+          .replace(/,+/g, ',') // Remove duplicate commas
+          .replace(/^,|,$/g, ''); // Remove leading/trailing commas
+      };
+
+      let address = cleanAddress(editForm.venue_address);
+      const city = cleanAddress(editForm.venue_city);
+      const country = editForm.venue_country ? cleanAddress(editForm.venue_country) : '';
+
+      // Remove city and country from address if they appear there
+      const cityLower = city.toLowerCase();
+      const countryLower = country.toLowerCase();
+      const addressLower = address.toLowerCase();
+
+      // Check if address already contains city or country
+      if (cityLower && addressLower.includes(cityLower)) {
+        // Remove city from address
+        address = address.replace(new RegExp(city, 'gi'), '').replace(/\s+/g, ' ').trim();
+      }
+      if (countryLower && addressLower.includes(countryLower)) {
+        // Remove country from address
+        address = address.replace(new RegExp(country, 'gi'), '').replace(/\s+/g, ' ').trim();
+      }
+
+      // Clean up any remaining commas
+      address = address.replace(/^,\s*|,\s*$/g, '').replace(/,\s*,/g, ',').trim();
+
+      // Try multiple search strategies
+      const searchStrategies = [
+        // Strategy 1: Full address with all components
+        [address, city, country].filter(Boolean).join(', '),
+        // Strategy 2: Address + City only (sometimes country confuses the geocoder)
+        [address, city].filter(Boolean).join(', '),
+        // Strategy 3: Just city + country (useful if address is invalid)
+        [city, country].filter(Boolean).join(', '),
+      ];
+
+      let result = null;
+      let attemptedStrategy = '';
+
+      for (const searchAddress of searchStrategies) {
+        if (!searchAddress) continue;
+
+        attemptedStrategy = searchAddress;
+        const response = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchAddress)}&limit=1`,
+          { headers: { 'User-Agent': 'SocialEventsAdmin/1.0' } }
+        );
+        
+        const data = await response.json();
+        
+        if (data && data.length > 0) {
+          result = data[0];
+          break;
+        }
+
+        // Small delay between requests to respect rate limits
+        await new Promise(resolve => setTimeout(resolve, 300));
+      }
       
-      const address = addressParts.join(', ');
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1`,
-        { headers: { 'User-Agent': 'SocialEventsAdmin/1.0' } }
-      );
-      
-      const data = await response.json();
-      
-      if (data && data.length > 0) {
+      if (result) {
         setEditForm({
           ...editForm,
-          latitude: parseFloat(data[0].lat),
-          longitude: parseFloat(data[0].lon)
+          latitude: parseFloat(result.lat),
+          longitude: parseFloat(result.lon)
         });
         setGeocodeError('');
       } else {
-        setGeocodeError('Address not found. Try being more specific.');
+        setGeocodeError('Address not found. Try being more specific or check for typos.');
       }
     } catch (error) {
       console.error('Geocoding error:', error);
@@ -1211,7 +1261,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
             checked={selectedIds.has(item.id)}
             onClick={(e) => e.stopPropagation()}
             onChange={(e) => { e.stopPropagation(); handleSelect(item.id); }}
-            className="rounded text-indigo-600"
+            className="w-4 h-4 sm:w-auto sm:h-auto rounded text-indigo-600 dark:text-indigo-500 border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 touch-manipulation"
           />
           <div className="w-10 h-10 rounded bg-gray-200 dark:bg-gray-800 flex items-center justify-center flex-shrink-0 overflow-hidden">
             {item.flyer_front ? (
@@ -1221,22 +1271,27 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
             )}
           </div>
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
+            <div className="flex items-start gap-2">
               <p className={clsx(
-                'font-medium text-sm truncate',
+                'font-medium text-sm truncate flex-1',
                 isRejected ? 'text-gray-400 dark:text-gray-500 line-through' : 'text-gray-900 dark:text-gray-100'
               )}>{item.title}</p>
               {item.event_type && item.event_type !== 'event' && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 font-medium flex-shrink-0">
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 font-medium flex-shrink-0 leading-tight">
                   {EVENT_TYPES.find(t => t.value === item.event_type)?.icon} {EVENT_TYPES.find(t => t.value === item.event_type)?.label}
                 </span>
               )}
             </div>
-            <div className="flex items-center gap-2 mt-0.5">
+            <div className="flex items-center gap-1.5 mt-0.5">
               <p className={clsx(
                 'text-xs truncate',
                 isRejected ? 'text-gray-400 dark:text-gray-500 line-through' : 'text-gray-500 dark:text-gray-400'
-              )}>{item.venue_name} • {item.venue_city}</p>
+              )}>{item.venue_name}</p>
+              <span className="text-gray-400 dark:text-gray-600">•</span>
+              <p className={clsx(
+                'text-xs truncate',
+                isRejected ? 'text-gray-400 dark:text-gray-500 line-through' : 'text-gray-500 dark:text-gray-400'
+              )}>{item.venue_city}</p>
             </div>
             {/* Source badges below venue/city */}
             {sources.length > 0 && (
@@ -1269,24 +1324,6 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
             )}
           </div>
           <div className="text-right flex-shrink-0 self-start pt-0.5 flex flex-col items-end gap-1">
-            {/* Status indicators */}
-            <div className="flex items-center gap-1">
-              {(!item.latitude || !item.longitude) && (
-                <div title="Missing coordinates" className="w-4 h-4 flex items-center justify-center">
-                  <MapPin className="w-3 h-3 text-amber-500 dark:text-amber-400" />
-                </div>
-              )}
-              {!item.flyer_front && (
-                <div title="No flyer image" className="w-4 h-4 flex items-center justify-center">
-                  <ImageIcon className="w-3 h-3 text-gray-400 dark:text-gray-500" />
-                </div>
-              )}
-              {(!item.artistsList || item.artistsList.length === 0) && (
-                <div title="No artists" className="w-4 h-4 flex items-center justify-center">
-                  <Music className="w-3 h-3 text-gray-400 dark:text-gray-500" />
-                </div>
-              )}
-            </div>
             {/* Date */}
             {isLive ? (
               <div className="flex items-center gap-1.5">
@@ -1301,6 +1338,20 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
               )}>
                 {item.date ? format(new Date(item.date), 'MMM d') : '—'}
               </p>
+            )}
+            {/* Status indicators below date */}
+            {!isRejected && (
+              <div className="flex items-center gap-1">
+                <div title={item.latitude && item.longitude ? "Has coordinates" : "Missing coordinates"} className="w-4 h-4 flex items-center justify-center">
+                  <MapPin className={clsx("w-3 h-3", (item.latitude && item.longitude) ? "text-gray-400 dark:text-gray-500" : "text-red-500 dark:text-red-400")} />
+                </div>
+                <div title={item.venue_name ? "Has venue" : "Missing venue"} className="w-4 h-4 flex items-center justify-center">
+                  <Building2 className={clsx("w-3 h-3", item.venue_name ? "text-gray-400 dark:text-gray-500" : "text-red-500 dark:text-red-400")} />
+                </div>
+                <div title={item.artistsList && item.artistsList.length > 0 ? "Has artists" : "Missing artists"} className="w-4 h-4 flex items-center justify-center">
+                  <Music className={clsx("w-3 h-3", (item.artistsList && item.artistsList.length > 0) ? "text-gray-400 dark:text-gray-500" : "text-red-500 dark:text-red-400")} />
+                </div>
+              </div>
             )}
           </div>
         </div>
@@ -1716,17 +1767,20 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                         if (ref.source_code && !acc.includes(ref.source_code)) acc.push(ref.source_code);
                         return acc;
                       }, [] as string[]) || [];
+                      const hasCoords = event.latitude && event.longitude;
+                      const hasVenue = event.venue_name;
+                      const hasArtists = (event as any).artistsList && (event as any).artistsList.length > 0;
                       return (
                         <div
                           key={event.id}
                           onClick={() => { 
-                            setActiveTabState('events'); 
                             setShowEditPanel(true);
                             handleEdit(event); 
                           }}
                           className={clsx(
                             "px-4 py-2.5 flex items-center gap-3 cursor-pointer border-b transition-colors pending-stripes bg-white dark:bg-gray-900 hover:bg-amber-50 dark:hover:bg-gray-800",
                             selectedIds.has(event.id) && 'border-l-2 border-l-indigo-500 dark:border-l-gray-400',
+                            editingItem?.id === event.id && 'border-l-2 border-l-indigo-500 dark:border-l-gray-400',
                             isPast && "opacity-60"
                           )}
                         >
@@ -1735,7 +1789,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                             checked={selectedIds.has(event.id)}
                             onClick={(e) => e.stopPropagation()}
                             onChange={(e) => { e.stopPropagation(); handleSelect(event.id); }}
-                            className="rounded text-indigo-600"
+                            className="w-4 h-4 sm:w-auto sm:h-auto rounded text-indigo-600"
                           />
                           <div className="w-10 h-10 rounded bg-gray-200 dark:bg-gray-700 flex items-center justify-center flex-shrink-0 overflow-hidden">
                             {event.flyer_front ? (
@@ -1745,21 +1799,18 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                             )}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <p className="font-medium text-sm truncate text-gray-900 dark:text-gray-100">{event.title}</p>
+                            <div className="flex items-start gap-2">
+                              <p className="font-medium text-sm truncate flex-1 text-gray-900 dark:text-gray-100">{event.title}</p>
                               {event.event_type && event.event_type !== 'event' && (
-                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 font-medium flex-shrink-0">
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 font-medium flex-shrink-0 leading-tight">
                                   {EVENT_TYPES.find(t => t.value === event.event_type)?.icon} {EVENT_TYPES.find(t => t.value === event.event_type)?.label}
                                 </span>
                               )}
-                              {(!event.latitude || !event.longitude) && (
-                                <span title="Missing coordinates" className="flex-shrink-0">
-                                  <MapPin className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" />
-                                </span>
-                              )}
                             </div>
-                            <div className="flex items-center gap-2 mt-0.5">
-                              <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{event.venue_name} • {event.venue_city}</p>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{event.venue_name}</p>
+                              <span className="text-gray-400 dark:text-gray-600">•</span>
+                              <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{event.venue_city}</p>
                             </div>
                             {/* Source badges below venue/city */}
                             {sources.length > 0 && (
@@ -1792,7 +1843,8 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                             )}
                           </div>
                           <div className="flex-shrink-0 flex items-center gap-2">
-                            <div className="text-right">
+                            <div className="text-right flex-shrink-0 self-start pt-0.5 flex flex-col items-end gap-1">
+                              {/* Date */}
                               {isLive ? (
                                 <div className="flex items-center gap-1.5">
                                   <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
@@ -1803,6 +1855,18 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                                   {event.date ? format(new Date(event.date), 'MMM d') : '—'}
                                 </p>
                               )}
+                              {/* Status indicators below date */}
+                              <div className="flex items-center gap-1">
+                                <div title={hasCoords ? "Has coordinates" : "Missing coordinates"} className="w-4 h-4 flex items-center justify-center">
+                                  <MapPin className={clsx("w-3 h-3", hasCoords ? "text-gray-400 dark:text-gray-500" : "text-red-500 dark:text-red-400")} />
+                                </div>
+                                <div title={hasVenue ? "Has venue" : "Missing venue"} className="w-4 h-4 flex items-center justify-center">
+                                  <Building2 className={clsx("w-3 h-3", hasVenue ? "text-gray-400 dark:text-gray-500" : "text-red-500 dark:text-red-400")} />
+                                </div>
+                                <div title={hasArtists ? "Has artists" : "Missing artists"} className="w-4 h-4 flex items-center justify-center">
+                                  <Music className={clsx("w-3 h-3", hasArtists ? "text-gray-400 dark:text-gray-500" : "text-red-500 dark:text-red-400")} />
+                                </div>
+                              </div>
                             </div>
                             {/* Approve/Decline buttons - always visible */}
                             {!isPast && (
@@ -1942,8 +2006,185 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                 )}
               </div>
 
-              {/* RIGHT SIDE - Stats & Controls */}
-              <div className="flex-1 overflow-auto p-6 bg-gray-50 dark:bg-gray-900">
+              {/* RIGHT SIDE - Edit Panel or Stats & Controls */}
+              {showEditPanel && editingItem ? (
+                <div className="flex-1 bg-white dark:bg-gray-900 border-l dark:border-gray-800 flex flex-col h-full max-h-full overflow-hidden">
+                  <div className="bg-white dark:bg-gray-900 border-b dark:border-gray-800 px-4 py-3 flex items-center justify-between flex-shrink-0">
+                    <h2 className="font-semibold text-gray-900 dark:text-gray-100 text-base sm:text-lg">
+                      Edit Event
+                    </h2>
+                    <div className="flex items-center gap-2">
+                      {editingItem && (
+                        <button
+                          onClick={() => handleDelete(editingItem)}
+                          className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg touch-manipulation"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                      <button
+                        onClick={() => { setShowEditPanel(false); setEditingItem(null); }}
+                        className="p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg touch-manipulation"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                  {/* Render same edit form content as events tab - we'll extract this later */}
+                  <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                    {/* Source References Section */}
+                    {editingItem?.source_references && editingItem.source_references.length > 0 && (
+                      <div className="bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                        <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
+                          <Link2 className="w-4 h-4 text-gray-500" />
+                          Linked Sources ({editingItem.source_references.length})
+                        </h3>
+                        <div className="space-y-2">
+                          {editingItem.source_references.map((ref: any, idx: number) => (
+                            <div key={idx} className="flex items-center justify-between p-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded">
+                              <div className="flex items-center gap-2 min-w-0 flex-1">
+                                {ref.source_code === 'ra' ? (
+                                  <img src="/ra-logo.jpg" alt="RA" className="h-4 w-auto rounded-sm flex-shrink-0" />
+                                ) : ref.source_code === 'ticketmaster' ? (
+                                  <img src="/ticketmaster-logo.png" alt="TM" className="h-4 w-auto rounded-sm flex-shrink-0" />
+                                ) : (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 font-medium flex-shrink-0">
+                                    {ref.source_code?.toUpperCase()}
+                                  </span>
+                                )}
+                                <span className="text-xs text-gray-600 dark:text-gray-400 truncate">{ref.source_url || 'No URL'}</span>
+                              </div>
+                              {ref.source_url && (
+                                <a href={ref.source_url} target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                                  <ExternalLink className="w-3.5 h-3.5" />
+                                </a>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {/* Quick approve/reject for scrape page */}
+                    <div className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-lg p-4">
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Publish Status</label>
+                      <div className="grid grid-cols-3 gap-2 sm:gap-3">
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              await setPublishStatus([editingItem.id], 'approved');
+                              const updated = { ...editingItem, publish_status: 'approved' };
+                              setEvents(events.map(e => e.id === editingItem.id ? updated : e));
+                              setEditingItem(updated);
+                              setEditForm({ ...editForm, publish_status: 'approved' });
+                            } catch (error) { console.error('Failed to approve:', error); }
+                          }}
+                          className={clsx(
+                            "px-3 py-2.5 sm:py-3 rounded-lg border-2 text-sm font-medium transition-all touch-manipulation",
+                            editForm.publish_status === 'approved'
+                              ? "bg-green-50 dark:bg-green-900/30 border-green-500 dark:border-green-600 text-green-700 dark:text-green-300 ring-2 ring-green-200 dark:ring-green-800"
+                              : "bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:border-green-300 dark:hover:border-green-700"
+                          )}
+                        >
+                          <span className="text-lg mr-1.5">✓</span> Approved
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              await setPublishStatus([editingItem.id], 'pending');
+                              const updated = { ...editingItem, publish_status: 'pending' };
+                              setEvents(events.map(e => e.id === editingItem.id ? updated : e));
+                              setEditingItem(updated);
+                              setEditForm({ ...editForm, publish_status: 'pending' });
+                            } catch (error) { console.error('Failed to set pending:', error); }
+                          }}
+                          className={clsx(
+                            "px-3 py-2.5 sm:py-3 rounded-lg border-2 text-sm font-medium transition-all touch-manipulation",
+                            editForm.publish_status === 'pending'
+                              ? "bg-yellow-50 dark:bg-yellow-900/30 border-yellow-500 dark:border-yellow-600 text-yellow-700 dark:text-yellow-300 ring-2 ring-yellow-200 dark:ring-yellow-800"
+                              : "bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:border-yellow-300 dark:hover:border-yellow-700"
+                          )}
+                        >
+                          <span className="text-lg mr-1.5">⏱</span> Pending
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              await setPublishStatus([editingItem.id], 'rejected');
+                              const updated = { ...editingItem, publish_status: 'rejected' };
+                              setEvents(events.map(e => e.id === editingItem.id ? updated : e));
+                              setEditingItem(updated);
+                              setEditForm({ ...editForm, publish_status: 'rejected' });
+                            } catch (error) { console.error('Failed to reject:', error); }
+                          }}
+                          className={clsx(
+                            "px-3 py-2.5 sm:py-3 rounded-lg border-2 text-sm font-medium transition-all touch-manipulation",
+                            editForm.publish_status === 'rejected'
+                              ? "bg-red-50 dark:bg-red-900/30 border-red-500 dark:border-red-600 text-red-700 dark:text-red-300 ring-2 ring-red-200 dark:ring-red-800"
+                              : "bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:border-red-300 dark:hover:border-red-700"
+                          )}
+                        >
+                          <span className="text-lg mr-1.5">✕</span> Rejected
+                        </button>
+                      </div>
+                    </div>
+                    {/* Show basic event info readonly */}
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Title</label>
+                        <p className="text-base text-gray-900 dark:text-gray-100 font-medium">{editingItem.title}</p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Date</label>
+                          <p className="text-sm text-gray-900 dark:text-gray-100">{editingItem.date ? format(new Date(editingItem.date), 'MMM d, yyyy') : '—'}</p>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Time</label>
+                          <p className="text-sm text-gray-900 dark:text-gray-100">{editingItem.start_time || '—'}</p>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Venue</label>
+                        <p className="text-sm text-gray-900 dark:text-gray-100">{editingItem.venue_name} • {editingItem.venue_city}</p>
+                        {editingItem.venue_address && (
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{editingItem.venue_address}</p>
+                        )}
+                      </div>
+                      {editingItem.artistsList && editingItem.artistsList.length > 0 && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Artists ({editingItem.artistsList.length})</label>
+                          <div className="flex flex-wrap gap-1">
+                            {editingItem.artistsList.map((artist: any) => (
+                              <span key={artist.id || artist.name} className="text-xs px-2 py-1 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded">
+                                {artist.name}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {(editingItem.latitude && editingItem.longitude) ? (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Coordinates</label>
+                          <p className="text-xs font-mono text-gray-600 dark:text-gray-400">
+                            {editingItem.latitude.toFixed(6)}, {editingItem.longitude.toFixed(6)}
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg p-3">
+                          <p className="text-sm text-amber-800 dark:text-amber-300 flex items-center gap-2">
+                            <AlertTriangle className="w-4 h-4" />
+                            Missing coordinates - switch to Events tab to geocode
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex-1 overflow-auto p-6 bg-gray-50 dark:bg-gray-900">
                 <div className="max-w-3xl mx-auto space-y-6">
                   {/* Sync Progress Banner - Shown when syncing */}
                   {isSyncing && syncProgress && (
@@ -2022,9 +2263,9 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                           <select
                             value={scrapeCity}
                             onChange={(e) => setScrapeCity(e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                            className="w-full px-3 py-2.5 sm:py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 focus:border-indigo-500 transition-colors text-base sm:text-sm"
                           >
-                            <option value="all">🌍 All Cities (from database)</option>
+                            <option value="all">🌍 All Cities</option>
                             <optgroup label="🇩🇪 Germany">
                               <option value="berlin">Berlin</option>
                               <option value="hamburg">Hamburg</option>
@@ -2063,24 +2304,24 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                         {/* Source Selection */}
                         <div>
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Sources</label>
-                          <div className="flex gap-4 mt-3">
-                            <label className="flex items-center gap-2 cursor-pointer">
+                          <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 mt-3">
+                            <label className="flex items-center gap-2.5 cursor-pointer py-2 sm:py-0 touch-manipulation">
                               <input
                                 type="checkbox"
                                 checked={scrapeSources.includes('ra')}
                                 onChange={() => toggleSource('ra')}
-                                className="rounded text-indigo-600 dark:text-indigo-400"
+                                className="w-5 h-5 sm:w-4 sm:h-4 rounded text-indigo-600 dark:text-indigo-400 border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-indigo-500"
                               />
-                              <span className="text-sm text-gray-900 dark:text-gray-100">Resident Advisor</span>
+                              <span className="text-sm sm:text-base text-gray-900 dark:text-gray-100 font-medium">Resident Advisor</span>
                             </label>
-                            <label className="flex items-center gap-2 cursor-pointer">
+                            <label className="flex items-center gap-2.5 cursor-pointer py-2 sm:py-0 touch-manipulation">
                               <input
                                 type="checkbox"
                                 checked={scrapeSources.includes('ticketmaster')}
                                 onChange={() => toggleSource('ticketmaster')}
-                                className="rounded text-indigo-600 dark:text-indigo-400"
+                                className="w-5 h-5 sm:w-4 sm:h-4 rounded text-indigo-600 dark:text-indigo-400 border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-indigo-500"
                               />
-                              <span className="text-sm text-gray-900 dark:text-gray-100">Ticketmaster</span>
+                              <span className="text-sm sm:text-base text-gray-900 dark:text-gray-100 font-medium">Ticketmaster</span>
                             </label>
                           </div>
                         </div>
@@ -2090,27 +2331,36 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                       <button
                         onClick={handleSyncWorkflow}
                         disabled={isSyncing || scrapeSources.length === 0}
-                        className="w-full px-6 py-3 bg-indigo-600 dark:bg-indigo-500 text-white rounded-lg hover:bg-indigo-700 dark:hover:bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 font-medium border border-indigo-700 dark:border-indigo-400"
+                        className="w-full px-6 py-3.5 sm:py-3 bg-indigo-600 dark:bg-indigo-500 text-white rounded-lg hover:bg-indigo-700 dark:hover:bg-indigo-600 active:bg-indigo-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 font-medium shadow-lg hover:shadow-xl transition-all touch-manipulation text-base sm:text-sm"
                       >
                         {isSyncing ? (
                           <>
-                            <RefreshCw className="w-5 h-5 animate-spin" />
-                            {syncProgress || 'Running Pipeline...'}
+                            <RefreshCw className="w-5 h-5 sm:w-4 sm:h-4 animate-spin" />
+                            <span className="font-normal">{syncProgress || 'Running Pipeline...'}</span>
                           </>
                         ) : (
                           <>
-                            <CloudDownload className="w-5 h-5" />
-                            Sync {scrapeCity === 'all' ? 'All Cities' : scrapeCity.charAt(0).toUpperCase() + scrapeCity.slice(1)}
+                            <CloudDownload className="w-5 h-5 sm:w-4 sm:h-4" />
+                            <span>Sync {scrapeCity === 'all' ? 'All Cities' : scrapeCity.charAt(0).toUpperCase() + scrapeCity.slice(1)}</span>
                           </>
                         )}
                       </button>
 
                       {/* Pipeline Info */}
-                      <div className="px-4 py-3 bg-gray-100 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 text-xs text-gray-600 dark:text-gray-400">
-                        <span className="font-medium text-gray-900 dark:text-gray-100">Pipeline:</span> Scrape → Match & Link → Enrich → Deduplicate
-                        {scrapeCity === 'all' && (
-                          <p className="text-amber-600 dark:text-amber-500 mt-1">⚠️ Syncing all cities may take several minutes.</p>
-                        )}
+                      <div className="px-3 sm:px-4 py-2.5 sm:py-3 bg-indigo-50 dark:bg-indigo-950/30 rounded-lg border border-indigo-200 dark:border-indigo-800 text-xs sm:text-sm">
+                        <div className="flex items-start gap-2">
+                          <Layers className="w-4 h-4 text-indigo-600 dark:text-indigo-400 flex-shrink-0 mt-0.5" />
+                          <div>
+                            <p className="font-medium text-indigo-900 dark:text-indigo-100">Automated Pipeline</p>
+                            <p className="text-indigo-700 dark:text-indigo-300 mt-0.5">Scrape → Dedupe → Match → Enrich → Sync</p>
+                            {scrapeCity === 'all' && (
+                              <p className="text-amber-600 dark:text-amber-400 mt-2 flex items-center gap-1">
+                                <AlertTriangle className="w-3 h-3" />
+                                Syncing all cities may take several minutes
+                              </p>
+                            )}
+                          </div>
+                        </div>
                       </div>
 
                       {/* Sync Result */}
@@ -2140,20 +2390,20 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                   </div>
 
                   {/* Stats Overview - Clean Minimal Design */}
-                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                     <StatCard 
                       label="Total Events" 
                       value={scrapeStats?.total_main_events || 0}
                       subtext={`${scrapeStats?.approved_events || 0} live • ${scrapeStats?.pending_events || 0} pending`}
                       sparkData={scrapeHistory.slice(-14).reverse().map(d => d.events_inserted || 0)}
                       sparkColor="#10b981"
-                      icon={<Calendar className="w-4 h-4" />}
+                      icon={<Calendar className="w-4 h-4 sm:w-5 sm:h-5" />}
                     />
                     <StatCard 
                       label="Pending Review" 
                       value={scrapeStats?.pending_events || 0}
                       variant="warning"
-                      icon={<AlertTriangle className="w-4 h-4" />}
+                      icon={<AlertTriangle className="w-4 h-4 sm:w-5 sm:h-5" />}
                     />
                     <StatCard 
                       label="Venues" 
@@ -2161,7 +2411,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                       subtext={scrapeStats?.total_scraped_venues ? `${scrapeStats.total_scraped_venues} scraped` : undefined}
                       sparkData={scrapeHistory.slice(-14).reverse().map(d => d.venues_created || 0)}
                       sparkColor="#6366f1"
-                      icon={<Building2 className="w-4 h-4" />}
+                      icon={<Building2 className="w-4 h-4 sm:w-5 sm:h-5" />}
                     />
                     <StatCard 
                       label="Artists" 
@@ -2169,27 +2419,27 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                       subtext={scrapeStats?.total_scraped_artists ? `${scrapeStats.total_scraped_artists} scraped` : undefined}
                       sparkData={scrapeHistory.slice(-14).reverse().map(d => d.artists_created || 0)}
                       sparkColor="#8b5cf6"
-                      icon={<Music className="w-4 h-4" />}
+                      icon={<Music className="w-4 h-4 sm:w-5 sm:h-5" />}
                     />
                   </div>
 
                   {/* Source Stats */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700/50 rounded-lg p-4">
-                      <div className="flex items-center gap-2 mb-2">
-                        <img src="/ra-logo.jpg" alt="RA" className="h-5 w-auto rounded" />
-                        <span className="text-sm font-medium text-gray-600 dark:text-gray-300">Resident Advisor</span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700/50 rounded-lg p-4 hover:shadow-md transition-shadow">
+                      <div className="flex items-center gap-2 mb-3">
+                        <img src="/ra-logo.jpg" alt="RA" className="h-5 sm:h-6 w-auto rounded shadow-sm" />
+                        <span className="text-sm sm:text-base font-medium text-gray-600 dark:text-gray-300">Resident Advisor</span>
                       </div>
-                      <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">{(scrapeStats?.ra_events || 0).toLocaleString()}</div>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">events scraped</p>
+                      <div className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-100">{(scrapeStats?.ra_events || 0).toLocaleString()}</div>
+                      <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-1">events scraped</p>
                     </div>
-                    <div className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700/50 rounded-lg p-4">
-                      <div className="flex items-center gap-2 mb-2">
-                        <img src="/ticketmaster-logo.png" alt="TM" className="h-5 w-auto rounded" />
-                        <span className="text-sm font-medium text-gray-600 dark:text-gray-300">Ticketmaster</span>
+                    <div className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700/50 rounded-lg p-4 hover:shadow-md transition-shadow">
+                      <div className="flex items-center gap-2 mb-3">
+                        <img src="/ticketmaster-logo.png" alt="TM" className="h-5 sm:h-6 w-auto rounded shadow-sm" />
+                        <span className="text-sm sm:text-base font-medium text-gray-600 dark:text-gray-300">Ticketmaster</span>
                       </div>
-                      <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">{(scrapeStats?.ticketmaster_events || 0).toLocaleString()}</div>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">events scraped</p>
+                      <div className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-100">{(scrapeStats?.ticketmaster_events || 0).toLocaleString()}</div>
+                      <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-1">events scraped</p>
                     </div>
                   </div>
 
@@ -2280,6 +2530,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                   )}
                 </div>
               </div>
+              )}
             </div>
           ) : (
             <div className="flex-1 flex overflow-hidden">
@@ -2380,7 +2631,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                         {editingItem && (
                           <div className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-lg p-4">
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Publish Status</label>
-                            <div className="flex items-center gap-4">
+                            <div className="grid grid-cols-3 gap-2 sm:gap-3">
                               <button
                                 type="button"
                                 onClick={async () => {
@@ -2391,14 +2642,15 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                                   } catch (e) { console.error(e); }
                                 }}
                                 className={clsx(
-                                  'flex-1 px-4 py-3 rounded-lg font-medium flex items-center justify-center gap-2 transition-all',
+                                  'px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg font-medium flex items-center justify-center gap-2 transition-all touch-manipulation text-sm sm:text-base',
                                   editForm.publish_status === 'approved'
-                                    ? 'bg-green-500 text-white shadow-lg'
-                                    : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-green-50 dark:hover:bg-green-900/30 hover:text-green-700'
+                                    ? 'bg-green-500 text-white shadow-lg ring-2 ring-green-200 dark:ring-green-900'
+                                    : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-green-50 dark:hover:bg-green-900/30 hover:text-green-700 dark:hover:text-green-400'
                                 )}
                               >
-                                <Check className="w-5 h-5" />
-                                Approve
+                                <Check className="w-4 h-4 sm:w-5 sm:h-5" />
+                                <span className="hidden sm:inline">Approve</span>
+                                <span className="sm:hidden">✓</span>
                               </button>
                               <button
                                 type="button"
@@ -2410,14 +2662,15 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                                   } catch (e) { console.error(e); }
                                 }}
                                 className={clsx(
-                                  'flex-1 px-4 py-3 rounded-lg font-medium flex items-center justify-center gap-2 transition-all',
+                                  'px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg font-medium flex items-center justify-center gap-2 transition-all touch-manipulation text-sm sm:text-base',
                                   editForm.publish_status === 'pending'
-                                    ? 'bg-amber-500 text-white shadow-lg'
-                                    : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-amber-50 dark:hover:bg-amber-900/30 hover:text-amber-700'
+                                    ? 'bg-amber-500 text-white shadow-lg ring-2 ring-amber-200 dark:ring-amber-900'
+                                    : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-amber-50 dark:hover:bg-amber-900/30 hover:text-amber-700 dark:hover:text-amber-400'
                                 )}
                               >
-                                <Clock className="w-5 h-5" />
-                                Pending
+                                <Clock className="w-4 h-4 sm:w-5 sm:h-5" />
+                                <span className="hidden sm:inline">Pending</span>
+                                <span className="sm:hidden">⏱</span>
                               </button>
                               <button
                                 type="button"
@@ -2429,14 +2682,15 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                                   } catch (e) { console.error(e); }
                                 }}
                                 className={clsx(
-                                  'flex-1 px-4 py-3 rounded-lg font-medium flex items-center justify-center gap-2 transition-all',
+                                  'px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg font-medium flex items-center justify-center gap-2 transition-all touch-manipulation text-sm sm:text-base',
                                   editForm.publish_status === 'rejected'
-                                    ? 'bg-red-500 text-white shadow-lg'
-                                    : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-red-50 dark:hover:bg-red-900/30 hover:text-red-700'
+                                    ? 'bg-red-500 text-white shadow-lg ring-2 ring-red-200 dark:ring-red-900'
+                                    : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-red-50 dark:hover:bg-red-900/30 hover:text-red-700 dark:hover:text-red-400'
                                 )}
                               >
-                                <X className="w-5 h-5" />
-                                Reject
+                                <X className="w-4 h-4 sm:w-5 sm:h-5" />
+                                <span className="hidden sm:inline">Reject</span>
+                                <span className="sm:hidden">✕</span>
                               </button>
                             </div>
                           </div>
@@ -2537,12 +2791,13 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                           <img src={editForm.flyer_front} alt="" className="w-full h-48 object-cover rounded-lg" />
                         )}
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Title</label>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Title</label>
                           <input
                             type="text"
                             value={editForm.title || ''}
                             onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
-                            className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
+                            className="w-full px-3 py-2.5 sm:py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 focus:border-indigo-500 dark:focus:border-indigo-400 transition-colors"
+                            placeholder="Enter event title"
                           />
                           {/* Inline source suggestions for Title */}
                           {sourceReferences.length > 0 && (
@@ -2585,12 +2840,12 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                         </div>
                         <div className="grid grid-cols-2 gap-3">
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Date</label>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Date</label>
                             <input
                               type="date"
                               value={editForm.date || ''}
                               onChange={(e) => setEditForm({ ...editForm, date: e.target.value })}
-                              className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
+                              className="w-full px-3 py-2.5 sm:py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 focus:border-indigo-500 dark:focus:border-indigo-400 transition-colors"
                             />
                             {/* Inline source suggestions for Date */}
                             {sourceReferences.length > 0 && (
@@ -2631,12 +2886,12 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                             )}
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Start Time</label>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Start Time</label>
                             <input
                               type="time"
-                              value={editForm.start_time || ''}
+                              value={editForm.start_time || ''}  
                               onChange={(e) => setEditForm({ ...editForm, start_time: e.target.value })}
-                              className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
+                              className="w-full px-3 py-2.5 sm:py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 focus:border-indigo-500 dark:focus:border-indigo-400 transition-colors"
                             />
                             {/* Inline source suggestions for Time */}
                             {sourceReferences.length > 0 && (
@@ -3769,20 +4024,20 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                   </div>
 
                   {/* Save button */}
-                  <div className="sticky bottom-0 bg-white dark:bg-gray-900 border-t dark:border-gray-800 px-4 py-3">
+                  <div className="sticky bottom-0 bg-white dark:bg-gray-900 border-t dark:border-gray-800 px-4 py-3 sm:py-4 shadow-lg">
                     <button
                       onClick={handleSave}
                       disabled={isSaving}
-                      className="w-full px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                      className="w-full px-4 py-3 sm:py-2.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 font-medium shadow-sm hover:shadow-md transition-all touch-manipulation text-base sm:text-sm"
                     >
                       {isSaving ? (
                         <>
-                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          <RefreshCw className="w-5 h-5 sm:w-4 sm:h-4 animate-spin" />
                           Saving...
                         </>
                       ) : (
                         <>
-                          <Check className="w-4 h-4" />
+                          <Check className="w-5 h-5 sm:w-4 sm:h-4" />
                           Save Changes
                         </>
                       )}
