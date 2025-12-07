@@ -34,6 +34,7 @@ import {
   Link,
   Loader,
   Image as ImageIcon,
+  Save,
 } from 'lucide-react';
 
 // Dynamic import for EventMap (Leaflet requires client-side only)
@@ -1540,8 +1541,11 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
         </div>
       )}
 
-      {/* Secondary toolbar */}
-      <header className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 flex-shrink-0 z-50">
+      {/* Secondary toolbar - Hidden on mobile when edit panel is open */}
+      <header className={clsx(
+        "bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 flex-shrink-0 z-50",
+        showEditPanel && "hidden sm:block"
+      )}>
         <div className="flex flex-wrap items-center px-2 sm:px-4 py-2 gap-2 sm:gap-3 bg-gray-50 dark:bg-gray-800">
           {/* Refresh button */}
           <button onClick={loadData} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg text-gray-700 dark:text-gray-300" title="Refresh">

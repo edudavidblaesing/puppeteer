@@ -140,14 +140,8 @@ export default function EventMap({
           }
         }
 
-        // Fallback to city center with offset
-        if (!coords && event.venue_city) {
-          const cityCoords = cityConfig[event.venue_city]?.coords;
-          if (cityCoords) {
-            const offset = () => (Math.random() - 0.5) * 0.015;
-            coords = [cityCoords[0] + offset(), cityCoords[1] + offset()];
-          }
-        }
+        // No city center fallback - only show venues with real coordinates
+        // If coords is still null, the venue won't appear on the map
 
         venues[venueName] = {
           name: venueName,
