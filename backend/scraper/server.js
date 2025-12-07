@@ -242,6 +242,7 @@ async function geocodeAddress(address, city, country) {
             
             // Use Nominatim API with https module
             const url = `https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=1`;
+            console.log(`[Geocode] Query URL: ${url}`);
             
             https.get(url, {
                 headers: {
@@ -2191,8 +2192,10 @@ app.post('/db/venues/geocode', async (req, res) => {
         
         for (const venue of venues.rows) {
             try {
-                console.log(`[Geocode] Processing: ${venue.name}, ${venue.address}, ${venue.city}, ${venue.country}`);
+                console.log(`[Geocode] Processing: ${venue.name}`);
+                console.log(`[Geocode]   Input: address="${venue.address}", city="${venue.city}", country="${venue.country}"`);
                 const coords = await geocodeAddress(venue.address, venue.city, venue.country);
+                console.log(`[Geocode]   Result:`, coords);
                 
                 if (coords) {
                     await pool.query(`
