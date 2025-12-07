@@ -2146,7 +2146,7 @@ app.post('/db/events/publish', async (req, res) => {
 // Geocode venues without coordinates
 app.post('/db/venues/geocode', async (req, res) => {
     try {
-        const { limit = 100 } = req.body;
+        const { limit = 100, debug = false } = req.body;
         
         // Get venues without coordinates
         const venues = await pool.query(`
@@ -2159,33 +2159,48 @@ app.post('/db/venues/geocode', async (req, res) => {
         
         let geocoded = 0;
         let failed = 0;
+        const errors = [];
         
         for (const venue of venues.rows) {
-            const coords = await geocodeAddress(venue.address, venue.city, venue.country);
-            
-            if (coords) {
-                await pool.query(`
-                    UPDATE venues 
-                    SET latitude = $1, longitude = $2, updated_at = CURRENT_TIMESTAMP
-                    WHERE id = $3
-                `, [coords.latitude, coords.longitude, venue.id]);
-                geocoded++;
-                console.log(`[Geocode] ${venue.name}: ${coords.latitude}, ${coords.longitude}`);
-            } else {
+            try {
+                console.log(`[Geocode] Processing: ${venue.name}, ${venue.address}, ${venue.city}, ${venue.country}`);
+                const coords = await geocodeAddress(venue.address, venue.city, venue.country);
+                
+                if (coords) {
+                    await pool.query(`
+                        UPDATE venues 
+                        SET latitude = $1, longitude = $2, updated_at = CURRENT_TIMESTAMP
+                        WHERE id = $3
+                    `, [coords.latitude, coords.longitude, venue.id]);
+                    geocoded++;
+                    console.log(`[Geocode] Success: ${venue.name} -> ${coords.latitude}, ${coords.longitude}`);
+                } else {
+                    failed++;
+                    const msg = `No coordinates returned for ${venue.name}`;
+                    console.log(`[Geocode] Failed: ${msg}`);
+                    if (debug) errors.push(msg);
+                }
+            } catch (venueError) {
                 failed++;
-                console.log(`[Geocode] Failed: ${venue.name}`);
+                const msg = `Error geocoding ${venue.name}: ${venueError.message}`;
+                console.error(`[Geocode] ${msg}`);
+                if (debug) errors.push(msg);
             }
             
             // Rate limit - 1 request per second for Nominatim
             await new Promise(resolve => setTimeout(resolve, 1000));
         }
         
-        res.json({
+        const result = {
             success: true,
             processed: venues.rows.length,
             geocoded,
             failed
-        });
+        };
+        
+        if (debug) result.errors = errors;
+        
+        res.json(result);
     } catch (error) {
         console.error('Geocoding error:', error);
         res.status(500).json({ error: error.message });
