@@ -224,21 +224,23 @@ async function geocodeAddress(address, city, country) {
         const parts = [address, city, country].filter(Boolean);
         const query = encodeURIComponent(parts.join(', '));
         
-        // Use Nominatim API
-        const axios = require('axios');
-        const response = await axios.get(`https://nominatim.openstreetmap.org/search`, {
-            params: {
-                q: query,
-                format: 'json',
-                limit: 1
-            },
+        // Use Nominatim API with native fetch
+        const url = `https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=1`;
+        const response = await fetch(url, {
             headers: {
                 'User-Agent': 'SocialEvents/1.0'
             }
         });
         
-        if (response.data && response.data.length > 0) {
-            const result = response.data[0];
+        if (!response.ok) {
+            console.error('[Geocoding] HTTP error:', response.status);
+            return null;
+        }
+        
+        const data = await response.json();
+        
+        if (data && data.length > 0) {
+            const result = data[0];
             return {
                 latitude: parseFloat(result.lat),
                 longitude: parseFloat(result.lon)
