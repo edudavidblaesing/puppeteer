@@ -2836,6 +2836,15 @@ app.post('/db/events/:id/sync-artists', async (req, res) => {
     }
 });
 
+// Version endpoint for deployment tracking
+app.get('/api-version', (req, res) => {
+    res.json({ 
+        version: '1.0.4',
+        geocodingFix: 'address-cleanup-v2',
+        deployedAt: new Date().toISOString()
+    });
+});
+
 // Health check endpoint that verifies DB connection
 app.get('/health', async (req, res) => {
     try {
