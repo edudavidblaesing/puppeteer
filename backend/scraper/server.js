@@ -212,6 +212,47 @@ function requireApiKey(req, res, next) {
 app.use('/db', requireApiKey);
 
 // ============================================
+// GEOCODING UTILITY
+// ============================================
+
+// Geocode address using Nominatim (OpenStreetMap - free, no API key)
+async function geocodeAddress(address, city, country) {
+    if (!address && !city) return null;
+    
+    try {
+        // Build search query
+        const parts = [address, city, country].filter(Boolean);
+        const query = encodeURIComponent(parts.join(', '));
+        
+        // Use Nominatim API
+        const axios = require('axios');
+        const response = await axios.get(`https://nominatim.openstreetmap.org/search`, {
+            params: {
+                q: query,
+                format: 'json',
+                limit: 1
+            },
+            headers: {
+                'User-Agent': 'SocialEvents/1.0'
+            }
+        });
+        
+        if (response.data && response.data.length > 0) {
+            const result = response.data[0];
+            return {
+                latitude: parseFloat(result.lat),
+                longitude: parseFloat(result.lon)
+            };
+        }
+        
+        return null;
+    } catch (error) {
+        console.error('[Geocoding] Error:', error.message);
+        return null;
+    }
+}
+
+// ============================================
 // AUTHENTICATION ENDPOINTS
 // ============================================
 
@@ -2100,6 +2141,83 @@ app.post('/db/events/publish', async (req, res) => {
 });
 
 // Set publish status for events (new: pending/approved/rejected)
+// Geocode venues without coordinates
+app.post('/db/venues/geocode', async (req, res) => {
+    try {
+        const { limit = 100 } = req.body;
+        
+        // Get venues without coordinates
+        const venues = await pool.query(`
+            SELECT id, name, address, city, country
+            FROM venues
+            WHERE (latitude IS NULL OR longitude IS NULL)
+            AND (address IS NOT NULL OR city IS NOT NULL)
+            LIMIT $1
+        `, [limit]);
+        
+        let geocoded = 0;
+        let failed = 0;
+        
+        for (const venue of venues.rows) {
+            const coords = await geocodeAddress(venue.address, venue.city, venue.country);
+            
+            if (coords) {
+                await pool.query(`
+                    UPDATE venues 
+                    SET latitude = $1, longitude = $2, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = $3
+                `, [coords.latitude, coords.longitude, venue.id]);
+                geocoded++;
+                console.log(`[Geocode] ${venue.name}: ${coords.latitude}, ${coords.longitude}`);
+            } else {
+                failed++;
+                console.log(`[Geocode] Failed: ${venue.name}`);
+            }
+            
+            // Rate limit - 1 request per second for Nominatim
+            await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+        
+        res.json({
+            success: true,
+            processed: venues.rows.length,
+            geocoded,
+            failed
+        });
+    } catch (error) {
+        console.error('Geocoding error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Update events with venue coordinates
+app.post('/db/events/sync-venue-coords', async (req, res) => {
+    try {
+        // Update events with coordinates from their venues
+        const result = await pool.query(`
+            UPDATE events e
+            SET latitude = v.latitude,
+                longitude = v.longitude,
+                updated_at = CURRENT_TIMESTAMP
+            FROM venues v
+            WHERE LOWER(e.venue_name) = LOWER(v.name)
+            AND LOWER(e.venue_city) = LOWER(v.city)
+            AND v.latitude IS NOT NULL
+            AND v.longitude IS NOT NULL
+            AND (e.latitude IS NULL OR e.longitude IS NULL)
+        `);
+        
+        res.json({
+            success: true,
+            updated: result.rowCount,
+            message: `Updated ${result.rowCount} events with venue coordinates`
+        });
+    } catch (error) {
+        console.error('Sync venue coords error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Match and link artists
 app.post('/db/artists/match', async (req, res) => {
     try {
@@ -5780,6 +5898,20 @@ async function matchAndLinkVenues(options = {}) {
             if (!dryRun) {
                 const venueId = uuidv4();
                 
+                // If no coordinates, try geocoding
+                let latitude = scraped.latitude;
+                let longitude = scraped.longitude;
+                
+                if (!latitude || !longitude) {
+                    console.log(`[Match Venues] Geocoding ${scraped.name}...`);
+                    const coords = await geocodeAddress(scraped.address, scraped.city, scraped.country);
+                    if (coords) {
+                        latitude = coords.latitude;
+                        longitude = coords.longitude;
+                        console.log(`[Match Venues] Geocoded: ${latitude}, ${longitude}`);
+                    }
+                }
+                
                 await pool.query(`
                     INSERT INTO venues (id, source_code, source_id, name, address, city, country, 
                                       latitude, longitude, content_url, created_at, updated_at)
@@ -5792,8 +5924,8 @@ async function matchAndLinkVenues(options = {}) {
                     scraped.address,
                     scraped.city,
                     scraped.country,
-                    scraped.latitude,
-                    scraped.longitude,
+                    latitude,
+                    longitude,
                     scraped.content_url
                 ]);
 
