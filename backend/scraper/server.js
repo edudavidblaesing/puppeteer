@@ -2117,6 +2117,186 @@ app.delete('/db/events/:id', async (req, res) => {
     }
 });
 
+// Get pending changes for an event
+app.get('/db/events/:id/changes', async (req, res) => {
+    try {
+        const eventId = req.params.id;
+
+        // Get all linked scraped events with changes
+        const result = await pool.query(`
+            SELECT 
+                se.id,
+                se.source_code,
+                se.source_event_id,
+                se.title,
+                se.has_changes,
+                se.changes,
+                se.updated_at,
+                esl.match_confidence
+            FROM event_scraped_links esl
+            JOIN scraped_events se ON se.id = esl.scraped_event_id
+            WHERE esl.event_id = $1 AND se.has_changes = true
+            ORDER BY se.updated_at DESC
+        `, [eventId]);
+
+        res.json({
+            event_id: eventId,
+            has_changes: result.rows.length > 0,
+            changes: result.rows
+        });
+    } catch (error) {
+        console.error('Error fetching changes:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Accept/apply pending changes to event
+app.post('/db/events/:id/apply-changes', async (req, res) => {
+    try {
+        const eventId = req.params.id;
+        const { scraped_event_id, fields } = req.body; // fields: array of field names to apply
+
+        if (!scraped_event_id) {
+            return res.status(400).json({ error: 'scraped_event_id required' });
+        }
+
+        // Get the scraped event with changes
+        const scrapedResult = await pool.query(`
+            SELECT * FROM scraped_events WHERE id = $1
+        `, [scraped_event_id]);
+
+        if (scrapedResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Scraped event not found' });
+        }
+
+        const scraped = scrapedResult.rows[0];
+
+        // Build update query dynamically based on selected fields
+        const fieldsToUpdate = fields && fields.length > 0 
+            ? fields 
+            : Object.keys(scraped.changes || {});
+
+        if (fieldsToUpdate.length === 0) {
+            return res.status(400).json({ error: 'No fields to update' });
+        }
+
+        const updates = [];
+        const values = [eventId];
+        let paramIndex = 2;
+
+        const fieldMap = {
+            title: 'title',
+            date: 'date',
+            start_time: 'start_time',
+            end_time: 'end_time',
+            description: 'description',
+            content_url: 'content_url',
+            flyer_front: 'flyer_front',
+            venue_name: 'venue_name',
+            venue_address: 'venue_address',
+            venue_city: 'venue_city',
+            venue_country: 'venue_country',
+            artists_json: 'artists'
+        };
+
+        for (const field of fieldsToUpdate) {
+            const eventField = fieldMap[field] || field;
+            if (scraped[field] !== undefined) {
+                updates.push(`${eventField} = $${paramIndex}`);
+                // Special handling for artists_json -> artists string conversion
+                if (field === 'artists_json') {
+                    values.push(JSON.stringify(scraped.artists_json));
+                } else {
+                    values.push(scraped[field]);
+                }
+                paramIndex++;
+            }
+        }
+
+        if (updates.length === 0) {
+            return res.status(400).json({ error: 'No valid fields to update' });
+        }
+
+        // Update the event
+        await pool.query(`
+            UPDATE events 
+            SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP
+            WHERE id = $1
+        `, values);
+
+        // Clear the changes flag on scraped event
+        await pool.query(`
+            UPDATE scraped_events 
+            SET has_changes = false, changes = NULL
+            WHERE id = $1
+        `, [scraped_event_id]);
+
+        // Check if event still has other pending changes
+        const remainingChanges = await pool.query(`
+            SELECT COUNT(*) FROM event_scraped_links esl
+            JOIN scraped_events se ON se.id = esl.scraped_event_id
+            WHERE esl.event_id = $1 AND se.has_changes = true
+        `, [eventId]);
+
+        // Update has_pending_changes flag
+        await pool.query(`
+            UPDATE events 
+            SET has_pending_changes = $1
+            WHERE id = $2
+        `, [parseInt(remainingChanges.rows[0].count) > 0, eventId]);
+
+        res.json({ 
+            success: true, 
+            applied_fields: fieldsToUpdate,
+            has_remaining_changes: parseInt(remainingChanges.rows[0].count) > 0
+        });
+    } catch (error) {
+        console.error('Error applying changes:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Dismiss/reject pending changes
+app.post('/db/events/:id/dismiss-changes', async (req, res) => {
+    try {
+        const eventId = req.params.id;
+        const { scraped_event_id } = req.body;
+
+        if (!scraped_event_id) {
+            return res.status(400).json({ error: 'scraped_event_id required' });
+        }
+
+        // Clear the changes flag
+        await pool.query(`
+            UPDATE scraped_events 
+            SET has_changes = false, changes = NULL
+            WHERE id = $1
+        `, [scraped_event_id]);
+
+        // Check if event still has other pending changes
+        const remainingChanges = await pool.query(`
+            SELECT COUNT(*) FROM event_scraped_links esl
+            JOIN scraped_events se ON se.id = esl.scraped_event_id
+            WHERE esl.event_id = $1 AND se.has_changes = true
+        `, [eventId]);
+
+        // Update has_pending_changes flag
+        await pool.query(`
+            UPDATE events 
+            SET has_pending_changes = $1
+            WHERE id = $2
+        `, [parseInt(remainingChanges.rows[0].count) > 0, eventId]);
+
+        res.json({ 
+            success: true,
+            has_remaining_changes: parseInt(remainingChanges.rows[0].count) > 0
+        });
+    } catch (error) {
+        console.error('Error dismissing changes:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Delete ALL events
 app.delete('/db/events', async (req, res) => {
     try {
@@ -5223,14 +5403,72 @@ async function saveScrapedEvents(events, options = {}) {
                 }
             }
 
-            // Save scraped event
+            // Check if event exists and detect changes
+            const existingEvent = await pool.query(`
+                SELECT * FROM scraped_events 
+                WHERE source_code = $1 AND source_event_id = $2
+            `, [event.source_code, event.source_event_id]);
+
+            const isNew = existingEvent.rows.length === 0;
+            let hasChanges = false;
+            let changes = {};
+
+            if (!isNew) {
+                // Detect field-level changes
+                const old = existingEvent.rows[0];
+                const compareFields = [
+                    'title', 'date', 'start_time', 'end_time', 'content_url', 
+                    'flyer_front', 'description', 'venue_name', 'venue_address',
+                    'venue_city', 'venue_country'
+                ];
+
+                for (const field of compareFields) {
+                    const oldVal = old[field];
+                    const newVal = event[field];
+                    
+                    // Normalize for comparison
+                    const normalizeVal = (v) => {
+                        if (v === null || v === undefined || v === '') return null;
+                        if (typeof v === 'string') return v.trim();
+                        return v;
+                    };
+                    
+                    const oldNorm = normalizeVal(oldVal);
+                    const newNorm = normalizeVal(newVal);
+                    
+                    if (oldNorm !== newNorm) {
+                        changes[field] = { old: oldVal, new: newVal };
+                        hasChanges = true;
+                    }
+                }
+
+                // Check artists changes
+                const oldArtists = old.artists_json || [];
+                const newArtists = event.artists_json || [];
+                if (JSON.stringify(oldArtists) !== JSON.stringify(newArtists)) {
+                    changes.artists_json = { old: oldArtists, new: newArtists };
+                    hasChanges = true;
+                }
+
+                // Check coordinates if provided
+                if (venueLat && old.venue_latitude && Math.abs(parseFloat(venueLat) - parseFloat(old.venue_latitude)) > 0.0001) {
+                    changes.venue_latitude = { old: old.venue_latitude, new: venueLat };
+                    hasChanges = true;
+                }
+                if (venueLon && old.venue_longitude && Math.abs(parseFloat(venueLon) - parseFloat(old.venue_longitude)) > 0.0001) {
+                    changes.venue_longitude = { old: old.venue_longitude, new: venueLon };
+                    hasChanges = true;
+                }
+            }
+
+            // Save scraped event with change tracking
             const eventResult = await pool.query(`
                 INSERT INTO scraped_events (
                     source_code, source_event_id, title, date, start_time, end_time,
                     content_url, flyer_front, description, venue_name, venue_address,
                     venue_city, venue_country, venue_latitude, venue_longitude,
-                    artists_json, price_info, raw_data
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+                    artists_json, price_info, raw_data, has_changes, changes
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
                 ON CONFLICT (source_code, source_event_id) DO UPDATE SET
                     title = EXCLUDED.title,
                     date = EXCLUDED.date,
@@ -5248,7 +5486,9 @@ async function saveScrapedEvents(events, options = {}) {
                     artists_json = EXCLUDED.artists_json,
                     price_info = EXCLUDED.price_info,
                     raw_data = EXCLUDED.raw_data,
-                    updated_at = CURRENT_TIMESTAMP
+                    has_changes = EXCLUDED.has_changes,
+                    changes = EXCLUDED.changes,
+                    updated_at = CASE WHEN EXCLUDED.has_changes THEN CURRENT_TIMESTAMP ELSE scraped_events.updated_at END
                 RETURNING id, (xmax = 0) AS is_inserted
             `, [
                 event.source_code,
@@ -5268,11 +5508,25 @@ async function saveScrapedEvents(events, options = {}) {
                 venueLon,
                 JSON.stringify(event.artists_json),
                 event.price_info ? JSON.stringify(event.price_info) : null,
-                JSON.stringify(event.raw_data)
+                JSON.stringify(event.raw_data),
+                hasChanges,
+                hasChanges ? JSON.stringify(changes) : null
             ]);
 
-            if (eventResult.rows[0].is_inserted) inserted++;
-            else updated++;
+            if (eventResult.rows[0].is_inserted) {
+                inserted++;
+            } else if (hasChanges) {
+                updated++;
+                
+                // Mark linked events as having pending changes
+                await pool.query(`
+                    UPDATE events SET has_pending_changes = true
+                    WHERE id IN (
+                        SELECT event_id FROM event_scraped_links 
+                        WHERE scraped_event_id = $1
+                    )
+                `, [eventResult.rows[0].id]);
+            }
 
             // Save scraped venue if present
             if (event.venue_raw && event.venue_raw.source_venue_id) {
