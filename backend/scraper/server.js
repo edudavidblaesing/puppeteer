@@ -6180,7 +6180,6 @@ async function matchAndLinkEvents(options = {}) {
             SELECT 1 FROM event_scraped_links esl WHERE esl.scraped_event_id = se.id
         )
         ORDER BY se.date DESC, se.venue_city
-        LIMIT 500
     `);
 
     const unlinked = unlinkedResult.rows;
