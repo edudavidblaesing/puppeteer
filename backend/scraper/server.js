@@ -2020,7 +2020,9 @@ app.get('/db/events/map', async (req, res) => {
         let query = `
             SELECT e.id, e.title, e.date, e.start_time, e.end_time,
                    e.venue_name, e.venue_city, e.venue_country,
-                   e.latitude, e.longitude, e.publish_status, e.flyer_front,
+                   COALESCE(v.latitude, e.latitude) as venue_latitude,
+                   COALESCE(v.longitude, e.longitude) as venue_longitude,
+                   e.publish_status, e.flyer_front,
                    COALESCE(
                        (SELECT json_agg(json_build_object(
                            'source_code', se.source_code
@@ -2031,6 +2033,8 @@ app.get('/db/events/map', async (req, res) => {
                        '[]'
                    ) as source_references
             FROM events e
+            LEFT JOIN venues v ON LOWER(TRIM(v.name)) = LOWER(TRIM(e.venue_name))
+                               AND LOWER(TRIM(v.city)) = LOWER(TRIM(e.venue_city))
             WHERE 1=1`;
         const params = [];
         let paramIndex = 1;
