@@ -588,7 +588,12 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
   // Edit handlers
   // Geocode address to coordinates
   const geocodeAddress = async () => {
-    if (!editForm.venue_address || !editForm.venue_city) {
+    // Get address/city based on active tab
+    const addressField = activeTab === 'venues' ? editForm.address : editForm.venue_address;
+    const cityField = activeTab === 'venues' ? editForm.city : editForm.venue_city;
+    const countryField = activeTab === 'venues' ? editForm.country : editForm.venue_country;
+    
+    if (!addressField || !cityField) {
       setGeocodeError('Please provide at least address and city');
       return;
     }
@@ -606,9 +611,9 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
           .replace(/^,|,$/g, ''); // Remove leading/trailing commas
       };
 
-      let address = cleanAddress(editForm.venue_address);
-      const city = cleanAddress(editForm.venue_city);
-      const country = editForm.venue_country ? cleanAddress(editForm.venue_country) : '';
+      let address = cleanAddress(addressField);
+      const city = cleanAddress(cityField);
+      const country = countryField ? cleanAddress(countryField) : '';
 
       // Remove city and country from address if they appear there
       const cityLower = city.toLowerCase();
@@ -703,14 +708,26 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
           fullAddress = addr.road || addr.pedestrian || addr.path;
         }
         
-        setEditForm({
-          ...editForm,
-          latitude: lat,
-          longitude: lon,
-          venue_address: fullAddress || editForm.venue_address,
-          venue_city: addr.city || addr.town || addr.village || editForm.venue_city,
-          venue_country: addr.country || editForm.venue_country
-        });
+        // Use correct field names based on active tab
+        if (activeTab === 'venues') {
+          setEditForm({
+            ...editForm,
+            latitude: lat,
+            longitude: lon,
+            address: fullAddress || editForm.address,
+            city: addr.city || addr.town || addr.village || editForm.city,
+            country: addr.country || editForm.country
+          });
+        } else {
+          setEditForm({
+            ...editForm,
+            latitude: lat,
+            longitude: lon,
+            venue_address: fullAddress || editForm.venue_address,
+            venue_city: addr.city || addr.town || addr.village || editForm.venue_city,
+            venue_country: addr.country || editForm.venue_country
+          });
+        }
       }
     } catch (error) {
       console.error('Reverse geocoding error:', error);
@@ -2124,95 +2141,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                       </div>
                     )}
 
-                    {/* Location & Coordinates Section */}
-                    <div className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-lg p-4">
-                      <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3 flex items-center gap-2">
-                        <MapPin className="w-4 h-4" />
-                        Location & Coordinates
-                      </h3>
 
-                      {/* Latitude & Longitude */}
-                      <div className="grid grid-cols-2 gap-3 mb-3">
-                        <div>
-                          <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">Latitude</label>
-                          <input
-                            type="number"
-                            step="any"
-                            value={editForm.latitude || ''}
-                            onChange={(e) => setEditForm({ ...editForm, latitude: e.target.value ? parseFloat(e.target.value) : undefined })}
-                            placeholder="e.g. 52.5200"
-                            className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100 text-sm"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">Longitude</label>
-                          <input
-                            type="number"
-                            step="any"
-                            value={editForm.longitude || ''}
-                            onChange={(e) => setEditForm({ ...editForm, longitude: e.target.value ? parseFloat(e.target.value) : undefined })}
-                            placeholder="e.g. 13.4050"
-                            className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100 text-sm"
-                          />
-                        </div>
-                      </div>
-
-                      {/* Geocoding controls */}
-                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 mb-3">
-                        <button
-                          type="button"
-                          onClick={geocodeAddress}
-                          disabled={isGeocoding || !editForm.venue_address || !editForm.venue_city}
-                          className="flex-1 px-3 py-3 sm:py-2 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-200 dark:hover:bg-indigo-900/50 rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 touch-manipulation"
-                        >
-                          {isGeocoding ? (
-                            <RefreshCw className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <MapPin className="w-4 h-4" />
-                          )}
-                          <span className="hidden sm:inline">Address → Coordinates</span>
-                          <span className="sm:hidden">Address → Coords</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => editForm.latitude && editForm.longitude && reverseGeocode(editForm.latitude, editForm.longitude)}
-                          disabled={isGeocoding || !editForm.latitude || !editForm.longitude}
-                          className="flex-1 px-3 py-3 sm:py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 touch-manipulation"
-                        >
-                          {isGeocoding ? (
-                            <RefreshCw className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <Globe className="w-4 h-4" />
-                          )}
-                          <span className="hidden sm:inline">Coordinates → Address</span>
-                          <span className="sm:hidden">Coords → Address</span>
-                        </button>
-                      </div>
-
-                      {geocodeError && (
-                        <div className="text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg mb-3">
-                          {geocodeError}
-                        </div>
-                      )}
-
-                      {/* Map display */}
-                      {(editForm.latitude && editForm.longitude) ? (
-                        <div className="relative">
-                          <div 
-                            ref={staticMapRef}
-                            className="h-48 rounded-lg overflow-hidden border dark:border-gray-700 bg-gray-100 dark:bg-gray-800"
-                          />
-                        </div>
-                      ) : (
-                        <div className="h-32 border-2 border-dashed dark:border-gray-700 rounded-lg flex items-center justify-center text-gray-400 dark:text-gray-500">
-                          <div className="text-center">
-                            <MapPin className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                            <p className="text-sm">No coordinates set</p>
-                            <p className="text-xs">Enter address and click "Address → Coordinates"</p>
-                          </div>
-                        </div>
-                      )}
-                    </div>
 
                     {/* Save Button */}
                     <button
@@ -3250,6 +3179,77 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                             </div>
                           )}
                         </div>
+
+                        {/* Coordinates & Map */}
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Latitude</label>
+                            <input
+                              type="number"
+                              step="any"
+                              value={editForm.latitude || ''}
+                              onChange={(e) => setEditForm({ ...editForm, latitude: e.target.value ? parseFloat(e.target.value) : undefined })}
+                              placeholder="e.g. 52.5200"
+                              className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Longitude</label>
+                            <input
+                              type="number"
+                              step="any"
+                              value={editForm.longitude || ''}
+                              onChange={(e) => setEditForm({ ...editForm, longitude: e.target.value ? parseFloat(e.target.value) : undefined })}
+                              placeholder="e.g. 13.4050"
+                              className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex flex-col sm:flex-row gap-2">
+                          <button
+                            type="button"
+                            onClick={geocodeAddress}
+                            disabled={isGeocoding || !editForm.venue_address || !editForm.venue_city}
+                            className="flex-1 px-3 py-2 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-200 dark:hover:bg-indigo-900/50 rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                          >
+                            {isGeocoding ? <RefreshCw className="w-4 h-4 animate-spin" /> : <MapPin className="w-4 h-4" />}
+                            Address → Coordinates
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => editForm.latitude && editForm.longitude && reverseGeocode(editForm.latitude, editForm.longitude)}
+                            disabled={isGeocoding || !editForm.latitude || !editForm.longitude}
+                            className="flex-1 px-3 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                          >
+                            {isGeocoding ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Globe className="w-4 h-4" />}
+                            Coordinates → Address
+                          </button>
+                        </div>
+
+                        {geocodeError && (
+                          <div className="text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg">
+                            {geocodeError}
+                          </div>
+                        )}
+
+                        {(editForm.latitude && editForm.longitude) ? (
+                          <div className="relative">
+                            <div 
+                              ref={staticMapRef}
+                              className="h-48 rounded-lg overflow-hidden border dark:border-gray-700 bg-gray-100 dark:bg-gray-800"
+                            />
+                          </div>
+                        ) : (
+                          <div className="h-32 border-2 border-dashed dark:border-gray-700 rounded-lg flex items-center justify-center text-gray-400 dark:text-gray-500">
+                            <div className="text-center">
+                              <MapPin className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                              <p className="text-sm">No coordinates set</p>
+                              <p className="text-xs">Enter address and geocode</p>
+                            </div>
+                          </div>
+                        )}
+
                         </div> {/* End Venue Information Section */}
 
                         {/* Artists Section */}
@@ -3968,7 +3968,8 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                               type="number"
                               step="any"
                               value={editForm.latitude || ''}
-                              onChange={(e) => setEditForm({ ...editForm, latitude: e.target.value })}
+                              onChange={(e) => setEditForm({ ...editForm, latitude: e.target.value ? parseFloat(e.target.value) : undefined })}
+                              placeholder="e.g. 52.5200"
                               className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
                             />
                           </div>
@@ -3978,11 +3979,56 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                               type="number"
                               step="any"
                               value={editForm.longitude || ''}
-                              onChange={(e) => setEditForm({ ...editForm, longitude: e.target.value })}
+                              onChange={(e) => setEditForm({ ...editForm, longitude: e.target.value ? parseFloat(e.target.value) : undefined })}
+                              placeholder="e.g. 13.4050"
                               className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
                             />
                           </div>
                         </div>
+
+                        <div className="flex flex-col sm:flex-row gap-2">
+                          <button
+                            type="button"
+                            onClick={geocodeAddress}
+                            disabled={isGeocoding || !editForm.address || !editForm.city}
+                            className="flex-1 px-3 py-2 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-200 dark:hover:bg-indigo-900/50 rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                          >
+                            {isGeocoding ? <RefreshCw className="w-4 h-4 animate-spin" /> : <MapPin className="w-4 h-4" />}
+                            Address → Coordinates
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => editForm.latitude && editForm.longitude && reverseGeocode(editForm.latitude, editForm.longitude)}
+                            disabled={isGeocoding || !editForm.latitude || !editForm.longitude}
+                            className="flex-1 px-3 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                          >
+                            {isGeocoding ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Globe className="w-4 h-4" />}
+                            Coordinates → Address
+                          </button>
+                        </div>
+
+                        {geocodeError && (
+                          <div className="text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg">
+                            {geocodeError}
+                          </div>
+                        )}
+
+                        {(editForm.latitude && editForm.longitude) ? (
+                          <div className="relative">
+                            <div 
+                              ref={staticMapRef}
+                              className="h-48 rounded-lg overflow-hidden border dark:border-gray-700 bg-gray-100 dark:bg-gray-800"
+                            />
+                          </div>
+                        ) : (
+                          <div className="h-32 border-2 border-dashed dark:border-gray-700 rounded-lg flex items-center justify-center text-gray-400 dark:text-gray-500">
+                            <div className="text-center">
+                              <MapPin className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                              <p className="text-sm">No coordinates set</p>
+                              <p className="text-xs">Enter address and geocode</p>
+                            </div>
+                          </div>
+                        )}
                         <div>
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Website URL</label>
                           <input
