@@ -3641,14 +3641,27 @@ app.get('/db/artists/:id', async (req, res) => {
 
         const artist = result.rows[0];
 
-        // Get events featuring this artist
-        const eventsResult = await pool.query(`
-            SELECT id, title, date, venue_name, venue_city 
-            FROM events 
-            WHERE artists ILIKE $1
-            ORDER BY date DESC
-            LIMIT 20
-        `, [`%${artist.name}%`]);
+        // Get events featuring this artist (using junction table if available, fallback to ILIKE)
+        let eventsResult;
+        try {
+            eventsResult = await pool.query(`
+                SELECT e.id, e.title, e.date, e.venue_name, e.venue_city, ea.performance_order, ea.is_headliner
+                FROM event_artists ea
+                JOIN events e ON e.id = ea.event_id
+                WHERE ea.artist_id = $1
+                ORDER BY e.date DESC
+                LIMIT 50
+            `, [req.params.id]);
+        } catch (err) {
+            // Fallback to old method if junction table doesn't exist
+            eventsResult = await pool.query(`
+                SELECT id, title, date, venue_name, venue_city 
+                FROM events 
+                WHERE artists ILIKE $1
+                ORDER BY date DESC
+                LIMIT 50
+            `, [`%${artist.name}%`]);
+        }
         artist.events = eventsResult.rows;
 
         // Try to get source references from artist_scraped_links (new schema)
@@ -6243,6 +6256,14 @@ async function findOrCreateVenue(venueName, venueAddress, venueCity, venueCountr
 
 // Refresh main event with merged data from all linked scraped sources
 async function refreshMainEvent(eventId) {
+    // Get current event state
+    const currentResult = await pool.query(`
+        SELECT * FROM events WHERE id = $1
+    `, [eventId]);
+    
+    if (currentResult.rows.length === 0) return;
+    const current = currentResult.rows[0];
+    
     // Get all linked scraped events ordered by source priority
     const sourcesResult = await pool.query(`
         SELECT se.*, esl.match_confidence
@@ -6290,6 +6311,33 @@ async function refreshMainEvent(eventId) {
         );
     }
 
+    // Detect changes between current and merged data
+    const changes = {};
+    const compareFields = [
+        'title', 'description', 'flyer_front', 'content_url',
+        'venue_name', 'venue_address', 'venue_city', 'venue_country'
+    ];
+
+    let hasChanges = false;
+    for (const field of compareFields) {
+        const currentVal = current[field];
+        const mergedVal = merged[field];
+        
+        if (currentVal !== mergedVal && mergedVal != null) {
+            changes[field] = { old: currentVal, new: mergedVal };
+            hasChanges = true;
+        }
+    }
+
+    // Check date changes
+    if (dateStr && current.date) {
+        const currentDate = new Date(current.date).toISOString().split('T')[0];
+        if (currentDate !== dateStr) {
+            changes.date = { old: currentDate, new: dateStr };
+            hasChanges = true;
+        }
+    }
+
     // Update main event with merged data including venue_id
     await pool.query(`
         UPDATE events SET
@@ -6307,18 +6355,68 @@ async function refreshMainEvent(eventId) {
             venue_country = COALESCE($12, venue_country),
             latitude = COALESCE($13, latitude),
             longitude = COALESCE($14, longitude),
+            has_scraped_updates = $15,
+            scraped_updates_at = CASE WHEN $15 THEN CURRENT_TIMESTAMP ELSE scraped_updates_at END,
+            scraped_updates_count = CASE WHEN $15 THEN COALESCE(scraped_updates_count, 0) + 1 ELSE scraped_updates_count END,
+            last_scraped_data = $16,
             updated_at = CURRENT_TIMESTAMP
-        WHERE id = $15
+        WHERE id = $17
     `, [
         merged.title, dateStr, startTimestamp, endTimestamp,
         merged.description, merged.flyer_front, merged.content_url,
         venueId,
         merged.venue_name, merged.venue_address, merged.venue_city, merged.venue_country,
         merged.venue_latitude, merged.venue_longitude,
+        hasChanges,
+        hasChanges ? JSON.stringify(changes) : null,
         eventId
     ]);
 
-    console.log(`[Refresh] Updated main event ${eventId} with merged data from ${sourcesResult.rows.length} sources${venueId ? `, linked to venue ${venueId}` : ''}`);
+    // Link artists to event
+    if (merged.artists_json && Array.isArray(merged.artists_json)) {
+        await linkArtistsToEvent(eventId, merged.artists_json);
+    }
+
+    console.log(`[Refresh] Updated main event ${eventId} with merged data from ${sourcesResult.rows.length} sources${venueId ? `, linked to venue ${venueId}` : ''}${hasChanges ? ' (changes detected)' : ''}`);
+}
+
+// Link artists to event in event_artists junction table
+async function linkArtistsToEvent(eventId, artistsArray) {
+    if (!artistsArray || artistsArray.length === 0) return;
+
+    for (let i = 0; i < artistsArray.length; i++) {
+        const artistName = typeof artistsArray[i] === 'string' ? artistsArray[i] : artistsArray[i].name;
+        if (!artistName) continue;
+
+        // Try to find existing artist by name
+        const artistResult = await pool.query(`
+            SELECT id FROM artists
+            WHERE LOWER(name) = LOWER($1)
+            LIMIT 1
+        `, [artistName]);
+
+        let artistId = null;
+        if (artistResult.rows.length > 0) {
+            artistId = artistResult.rows[0].id;
+        } else {
+            // Create new artist
+            const { v4: uuidv4 } = require('uuid');
+            artistId = uuidv4();
+            await pool.query(`
+                INSERT INTO artists (id, name, created_at, updated_at)
+                VALUES ($1, $2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            `, [artistId, artistName]);
+            console.log(`[Artist] Created ${artistName} with ID ${artistId}`);
+        }
+
+        // Link artist to event
+        await pool.query(`
+            INSERT INTO event_artists (event_id, artist_id, artist_name, performance_order)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT (event_id, artist_id) DO UPDATE SET
+                performance_order = EXCLUDED.performance_order
+        `, [eventId, artistId, artistName, i + 1]);
+    }
 }
 
 // Auto-reject past events that are still pending
