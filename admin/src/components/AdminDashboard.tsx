@@ -2863,193 +2863,247 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
 
                         {/* Venue Information Section */}
                         <div className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-lg p-4">
-                          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
-                            <Building2 className="w-4 h-4" />
-                            Venue Information
-                          </h3>
+                          <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                              <Building2 className="w-4 h-4" />
+                              Venue Information
+                            </h3>
+                            {editForm.venue_id && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveTab('venues');
+                                  setEditingItem(null);
+                                  // After a brief delay to ensure tab switch, open the venue
+                                  setTimeout(async () => {
+                                    try {
+                                      const venueData = await fetch(`http://localhost:3001/db/venues/${editForm.venue_id}`).then(r => r.json());
+                                      setEditingItem(venueData);
+                                      setEditForm(venueData);
+                                    } catch (error) {
+                                      console.error('Failed to load venue:', error);
+                                    }
+                                  }, 100);
+                                }}
+                                className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-800 rounded-lg transition-colors"
+                              >
+                                <ExternalLink className="w-4 h-4" />
+                                Edit Venue
+                              </button>
+                            )}
+                          </div>
 
-                        <div className="relative">
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Venue</label>
-                          <input
-                            ref={venueInputRef}
-                            type="text"
-                            value={editForm.venue_name || ''}
-                            onChange={(e) => {
-                              setEditForm({ ...editForm, venue_name: e.target.value });
-                              setVenueSearch(e.target.value);
-                            }}
-                            onFocus={() => venueSearch.length >= 2 && setShowVenueDropdown(true)}
-                            onBlur={() => setTimeout(() => setShowVenueDropdown(false), 200)}
-                            className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-gray-500 bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
-                            placeholder="Type to search venues..."
-                          />
-                          {showVenueDropdown && venueSuggestions.length > 0 && venueDropdownPos.width > 0 && (
-                            <div 
-                              className="fixed z-[9999] bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-lg shadow-lg max-h-48 overflow-auto"
-                              style={{ top: `${venueDropdownPos.top}px`, left: `${venueDropdownPos.left}px`, width: `${venueDropdownPos.width}px` }}
-                            >
-                              {venueSuggestions.map((venue: any) => (
-                                <button
-                                  key={venue.id}
-                                  type="button"
-                                  onClick={() => {
-                                    setEditForm({
-                                      ...editForm,
-                                      venue_name: venue.name,
-                                      venue_city: venue.city || editForm.venue_city,
-                                      venue_country: venue.country || editForm.venue_country,
-                                      venue_address: venue.address || editForm.venue_address,
-                                      venue_id: venue.id
-                                    });
-                                    setShowVenueDropdown(false);
-                                    setVenueSearch('');
-                                  }}
-                                  className="w-full px-3 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 border-b dark:border-gray-700 last:border-0"
-                                >
-                                  <Building2 className="w-4 h-4 text-gray-400" />
-                                  <div>
-                                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{venue.name}</p>
-                                    <p className="text-xs text-gray-500 dark:text-gray-400">{venue.city}, {venue.country}</p>
-                                  </div>
-                                </button>
-                              ))}
+                        {editForm.venue_id ? (
+                          // Read-only display when venue is linked
+                          <div className="space-y-3">
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Venue</label>
+                              <div className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+                                {editForm.venue_name || 'No venue'}
+                              </div>
                             </div>
-                          )}
-                          {/* Inline source suggestions for Venue Name */}
-                          {sourceReferences.length > 0 && (
-                            <div className="mt-1 flex flex-wrap gap-2">
-                              {sourceReferences
-                                .filter((s: any) => s.venue_name && s.venue_name !== editForm.venue_name)
-                                .map((source: any, idx: number) => (
-                                  <button
-                                    key={`venue-${idx}`}
-                                    type="button"
-                                    onClick={() => setEditForm({ ...editForm, venue_name: source.venue_name })}
-                                    className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-700 rounded text-xs text-left transition-colors group max-w-full"
-                                  >
-                                    {source.source_code === 'ra' ? (
-                                      <img src="/ra-logo.jpg" alt="RA" className="h-3 w-auto rounded-sm flex-shrink-0" />
-                                    ) : source.source_code === 'ticketmaster' ? (
-                                      <img src="/ticketmaster-logo.png" alt="TM" className="h-3 w-auto rounded-sm flex-shrink-0" />
-                                    ) : (
-                                      <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">City</label>
+                                <div className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+                                  {editForm.venue_city || '-'}
+                                </div>
+                              </div>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Country</label>
+                                <div className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+                                  {editForm.venue_country || '-'}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          // Editable fields when no venue is linked
+                          <>
+                            <div className="relative">
+                              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Venue</label>
+                              <input
+                                ref={venueInputRef}
+                                type="text"
+                                value={editForm.venue_name || ''}
+                                onChange={(e) => {
+                                  setEditForm({ ...editForm, venue_name: e.target.value });
+                                  setVenueSearch(e.target.value);
+                                }}
+                                onFocus={() => venueSearch.length >= 2 && setShowVenueDropdown(true)}
+                                onBlur={() => setTimeout(() => setShowVenueDropdown(false), 200)}
+                                className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-gray-500 bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
+                                placeholder="Type to search venues..."
+                              />
+                              {showVenueDropdown && venueSuggestions.length > 0 && venueDropdownPos.width > 0 && (
+                                <div 
+                                  className="fixed z-[9999] bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-lg shadow-lg max-h-48 overflow-auto"
+                                  style={{ top: `${venueDropdownPos.top}px`, left: `${venueDropdownPos.left}px`, width: `${venueDropdownPos.width}px` }}
+                                >
+                                  {venueSuggestions.map((venue: any) => (
+                                    <button
+                                      key={venue.id}
+                                      type="button"
+                                      onClick={() => {
+                                        setEditForm({
+                                          ...editForm,
+                                          venue_name: venue.name,
+                                          venue_city: venue.city || editForm.venue_city,
+                                          venue_country: venue.country || editForm.venue_country,
+                                          venue_address: venue.address || editForm.venue_address,
+                                          venue_id: venue.id
+                                        });
+                                        setShowVenueDropdown(false);
+                                        setVenueSearch('');
+                                      }}
+                                      className="w-full px-3 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 border-b dark:border-gray-700 last:border-0"
+                                    >
+                                      <Building2 className="w-4 h-4 text-gray-400" />
+                                      <div>
+                                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{venue.name}</p>
+                                        <p className="text-xs text-gray-500 dark:text-gray-400">{venue.city}, {venue.country}</p>
+                                      </div>
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                              {/* Inline source suggestions for Venue Name */}
+                              {sourceReferences.length > 0 && (
+                                <div className="mt-1 flex flex-wrap gap-2">
+                                  {sourceReferences
+                                    .filter((s: any) => s.venue_name && s.venue_name !== editForm.venue_name)
+                                    .map((source: any, idx: number) => (
+                                      <button
+                                        key={`venue-${idx}`}
+                                        type="button"
+                                        onClick={() => setEditForm({ ...editForm, venue_name: source.venue_name })}
+                                        className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-700 rounded text-xs text-left transition-colors group max-w-full"
+                                      >
+                                        {source.source_code === 'ra' ? (
+                                          <img src="/ra-logo.jpg" alt="RA" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                        ) : source.source_code === 'ticketmaster' ? (
+                                          <img src="/ticketmaster-logo.png" alt="TM" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                        ) : (
+                                          <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
+                                        )}
+                                        <span className="truncate max-w-[200px] text-gray-600 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
+                                          {source.venue_name}
+                                        </span>
+                                      </button>
+                                    ))}
+                                  {editingItem && editingItem.venue_name !== editForm.venue_name && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setEditForm({ ...editForm, venue_name: editingItem.venue_name })}
+                                      className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded text-xs text-gray-500 transition-colors"
+                                    >
+                                      <RotateCcw className="w-3 h-3" />
+                                      Reset
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">City</label>
+                                <select
+                                  value={editForm.venue_city || ''}
+                                  onChange={(e) => setEditForm({ ...editForm, venue_city: e.target.value })}
+                                  className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
+                                >
+                                  <option value="">Select city...</option>
+                                  {citiesDropdown.map((city) => (
+                                    <option key={`${city.name}-${city.country}`} value={city.name}>
+                                      {city.name}
+                                    </option>
+                                  ))}
+                                  {/* Allow custom entry if not in list */}
+                                  {editForm.venue_city && !citiesDropdown.find(c => c.name === editForm.venue_city) && (
+                                    <option value={editForm.venue_city}>{editForm.venue_city} (custom)</option>
+                                  )}
+                                </select>
+                                {sourceReferences.length > 0 && (
+                                  <div className="mt-1 flex flex-wrap gap-2">
+                                    {sourceReferences
+                                      .filter((s: any) => s.venue_city && s.venue_city !== editForm.venue_city)
+                                      .map((source: any, idx: number) => (
+                                        <button
+                                          key={`vcity-${idx}`}
+                                          type="button"
+                                          onClick={() => setEditForm({ ...editForm, venue_city: source.venue_city })}
+                                          className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-700 rounded text-xs text-left transition-colors group max-w-full"
+                                        >
+                                          <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
+                                          <span className="truncate max-w-[200px] text-gray-600 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
+                                            {source.venue_city}
+                                          </span>
+                                        </button>
+                                      ))}
+                                    {editingItem && editingItem.venue_city !== editForm.venue_city && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setEditForm({ ...editForm, venue_city: editingItem.venue_city })}
+                                        className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded text-xs text-gray-500 transition-colors"
+                                      >
+                                        <RotateCcw className="w-3 h-3" />
+                                        Reset
+                                      </button>
                                     )}
-                                    <span className="truncate max-w-[200px] text-gray-600 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
-                                      {source.venue_name}
-                                    </span>
-                                  </button>
-                                ))}
-                              {editingItem && editingItem.venue_name !== editForm.venue_name && (
-                                <button
-                                  type="button"
-                                  onClick={() => setEditForm({ ...editForm, venue_name: editingItem.venue_name })}
-                                  className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded text-xs text-gray-500 transition-colors"
+                                  </div>
+                                )}
+                              </div>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Country</label>
+                                <select
+                                  value={editForm.venue_country || ''}
+                                  onChange={(e) => setEditForm({ ...editForm, venue_country: e.target.value })}
+                                  className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
                                 >
-                                  <RotateCcw className="w-3 h-3" />
-                                  Reset
-                                </button>
-                              )}
+                                  <option value="">Select country...</option>
+                                  {countriesDropdown.map((country) => (
+                                    <option key={country.name} value={country.name}>
+                                      {country.name} {country.code ? `(${country.code})` : ''}
+                                    </option>
+                                  ))}
+                                  {/* Allow custom entry if not in list */}
+                                  {editForm.venue_country && !countriesDropdown.find(c => c.name === editForm.venue_country) && (
+                                    <option value={editForm.venue_country}>{editForm.venue_country} (custom)</option>
+                                  )}
+                                </select>
+                                {sourceReferences.length > 0 && (
+                                  <div className="mt-1 flex flex-wrap gap-2">
+                                    {sourceReferences
+                                      .filter((s: any) => s.venue_country && s.venue_country !== editForm.venue_country)
+                                      .map((source: any, idx: number) => (
+                                        <button
+                                          key={`vcountry-${idx}`}
+                                          type="button"
+                                          onClick={() => setEditForm({ ...editForm, venue_country: source.venue_country })}
+                                          className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-700 rounded text-xs text-left transition-colors group max-w-full"
+                                        >
+                                          <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
+                                          <span className="truncate max-w-[200px] text-gray-600 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
+                                            {source.venue_country}
+                                          </span>
+                                        </button>
+                                      ))}
+                                    {editingItem && editingItem.venue_country !== editForm.venue_country && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setEditForm({ ...editForm, venue_country: editingItem.venue_country })}
+                                        className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded text-xs text-gray-500 transition-colors"
+                                      >
+                                        <RotateCcw className="w-3 h-3" />
+                                        Reset
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
                             </div>
-                          )}
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">City</label>
-                            <select
-                              value={editForm.venue_city || ''}
-                              onChange={(e) => setEditForm({ ...editForm, venue_city: e.target.value })}
-                              className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
-                            >
-                              <option value="">Select city...</option>
-                              {citiesDropdown.map((city) => (
-                                <option key={`${city.name}-${city.country}`} value={city.name}>
-                                  {city.name}
-                                </option>
-                              ))}
-                              {/* Allow custom entry if not in list */}
-                              {editForm.venue_city && !citiesDropdown.find(c => c.name === editForm.venue_city) && (
-                                <option value={editForm.venue_city}>{editForm.venue_city} (custom)</option>
-                              )}
-                            </select>
-                            {sourceReferences.length > 0 && (
-                              <div className="mt-1 flex flex-wrap gap-2">
-                                {sourceReferences
-                                  .filter((s: any) => s.venue_city && s.venue_city !== editForm.venue_city)
-                                  .map((source: any, idx: number) => (
-                                    <button
-                                      key={`vcity-${idx}`}
-                                      type="button"
-                                      onClick={() => setEditForm({ ...editForm, venue_city: source.venue_city })}
-                                      className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-700 rounded text-xs text-left transition-colors group max-w-full"
-                                    >
-                                      <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
-                                      <span className="truncate max-w-[200px] text-gray-600 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
-                                        {source.venue_city}
-                                      </span>
-                                    </button>
-                                  ))}
-                                {editingItem && editingItem.venue_city !== editForm.venue_city && (
-                                  <button
-                                    type="button"
-                                    onClick={() => setEditForm({ ...editForm, venue_city: editingItem.venue_city })}
-                                    className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded text-xs text-gray-500 transition-colors"
-                                  >
-                                    <RotateCcw className="w-3 h-3" />
-                                    Reset
-                                  </button>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Country</label>
-                            <select
-                              value={editForm.venue_country || ''}
-                              onChange={(e) => setEditForm({ ...editForm, venue_country: e.target.value })}
-                              className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
-                            >
-                              <option value="">Select country...</option>
-                              {countriesDropdown.map((country) => (
-                                <option key={country.name} value={country.name}>
-                                  {country.name} {country.code ? `(${country.code})` : ''}
-                                </option>
-                              ))}
-                              {/* Allow custom entry if not in list */}
-                              {editForm.venue_country && !countriesDropdown.find(c => c.name === editForm.venue_country) && (
-                                <option value={editForm.venue_country}>{editForm.venue_country} (custom)</option>
-                              )}
-                            </select>
-                            {sourceReferences.length > 0 && (
-                              <div className="mt-1 flex flex-wrap gap-2">
-                                {sourceReferences
-                                  .filter((s: any) => s.venue_country && s.venue_country !== editForm.venue_country)
-                                  .map((source: any, idx: number) => (
-                                    <button
-                                      key={`vcountry-${idx}`}
-                                      type="button"
-                                      onClick={() => setEditForm({ ...editForm, venue_country: source.venue_country })}
-                                      className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-700 rounded text-xs text-left transition-colors group max-w-full"
-                                    >
-                                      <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
-                                      <span className="truncate max-w-[200px] text-gray-600 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
-                                        {source.venue_country}
-                                      </span>
-                                    </button>
-                                  ))}
-                                {editingItem && editingItem.venue_country !== editForm.venue_country && (
-                                  <button
-                                    type="button"
-                                    onClick={() => setEditForm({ ...editForm, venue_country: editingItem.venue_country })}
-                                    className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded text-xs text-gray-500 transition-colors"
-                                  >
-                                    <RotateCcw className="w-3 h-3" />
-                                    Reset
-                                  </button>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        </div>
+                          </>
+                        )}
                         <div>
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Address</label>
                           <input
