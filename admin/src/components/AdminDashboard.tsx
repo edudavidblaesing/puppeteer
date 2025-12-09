@@ -2180,119 +2180,8 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                 )}
               </div>
 
-              {/* RIGHT SIDE - Edit Panel or Stats & Controls */}
-              {showEditPanel && editingItem ? (
-                <div className="flex-1 bg-white dark:bg-gray-900 border-l dark:border-gray-800 flex flex-col h-full max-h-full overflow-hidden">
-                  <div className="bg-white dark:bg-gray-900 border-b dark:border-gray-800 px-4 py-3 flex items-center justify-between flex-shrink-0">
-                    <h2 className="font-semibold text-gray-900 dark:text-gray-100 text-base sm:text-lg">
-                      Edit Event
-                    </h2>
-                    <div className="flex items-center gap-2">
-                      {editingItem && (
-                        <button
-                          onClick={() => handleDelete(editingItem)}
-                          className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg touch-manipulation"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
-                      <button
-                        onClick={() => { setShowEditPanel(false); setEditingItem(null); }}
-                        className="p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg touch-manipulation"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Scrape tab edit panel content */}
-                  <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                    {/* Publish Status Section */}
-                    {editingItem && (
-                      <div className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-lg p-4">
-                        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3 flex items-center gap-2">
-                          <CheckCircle className="w-4 h-4" />
-                          Publish Status
-                        </h3>
-                        <div className="grid grid-cols-3 gap-2 sm:gap-3">
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              setEditForm({ ...editForm, publish_status: 'approved' });
-                              try {
-                                await setPublishStatus([editingItem.id], 'approved');
-                                setEvents(events.map(ev => ev.id === editingItem.id ? { ...ev, publish_status: 'approved' } : ev));
-                              } catch (e) { console.error(e); }
-                            }}
-                            className={clsx(
-                              'px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg font-medium flex items-center justify-center gap-2 transition-all touch-manipulation text-sm sm:text-base',
-                              editForm.publish_status === 'approved'
-                                ? 'bg-green-500 text-white shadow-lg ring-2 ring-green-200 dark:ring-green-900'
-                                : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-green-50 dark:hover:bg-green-900/30 hover:text-green-700 dark:hover:text-green-400'
-                            )}
-                          >
-                            <Check className="w-4 h-4 sm:w-5 sm:h-5" />
-                            <span className="hidden sm:inline">Approve</span>
-                            <span className="sm:hidden">✓</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              setEditForm({ ...editForm, publish_status: 'pending' });
-                              try {
-                                await setPublishStatus([editingItem.id], 'pending');
-                                setEvents(events.map(ev => ev.id === editingItem.id ? { ...ev, publish_status: 'pending' } : ev));
-                              } catch (e) { console.error(e); }
-                            }}
-                            className={clsx(
-                              'px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg font-medium flex items-center justify-center gap-2 transition-all touch-manipulation text-sm sm:text-base',
-                              editForm.publish_status === 'pending'
-                                ? 'bg-amber-500 text-white shadow-lg ring-2 ring-amber-200 dark:ring-amber-900'
-                                : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-amber-50 dark:hover:bg-amber-900/30 hover:text-amber-700 dark:hover:text-amber-400'
-                            )}
-                          >
-                            <Clock className="w-4 h-4 sm:w-5 sm:h-5" />
-                            <span className="hidden sm:inline">Pending</span>
-                            <span className="sm:hidden">⏱</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              setEditForm({ ...editForm, publish_status: 'rejected' });
-                              try {
-                                await setPublishStatus([editingItem.id], 'rejected');
-                                setEvents(events.map(ev => ev.id === editingItem.id ? { ...ev, publish_status: 'rejected' } : ev));
-                              } catch (e) { console.error(e); }
-                            }}
-                            className={clsx(
-                              'px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg font-medium flex items-center justify-center gap-2 transition-all touch-manipulation text-sm sm:text-base',
-                              editForm.publish_status === 'rejected'
-                                ? 'bg-red-500 text-white shadow-lg ring-2 ring-red-200 dark:ring-red-900'
-                                : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-red-50 dark:hover:bg-red-900/30 hover:text-red-700 dark:hover:text-red-400'
-                            )}
-                          >
-                            <X className="w-4 h-4 sm:w-5 sm:h-5" />
-                            <span className="hidden sm:inline">Reject</span>
-                            <span className="sm:hidden">✗</span>
-                          </button>
-                        </div>
-                      </div>
-                    )}
-
-
-
-                    {/* Save Button */}
-                    <button
-                      onClick={handleSave}
-                      disabled={isSaving}
-                      className="w-full px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center justify-center gap-2 touch-manipulation font-medium"
-                    >
-                      {isSaving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                      Save Changes
-                    </button>
-                  </div>
-                </div>
-              ) : (
+              {/* RIGHT SIDE - Stats & Controls (when no edit panel) */}
+              {!showEditPanel && (
                 <div className="flex-1 overflow-auto p-6 bg-gray-50 dark:bg-gray-900">
                 <div className="max-w-3xl mx-auto space-y-6">
                   {/* Sync Progress Banner - Shown when syncing */}
@@ -3242,116 +3131,33 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                             </div>
                           </>
                         )}
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Address</label>
-                          <input
-                            type="text"
-                            value={editForm.venue_address || ''}
-                            onChange={(e) => setEditForm({ ...editForm, venue_address: e.target.value })}
-                            className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
-                          />
-                          {sourceReferences.length > 0 && (
-                            <div className="mt-1 flex flex-wrap gap-2">
-                              {sourceReferences
-                                .filter((s: any) => s.venue_address && s.venue_address !== editForm.venue_address)
-                                .map((source: any, idx: number) => (
-                                  <button
-                                    key={`vaddr-${idx}`}
-                                    type="button"
-                                    onClick={() => setEditForm({ ...editForm, venue_address: source.venue_address })}
-                                    className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-700 rounded text-xs text-left transition-colors group max-w-full"
-                                  >
-                                    <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
-                                    <span className="truncate max-w-[300px] text-gray-600 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
-                                      {source.venue_address}
-                                    </span>
-                                  </button>
-                                ))}
-                              {editingItem && editingItem.venue_address !== editForm.venue_address && (
-                                <button
-                                  type="button"
-                                  onClick={() => setEditForm({ ...editForm, venue_address: editingItem.venue_address })}
-                                  className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded text-xs text-gray-500 transition-colors"
-                                >
-                                  <RotateCcw className="w-3 h-3" />
-                                  Reset
-                                </button>
-                              )}
+
+                        {/* Location Info - Read-only from Venue */}
+                        {editForm.venue_id && (
+                          <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg p-4">
+                            <div className="flex items-start gap-2 mb-2">
+                              <MapPin className="w-4 h-4 text-indigo-600 dark:text-indigo-400 mt-0.5 flex-shrink-0" />
+                              <div className="flex-1">
+                                <p className="text-sm font-medium text-indigo-900 dark:text-indigo-100">Location from Venue</p>
+                                <p className="text-xs text-indigo-700 dark:text-indigo-300 mt-1">
+                                  Event location is managed by the venue. Click "Edit Venue" above to update coordinates.
+                                </p>
+                              </div>
                             </div>
-                          )}
-                        </div>
-
-                        {/* Coordinates & Map */}
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Latitude</label>
-                            <input
-                              type="number"
-                              step="any"
-                              value={editForm.latitude || ''}
-                              onChange={(e) => setEditForm({ ...editForm, latitude: e.target.value ? parseFloat(e.target.value) : undefined })}
-                              placeholder="e.g. 52.5200"
-                              className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
-                            />
+                            {editForm.latitude && editForm.longitude && (
+                              <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                                <div className="bg-white/50 dark:bg-gray-800/50 rounded px-2 py-1">
+                                  <span className="text-gray-600 dark:text-gray-400">Lat:</span>
+                                  <span className="ml-1 font-mono text-gray-900 dark:text-gray-100">{editForm.latitude}</span>
+                                </div>
+                                <div className="bg-white/50 dark:bg-gray-800/50 rounded px-2 py-1">
+                                  <span className="text-gray-600 dark:text-gray-400">Lon:</span>
+                                  <span className="ml-1 font-mono text-gray-900 dark:text-gray-100">{editForm.longitude}</span>
+                                </div>
+                              </div>
+                            )}
                           </div>
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Longitude</label>
-                            <input
-                              type="number"
-                              step="any"
-                              value={editForm.longitude || ''}
-                              onChange={(e) => setEditForm({ ...editForm, longitude: e.target.value ? parseFloat(e.target.value) : undefined })}
-                              placeholder="e.g. 13.4050"
-                              className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
-                            />
-                          </div>
-                        </div>
-
-                        <div className="flex flex-col sm:flex-row gap-2">
-                          <button
-                            type="button"
-                            onClick={geocodeAddress}
-                            disabled={isGeocoding || !editForm.venue_address || !editForm.venue_city}
-                            className="flex-1 px-3 py-2 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-200 dark:hover:bg-indigo-900/50 rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                          >
-                            {isGeocoding ? <RefreshCw className="w-4 h-4 animate-spin" /> : <MapPin className="w-4 h-4" />}
-                            Address → Coordinates
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => editForm.latitude && editForm.longitude && reverseGeocode(editForm.latitude, editForm.longitude)}
-                            disabled={isGeocoding || !editForm.latitude || !editForm.longitude}
-                            className="flex-1 px-3 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                          >
-                            {isGeocoding ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Globe className="w-4 h-4" />}
-                            Coordinates → Address
-                          </button>
-                        </div>
-
-                        {geocodeError && (
-                          <div className="text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg">
-                            {geocodeError}
-                          </div>
-                        )}
-
-                        {(editForm.latitude && editForm.longitude) ? (
-                          <div className="relative">
-                            <div 
-                              ref={staticMapRef}
-                              className="h-48 rounded-lg overflow-hidden border dark:border-gray-700 bg-gray-100 dark:bg-gray-800"
-                            />
-                          </div>
-                        ) : (
-                          <div className="h-32 border-2 border-dashed dark:border-gray-700 rounded-lg flex items-center justify-center text-gray-400 dark:text-gray-500">
-                            <div className="text-center">
-                              <MapPin className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                              <p className="text-sm">No coordinates set</p>
-                              <p className="text-xs">Enter address and geocode</p>
-                            </div>
-                          </div>
-                        )}
-
-                        </div> {/* End Venue Information Section */}
+                        )}                        </div> {/* End Venue Information Section */}
 
                         {/* Artists Section */}
                         <div className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-lg p-4">
