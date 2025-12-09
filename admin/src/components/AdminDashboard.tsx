@@ -220,6 +220,10 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
   const [showArtistOverlay, setShowArtistOverlay] = useState(false);
   const [loadingArtist, setLoadingArtist] = useState(false);
 
+  // Related entities state
+  const [relatedEvents, setRelatedEvents] = useState<any[]>([]);
+  const [loadingRelatedEvents, setLoadingRelatedEvents] = useState(false);
+
   // Geocoding state for event edit
   const [isGeocoding, setIsGeocoding] = useState(false);
   const [geocodeError, setGeocodeError] = useState<string>('');
@@ -792,11 +796,19 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
       setEditForm({ ...item });
       fetchArtist(item.id).then(data => {
         setSourceReferences(data.source_references || []);
+        // Load related events for this artist
+        if (data.events) {
+          setRelatedEvents(data.events);
+        }
       }).catch(console.error);
     } else if (activeTab === 'venues' && item.id) {
       setEditForm({ ...item });
       fetchVenue(item.id).then(data => {
         setSourceReferences(data.source_references || []);
+        // Load related events for this venue
+        if (data.events) {
+          setRelatedEvents(data.events);
+        }
       }).catch(console.error);
     } else {
       setEditForm({ ...item });
@@ -1315,16 +1327,78 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                 </span>
               )}
             </div>
-            <div className="flex items-center gap-1.5 mt-0.5">
-              <p className={clsx(
-                'text-xs truncate',
-                isRejected ? 'text-gray-400 dark:text-gray-500 line-through' : 'text-gray-500 dark:text-gray-400'
-              )}>{item.venue_name}</p>
-              <span className="text-gray-400 dark:text-gray-600">•</span>
-              <p className={clsx(
-                'text-xs truncate',
-                isRejected ? 'text-gray-400 dark:text-gray-500 line-through' : 'text-gray-500 dark:text-gray-400'
-              )}>{item.venue_city}</p>
+            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+              {item.venue_name && (
+                <button
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    if (item.venue_id) {
+                      setActiveTabState('venues');
+                      try {
+                        const venueData = await fetchVenue(item.venue_id);
+                        setEditingItem(venueData);
+                        setEditForm(venueData);
+                        setShowEditPanel(true);
+                      } catch (error) {
+                        console.error('Failed to load venue:', error);
+                      }
+                    }
+                  }}
+                  className={clsx(
+                    'text-xs truncate hover:underline',
+                    isRejected ? 'text-gray-400 dark:text-gray-500 line-through' : 'text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400',
+                    !item.venue_id && 'cursor-default hover:no-underline'
+                  )}
+                  disabled={!item.venue_id}
+                >
+                  {item.venue_name}
+                </button>
+              )}
+              {item.venue_city && (
+                <>
+                  <span className="text-gray-400 dark:text-gray-600">•</span>
+                  <p className={clsx(
+                    'text-xs truncate',
+                    isRejected ? 'text-gray-400 dark:text-gray-500 line-through' : 'text-gray-500 dark:text-gray-400'
+                  )}>{item.venue_city}</p>
+                </>
+              )}
+              {/* Artist chips */}
+              {item.artistsList && item.artistsList.length > 0 && (
+                <>
+                  <span className="text-gray-400 dark:text-gray-600">•</span>
+                  <div className="flex items-center gap-1 flex-wrap">
+                    {item.artistsList.slice(0, 2).map((artistName: string, idx: number) => (
+                      <button
+                        key={idx}
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          setLoadingArtist(true);
+                          try {
+                            const results = await searchArtists(artistName);
+                            const artist = results?.find((a: any) => a.name === artistName) || results?.[0];
+                            if (artist) {
+                              const details = await fetchArtist(artist.id);
+                              setEditingArtist(details);
+                              setShowArtistOverlay(true);
+                            }
+                          } catch (e) {
+                            console.error(e);
+                          } finally {
+                            setLoadingArtist(false);
+                          }
+                        }}
+                        className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-200 dark:hover:bg-indigo-900/50 transition-colors"
+                      >
+                        {artistName}
+                      </button>
+                    ))}
+                    {item.artistsList.length > 2 && (
+                      <span className="text-[10px] text-gray-400 dark:text-gray-500">+{item.artistsList.length - 2}</span>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
             {/* Source badges below venue/city */}
             {sources.length > 0 && (
@@ -1843,10 +1917,74 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                                 </span>
                               )}
                             </div>
-                            <div className="flex items-center gap-1.5 mt-0.5">
-                              <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{event.venue_name}</p>
-                              <span className="text-gray-400 dark:text-gray-600">•</span>
-                              <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{event.venue_city}</p>
+                            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                              {event.venue_name && (
+                                <button
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    if (event.venue_id) {
+                                      setActiveTabState('venues');
+                                      try {
+                                        const venueData = await fetchVenue(event.venue_id);
+                                        setEditingItem(venueData);
+                                        setEditForm(venueData);
+                                        setShowEditPanel(true);
+                                      } catch (error) {
+                                        console.error('Failed to load venue:', error);
+                                      }
+                                    }
+                                  }}
+                                  className={clsx(
+                                    'text-xs truncate hover:underline text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400',
+                                    !event.venue_id && 'cursor-default hover:no-underline'
+                                  )}
+                                  disabled={!event.venue_id}
+                                >
+                                  {event.venue_name}
+                                </button>
+                              )}
+                              {event.venue_city && (
+                                <>
+                                  <span className="text-gray-400 dark:text-gray-600">•</span>
+                                  <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{event.venue_city}</p>
+                                </>
+                              )}
+                              {/* Artist chips */}
+                              {(event as any).artistsList && (event as any).artistsList.length > 0 && (
+                                <>
+                                  <span className="text-gray-400 dark:text-gray-600">•</span>
+                                  <div className="flex items-center gap-1 flex-wrap">
+                                    {(event as any).artistsList.slice(0, 2).map((artistName: string, idx: number) => (
+                                      <button
+                                        key={idx}
+                                        onClick={async (e) => {
+                                          e.stopPropagation();
+                                          setLoadingArtist(true);
+                                          try {
+                                            const results = await searchArtists(artistName);
+                                            const artist = results?.find((a: any) => a.name === artistName) || results?.[0];
+                                            if (artist) {
+                                              const details = await fetchArtist(artist.id);
+                                              setEditingArtist(details);
+                                              setShowArtistOverlay(true);
+                                            }
+                                          } catch (e) {
+                                            console.error(e);
+                                          } finally {
+                                            setLoadingArtist(false);
+                                          }
+                                        }}
+                                        className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-200 dark:hover:bg-indigo-900/50 transition-colors"
+                                      >
+                                        {artistName}
+                                      </button>
+                                    ))}
+                                    {(event as any).artistsList.length > 2 && (
+                                      <span className="text-[10px] text-gray-400 dark:text-gray-500">+{(event as any).artistsList.length - 2}</span>
+                                    )}
+                                  </div>
+                                </>
+                              )}
                             </div>
                             {/* Source badges below venue/city */}
                             {sources.length > 0 && (
@@ -3722,6 +3860,44 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                             </div>
                           )}
                         </div>
+
+                        {/* Related Events Section */}
+                        {editingItem && relatedEvents.length > 0 && (
+                          <div className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-lg p-4">
+                            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3 flex items-center gap-2">
+                              <Calendar className="w-4 h-4" />
+                              Events with this Artist ({relatedEvents.length})
+                            </h3>
+                            <div className="space-y-2 max-h-64 overflow-y-auto">
+                              {relatedEvents.map((event: any) => (
+                                <button
+                                  key={event.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setActiveTabState('events');
+                                    handleEdit(event);
+                                  }}
+                                  className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors text-left"
+                                >
+                                  <div className="w-8 h-8 rounded bg-gray-200 dark:bg-gray-700 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                                    {event.flyer_front ? (
+                                      <img src={event.flyer_front} alt="" className="w-full h-full object-cover" />
+                                    ) : (
+                                      <Calendar className="w-4 h-4 text-gray-400" />
+                                    )}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{event.title}</p>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                                      {event.venue_name} • {event.date ? format(new Date(event.date), 'MMM d, yyyy') : '—'}
+                                    </p>
+                                  </div>
+                                  <ExternalLink className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </>
                     )}
 
@@ -4036,6 +4212,44 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                             </div>
                           )}
                         </div>
+
+                        {/* Related Events Section */}
+                        {editingItem && relatedEvents.length > 0 && (
+                          <div className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-lg p-4">
+                            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3 flex items-center gap-2">
+                              <Calendar className="w-4 h-4" />
+                              Events at this Venue ({relatedEvents.length})
+                            </h3>
+                            <div className="space-y-2 max-h-64 overflow-y-auto">
+                              {relatedEvents.map((event: any) => (
+                                <button
+                                  key={event.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setActiveTabState('events');
+                                    handleEdit(event);
+                                  }}
+                                  className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors text-left"
+                                >
+                                  <div className="w-8 h-8 rounded bg-gray-200 dark:bg-gray-700 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                                    {event.flyer_front ? (
+                                      <img src={event.flyer_front} alt="" className="w-full h-full object-cover" />
+                                    ) : (
+                                      <Calendar className="w-4 h-4 text-gray-400" />
+                                    )}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{event.title}</p>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                                      {event.date ? format(new Date(event.date), 'MMM d, yyyy') : '—'}
+                                    </p>
+                                  </div>
+                                  <ExternalLink className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </>
                     )}
 
