@@ -6170,6 +6170,77 @@ async function refreshUnifiedArtist(unifiedId) {
     ]);
 }
 
+// Find or create venue and return venue_id
+async function findOrCreateVenue(venueName, venueAddress, venueCity, venueCountry, venueLatitude, venueLongitude) {
+    const { v4: uuidv4 } = require('uuid');
+    
+    if (!venueName) return null;
+
+    // Try to find existing venue by name and city
+    const existingVenue = await pool.query(`
+        SELECT id, latitude, longitude
+        FROM venues
+        WHERE LOWER(name) = LOWER($1)
+          AND (LOWER(city) = LOWER($2) OR $2 IS NULL)
+        LIMIT 1
+    `, [venueName, venueCity || null]);
+
+    if (existingVenue.rows.length > 0) {
+        const venue = existingVenue.rows[0];
+        
+        // Update venue coordinates if we have them and venue doesn't
+        if (venueLatitude && venueLongitude && (!venue.latitude || !venue.longitude)) {
+            await pool.query(`
+                UPDATE venues
+                SET latitude = $1, longitude = $2, updated_at = CURRENT_TIMESTAMP
+                WHERE id = $3
+            `, [venueLatitude, venueLongitude, venue.id]);
+            console.log(`[Venue] Updated coordinates for ${venueName}`);
+        }
+        
+        return venue.id;
+    }
+
+    // Venue doesn't exist, create it
+    const venueId = uuidv4();
+    
+    // Clean address and extract postal code
+    let cleanedAddress = venueAddress;
+    let postalCode = null;
+    if (venueAddress) {
+        const cleaned = cleanVenueAddress(venueAddress, venueCity, venueCountry);
+        cleanedAddress = cleaned.address;
+        postalCode = cleaned.postalCode;
+    }
+    
+    // If no coordinates provided, try geocoding
+    let lat = venueLatitude;
+    let lon = venueLongitude;
+    
+    if ((!lat || !lon) && (cleanedAddress || venueName)) {
+        console.log(`[Venue] Geocoding ${venueName}...`);
+        try {
+            const coords = await geocodeAddress(cleanedAddress || venueName, venueCity, venueCountry);
+            if (coords) {
+                lat = coords.latitude;
+                lon = coords.longitude;
+                console.log(`[Venue] Geocoded: ${lat}, ${lon}`);
+            }
+        } catch (err) {
+            console.warn(`[Venue] Geocoding failed for ${venueName}:`, err.message);
+        }
+    }
+    
+    // Create the venue
+    await pool.query(`
+        INSERT INTO venues (id, name, address, city, country, postal_code, latitude, longitude, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    `, [venueId, venueName, cleanedAddress, venueCity, venueCountry, postalCode, lat, lon]);
+    
+    console.log(`[Venue] Created ${venueName} with ID ${venueId}`);
+    return venueId;
+}
+
 // Refresh main event with merged data from all linked scraped sources
 async function refreshMainEvent(eventId) {
     // Get all linked scraped events ordered by source priority
@@ -6206,7 +6277,20 @@ async function refreshMainEvent(eventId) {
         ? `${dateStr} ${merged.end_time}`
         : null;
 
-    // Update main event with merged data
+    // Auto-link venue if we have venue name
+    let venueId = null;
+    if (merged.venue_name) {
+        venueId = await findOrCreateVenue(
+            merged.venue_name,
+            merged.venue_address,
+            merged.venue_city,
+            merged.venue_country,
+            merged.venue_latitude,
+            merged.venue_longitude
+        );
+    }
+
+    // Update main event with merged data including venue_id
     await pool.query(`
         UPDATE events SET
             title = COALESCE($1, title),
@@ -6216,23 +6300,25 @@ async function refreshMainEvent(eventId) {
             description = COALESCE($5, description),
             flyer_front = COALESCE($6, flyer_front),
             content_url = COALESCE($7, content_url),
-            venue_name = COALESCE($8, venue_name),
-            venue_address = COALESCE($9, venue_address),
-            venue_city = COALESCE($10, venue_city),
-            venue_country = COALESCE($11, venue_country),
-            latitude = COALESCE($12, latitude),
-            longitude = COALESCE($13, longitude),
+            venue_id = COALESCE($8, venue_id),
+            venue_name = COALESCE($9, venue_name),
+            venue_address = COALESCE($10, venue_address),
+            venue_city = COALESCE($11, venue_city),
+            venue_country = COALESCE($12, venue_country),
+            latitude = COALESCE($13, latitude),
+            longitude = COALESCE($14, longitude),
             updated_at = CURRENT_TIMESTAMP
-        WHERE id = $14
+        WHERE id = $15
     `, [
         merged.title, dateStr, startTimestamp, endTimestamp,
         merged.description, merged.flyer_front, merged.content_url,
+        venueId,
         merged.venue_name, merged.venue_address, merged.venue_city, merged.venue_country,
         merged.venue_latitude, merged.venue_longitude,
         eventId
     ]);
 
-    console.log(`[Refresh] Updated main event ${eventId} with merged data from ${sourcesResult.rows.length} sources`);
+    console.log(`[Refresh] Updated main event ${eventId} with merged data from ${sourcesResult.rows.length} sources${venueId ? `, linked to venue ${venueId}` : ''}`);
 }
 
 // Auto-reject past events that are still pending
@@ -6430,12 +6516,25 @@ async function matchAndLinkEvents(options = {}) {
                         `, [scraped.venue_city, scraped.venue_country || 'Unknown']);
                     }
 
+                    // Auto-link venue if we have venue name
+                    let venueId = null;
+                    if (scraped.venue_name) {
+                        venueId = await findOrCreateVenue(
+                            scraped.venue_name,
+                            scraped.venue_address,
+                            scraped.venue_city,
+                            scraped.venue_country,
+                            scraped.venue_latitude,
+                            scraped.venue_longitude
+                        );
+                    }
+
                     await pool.query(`
                         INSERT INTO events (
                             id, source_code, source_id, title, date, start_time, end_time, 
-                            description, flyer_front, content_url, venue_name, venue_address, 
+                            description, flyer_front, content_url, venue_id, venue_name, venue_address, 
                             venue_city, venue_country, artists, is_published, publish_status
-                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, false, $16)
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, false, $17)
                         ON CONFLICT (id) DO NOTHING
                     `, [
                         eventId,
@@ -6448,6 +6547,7 @@ async function matchAndLinkEvents(options = {}) {
                         scraped.description,
                         scraped.flyer_front,
                         scraped.content_url,
+                        venueId,
                         scraped.venue_name,
                         scraped.venue_address,
                         scraped.venue_city,
