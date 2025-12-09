@@ -14,19 +14,19 @@ services:
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
       - PROXY_SERVER=NONE
       - API_KEY=${API_KEY:-your-secure-api-key-here}
-      # Remote Database Connection
-      - DATABASE_URL=postgresql://eventuser:eventpass@pptr.davidblaesing.com:5433/socialevents
-      - PGHOST=pptr.davidblaesing.com
-      - PGPORT=5433
+      - DATABASE_URL=postgresql://eventuser:eventpass@postgres:5432/socialevents
+      # For migration script
+      - PGHOST=postgres
+      - PGPORT=5432
       - PGUSER=eventuser
       - PGPASSWORD=eventpass
       - PGDATABASE=socialevents
-      # Postgres admin credentials for database creation (optional for remote)
+      # Postgres admin credentials for database creation
       - POSTGRES_USER=eventuser
       - POSTGRES_PASSWORD=eventpass
-    # depends_on:
-    #   postgres:
-    #     condition: service_healthy
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
 
   # PostgreSQL Database
