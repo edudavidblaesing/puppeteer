@@ -5373,11 +5373,39 @@ async function scrapeResidentAdvisor(city, options = {}) {
 }
 
 // Save scraped events to database
-// Clean address by removing duplicate city/country information
+// Extract postal code from address
+function extractPostalCode(address) {
+    if (!address) return null;
+    
+    // Match common postal code patterns
+    // 5-digit codes (US, Germany, etc): 12345
+    // UK postcodes: SW1A 1AA, EC1A 1BB
+    // Canada: K1A 0B1
+    const patterns = [
+        /\b\d{5}\b/,                          // 5-digit (US, Germany)
+        /\b[A-Z]{1,2}\d{1,2}[A-Z]?\s?\d[A-Z]{2}\b/i, // UK
+        /\b[A-Z]\d[A-Z]\s?\d[A-Z]\d\b/i      // Canada
+    ];
+    
+    for (const pattern of patterns) {
+        const match = address.match(pattern);
+        if (match) {
+            return match[0].trim();
+        }
+    }
+    
+    return null;
+}
+
+// Clean address by removing duplicate city/country information and extracting postal code
 function cleanVenueAddress(address, city, country) {
-    if (!address) return address;
+    if (!address) return { address: address, postalCode: null };
     
     let cleaned = address;
+    let postalCode = null;
+    
+    // Extract postal code before cleaning
+    postalCode = extractPostalCode(cleaned);
     
     // Parse address that might contain: "Street; District; Postal City; Country"
     if (cleaned.includes(';')) {
@@ -5399,8 +5427,10 @@ function cleanVenueAddress(address, city, country) {
         cleaned = cleaned.replace(countryRegex, ' ');
     }
     
-    // Remove common postal code patterns
-    cleaned = cleaned.replace(/\b\d{5}\b/g, ''); // 5-digit postal codes
+    // Remove postal code from address
+    if (postalCode) {
+        cleaned = cleaned.replace(postalCode, '');
+    }
     
     // Clean up extra commas, spaces, and trim
     cleaned = cleaned
@@ -5409,7 +5439,7 @@ function cleanVenueAddress(address, city, country) {
         .replace(/^[,\s]+|[,\s]+$/g, '') // Trim commas and spaces
         .trim();
     
-    return cleaned;
+    return { address: cleaned, postalCode };
 }
 
 async function saveScrapedEvents(events, options = {}) {
@@ -5420,13 +5450,16 @@ async function saveScrapedEvents(events, options = {}) {
 
     for (const event of events) {
         try {
-            // Clean venue address before processing
+            // Clean venue address before processing and extract postal code
+            let venuePostalCode = null;
             if (event.venue_address) {
-                event.venue_address = cleanVenueAddress(
+                const cleaned = cleanVenueAddress(
                     event.venue_address,
                     event.venue_city,
                     event.venue_country
                 );
+                event.venue_address = cleaned.address;
+                venuePostalCode = cleaned.postalCode;
             }
             
             // Geocode if coordinates are missing and we have address info
@@ -6630,13 +6663,22 @@ async function matchAndLinkVenues(options = {}) {
             if (!dryRun) {
                 const venueId = uuidv4();
                 
+                // Clean address and extract postal code
+                let cleanedAddress = scraped.address;
+                let postalCode = null;
+                if (scraped.address) {
+                    const cleaned = cleanVenueAddress(scraped.address, scraped.city, scraped.country);
+                    cleanedAddress = cleaned.address;
+                    postalCode = cleaned.postalCode;
+                }
+                
                 // If no coordinates, try geocoding
                 let latitude = scraped.latitude;
                 let longitude = scraped.longitude;
                 
                 if (!latitude || !longitude) {
                     console.log(`[Match Venues] Geocoding ${scraped.name}...`);
-                    const coords = await geocodeAddress(scraped.address, scraped.city, scraped.country);
+                    const coords = await geocodeAddress(cleanedAddress, scraped.city, scraped.country);
                     if (coords) {
                         latitude = coords.latitude;
                         longitude = coords.longitude;
@@ -6646,16 +6688,17 @@ async function matchAndLinkVenues(options = {}) {
                 
                 await pool.query(`
                     INSERT INTO venues (id, source_code, source_id, name, address, city, country, 
-                                      latitude, longitude, content_url, created_at, updated_at)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                                      postal_code, latitude, longitude, content_url, created_at, updated_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 `, [
                     venueId,
                     scraped.source_code,
                     scraped.source_venue_id,
                     scraped.name,
-                    scraped.address,
+                    cleanedAddress,
                     scraped.city,
                     scraped.country,
+                    postalCode,
                     latitude,
                     longitude,
                     scraped.content_url
