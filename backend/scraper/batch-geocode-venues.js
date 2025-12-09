@@ -10,17 +10,27 @@
  *   node batch-geocode-venues.js
  *   node batch-geocode-venues.js --limit 10  # Geocode only first 10 venues
  *   node batch-geocode-venues.js --dry-run   # Test without updating database
+ * 
+ * Environment Variables:
+ *   DB_HOST     - Database host (default: pptr.davidblaesing.com)
+ *   DB_PORT     - Database port (default: 5433)
+ *   DB_NAME     - Database name (default: eventdb)
+ *   DB_USER     - Database user (default: eventuser)
+ *   DB_PASSWORD - Database password (default: eventpassword)
+ * 
+ * Example with custom credentials:
+ *   DB_USER=postgres DB_PASSWORD=mypass node batch-geocode-venues.js
  */
 
 const { Pool } = require('pg');
 
-// Database connection
+// Database connection - defaults to production server
 const pool = new Pool({
-    host: process.env.DB_HOST || 'db',
-    port: process.env.DB_PORT || 5432,
+    host: process.env.DB_HOST || 'pptr.davidblaesing.com',
+    port: process.env.DB_PORT || 5433,
     database: process.env.DB_NAME || 'eventdb',
-    user: process.env.DB_USER || 'postgres',
-    password: process.env.DB_PASSWORD || 'postgres'
+    user: process.env.DB_USER || 'eventuser',
+    password: process.env.DB_PASSWORD || 'eventpassword'
 });
 
 // Parse command line arguments
