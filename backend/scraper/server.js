@@ -5373,6 +5373,45 @@ async function scrapeResidentAdvisor(city, options = {}) {
 }
 
 // Save scraped events to database
+// Clean address by removing duplicate city/country information
+function cleanVenueAddress(address, city, country) {
+    if (!address) return address;
+    
+    let cleaned = address;
+    
+    // Parse address that might contain: "Street; District; Postal City; Country"
+    if (cleaned.includes(';')) {
+        const parts = cleaned.split(';').map(p => p.trim());
+        // Take only the first part (street address)
+        cleaned = parts[0];
+    }
+    
+    // Remove city from address if it appears
+    if (city && cleaned.toLowerCase().includes(city.toLowerCase())) {
+        // Use word boundary to avoid partial matches
+        const cityRegex = new RegExp(`[,\\s]*${city.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[,\\s]*`, 'gi');
+        cleaned = cleaned.replace(cityRegex, ' ');
+    }
+    
+    // Remove country from address if it appears
+    if (country && cleaned.toLowerCase().includes(country.toLowerCase())) {
+        const countryRegex = new RegExp(`[,\\s]*${country.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[,\\s]*`, 'gi');
+        cleaned = cleaned.replace(countryRegex, ' ');
+    }
+    
+    // Remove common postal code patterns
+    cleaned = cleaned.replace(/\b\d{5}\b/g, ''); // 5-digit postal codes
+    
+    // Clean up extra commas, spaces, and trim
+    cleaned = cleaned
+        .replace(/,+/g, ',')           // Multiple commas to single
+        .replace(/\s+/g, ' ')          // Multiple spaces to single
+        .replace(/^[,\s]+|[,\s]+$/g, '') // Trim commas and spaces
+        .trim();
+    
+    return cleaned;
+}
+
 async function saveScrapedEvents(events, options = {}) {
     const { geocodeMissing = true } = options;
     let inserted = 0, updated = 0, geocoded = 0;
@@ -5381,6 +5420,15 @@ async function saveScrapedEvents(events, options = {}) {
 
     for (const event of events) {
         try {
+            // Clean venue address before processing
+            if (event.venue_address) {
+                event.venue_address = cleanVenueAddress(
+                    event.venue_address,
+                    event.venue_city,
+                    event.venue_country
+                );
+            }
+            
             // Geocode if coordinates are missing and we have address info
             let venueLat = event.venue_latitude;
             let venueLon = event.venue_longitude;
