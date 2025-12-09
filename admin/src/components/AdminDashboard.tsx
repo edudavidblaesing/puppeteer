@@ -35,13 +35,14 @@ import {
   Loader,
   Image as ImageIcon,
   Save,
+  Briefcase,
 } from 'lucide-react';
 
 // Dynamic import for EventMap (Leaflet requires client-side only)
 const EventMap = dynamic(() => import('@/components/EventMap'), { ssr: false });
 import { format } from 'date-fns';
 import clsx from 'clsx';
-import { Event, Stats, City, Venue, Artist, getEventTiming, sortEventsSmart, EventType, EVENT_TYPES } from '@/types';
+import { Event, Stats, City, Venue, Artist, Organizer, getEventTiming, sortEventsSmart, EventType, EVENT_TYPES } from '@/types';
 import {
   fetchEvents,
   fetchEvent,
@@ -73,6 +74,11 @@ import {
   createVenue,
   updateVenue,
   deleteVenue,
+  fetchOrganizers,
+  fetchOrganizer,
+  createOrganizer,
+  updateOrganizer,
+  deleteOrganizer,
   scrapeEvents,
   runMatching,
   fetchScrapeStats,
@@ -90,7 +96,7 @@ import {
 } from '@/lib/api';
 import { MiniBarChart, MiniAreaChart, StatCard, RecentActivity, ActivityTimeline, EntityStats, Sparkline } from '@/components/ScrapeCharts';
 
-export type ActiveTab = 'events' | 'artists' | 'venues' | 'cities' | 'scrape';
+export type ActiveTab = 'events' | 'artists' | 'venues' | 'cities' | 'organizers' | 'scrape';
 
 export interface AdminDashboardProps {
   initialTab?: ActiveTab;
@@ -106,6 +112,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
     if (path === '/artists') return 'artists';
     if (path === '/venues') return 'venues';
     if (path === '/cities') return 'cities';
+    if (path === '/organizers') return 'organizers';
     if (path === '/scrape') return 'scrape';
     return 'events'; // default for root path
   };
@@ -143,6 +150,10 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
   // Venues state
   const [venues, setVenues] = useState<Venue[]>([]);
   const [venuesTotal, setVenuesTotal] = useState(0);
+
+  // Organizers state
+  const [organizers, setOrganizers] = useState<Organizer[]>([]);
+  const [organizersTotal, setOrganizersTotal] = useState(0);
   const [scrapedVenues, setScrapedVenues] = useState<any[]>([]);
   const [scrapedVenuesTotal, setScrapedVenuesTotal] = useState(0);
 
@@ -338,6 +349,21 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
     }
   }, [searchQuery, page, pageSize]);
 
+  // Load organizers
+  const loadOrganizers = useCallback(async () => {
+    try {
+      const data = await fetchOrganizers({
+        search: searchQuery || undefined,
+        limit: pageSize,
+        offset: (page - 1) * pageSize,
+      });
+      setOrganizers(data.data || []);
+      setOrganizersTotal(data.total || 0);
+    } catch (error) {
+      console.error('Failed to load organizers:', error);
+    }
+  }, [searchQuery, page, pageSize]);
+
   // Load venues
   const loadVenues = useCallback(async () => {
     try {
@@ -430,6 +456,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
       else if (activeTab === 'artists') await loadArtists();
       else if (activeTab === 'venues') await loadVenues();
       else if (activeTab === 'cities') await loadCities();
+      else if (activeTab === 'organizers') await loadOrganizers();
       else if (activeTab === 'scrape') {
         // Load both scrape data AND all events for pending list (no pagination limit)
         await Promise.all([
@@ -881,6 +908,13 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
           await createCity(payload);
         }
         await loadCities();
+      } else if (activeTab === 'organizers') {
+        if (editingItem) {
+          await updateOrganizer(editingItem.id, editForm);
+        } else {
+          await createOrganizer(editForm);
+        }
+        await loadOrganizers();
       }
       setShowEditPanel(false);
       setEditingItem(null);
@@ -968,6 +1002,9 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
       } else if (activeTab === 'cities') {
         await deleteCity(item.id.toString());
         await loadCities();
+      } else if (activeTab === 'organizers') {
+        await deleteOrganizer(item.id);
+        await loadOrganizers();
       }
       if (editingItem?.id === item.id) {
         setShowEditPanel(false);
@@ -1608,6 +1645,27 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
       );
     }
 
+    if (activeTab === 'organizers') {
+      return (
+        <div
+          key={item.id}
+          onClick={() => handleEdit(item)}
+          className={clsx(
+            'px-4 py-3 flex items-center gap-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 border-b border-gray-200 dark:border-gray-800 transition-colors bg-white dark:bg-gray-900',
+            editingItem?.id === item.id && 'bg-indigo-50 dark:bg-gray-800 border-l-2 border-l-indigo-500 dark:border-l-gray-400'
+          )}
+        >
+          <div className="w-10 h-10 rounded bg-gray-200 dark:bg-gray-800 flex items-center justify-center flex-shrink-0">
+            <Briefcase className="w-5 h-5 text-gray-400 dark:text-gray-500" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-medium text-sm truncate text-gray-900 dark:text-gray-100">{item.name}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">{item.provider || '—'}</p>
+          </div>
+        </div>
+      );
+    }
+
     return null;
   };
 
@@ -1617,8 +1675,9 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
     if (activeTab === 'artists') return artists;
     if (activeTab === 'venues') return venues;
     if (activeTab === 'cities') return adminCities;
+    if (activeTab === 'organizers') return organizers;
     return [];
-  }, [activeTab, filteredEvents, artists, venues, adminCities]);
+  }, [activeTab, filteredEvents, artists, venues, adminCities, organizers]);
 
   return (
     <div className="h-full flex flex-col bg-gray-100 dark:bg-gray-950">
@@ -1981,6 +2040,26 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                                     ))}
                                     {(event as any).artistsList.length > 2 && (
                                       <span className="text-[10px] text-gray-400 dark:text-gray-500">+{(event as any).artistsList.length - 2}</span>
+                                    )}
+                                  </div>
+                                </>
+                              )}
+                              {/* Organizer chips */}
+                              {event.organizers_list && event.organizers_list.length > 0 && (
+                                <>
+                                  <span className="text-gray-400 dark:text-gray-600">•</span>
+                                  <div className="flex items-center gap-1 flex-wrap">
+                                    {event.organizers_list.slice(0, 2).map((org, idx) => (
+                                      <span
+                                        key={idx}
+                                        className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800"
+                                        title="Organizer"
+                                      >
+                                        {org.name}
+                                      </span>
+                                    ))}
+                                    {event.organizers_list.length > 2 && (
+                                      <span className="text-[10px] text-gray-400 dark:text-gray-500">+{event.organizers_list.length - 2}</span>
                                     )}
                                   </div>
                                 </>
@@ -4147,6 +4226,31 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                             className="rounded text-indigo-600"
                           />
                           <label htmlFor="is_active" className="text-sm">Active</label>
+                        </div>
+                      </>
+                    )}
+
+                    {/* Organizer form */}
+                    {activeTab === 'organizers' && (
+                      <>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name *</label>
+                          <input
+                            type="text"
+                            value={editForm.name || ''}
+                            onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                            className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Provider</label>
+                          <input
+                            type="text"
+                            value={editForm.provider || ''}
+                            onChange={(e) => setEditForm({ ...editForm, provider: e.target.value })}
+                            className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
+                          />
                         </div>
                       </>
                     )}

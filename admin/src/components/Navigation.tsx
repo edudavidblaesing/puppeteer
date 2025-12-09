@@ -10,6 +10,7 @@ import {
   CloudDownload,
   LogOut,
   User,
+  Briefcase,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useAuth } from '@/contexts/AuthContext';
@@ -18,6 +19,7 @@ const navItems = [
   { href: '/events', label: 'Events', icon: Calendar },
   { href: '/artists', label: 'Artists', icon: Users },
   { href: '/venues', label: 'Venues', icon: Building2 },
+  { href: '/organizers', label: 'Organizers', icon: Briefcase },
   { href: '/cities', label: 'Cities', icon: Globe },
   { href: '/scrape', label: 'Scrape', icon: CloudDownload },
 ];

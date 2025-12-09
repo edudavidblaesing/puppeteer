@@ -1,4 +1,4 @@
-import { Event } from '@/types';
+import { Event, Organizer } from '@/types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://pptr.davidblaesing.com';
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'your-secure-api-key-here';
@@ -760,3 +760,51 @@ export async function matchVenues(params?: { dryRun?: boolean; minConfidence?: n
   }
   return response.json();
 }
+
+// Organizers API
+export async function fetchOrganizers(params?: { search?: string; limit?: number; offset?: number }) {
+  const searchParams = new URLSearchParams();
+  if (params?.search) searchParams.set('search', params.search);
+  if (params?.limit) searchParams.set('limit', params.limit.toString());
+  if (params?.offset) searchParams.set('offset', params.offset.toString());
+
+  const response = await fetch(`${API_URL}/db/organizers?${searchParams}`, { headers });
+  if (!response.ok) throw new Error('Failed to fetch organizers');
+  return response.json();
+}
+
+export async function fetchOrganizer(id: string) {
+  const response = await fetch(`${API_URL}/db/organizers/${id}`, { headers });
+  if (!response.ok) throw new Error('Failed to fetch organizer');
+  return response.json();
+}
+
+export async function createOrganizer(data: Partial<Organizer>) {
+  const response = await fetch(`${API_URL}/db/organizers`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) throw new Error('Failed to create organizer');
+  return response.json();
+}
+
+export async function updateOrganizer(id: string, data: Partial<Organizer>) {
+  const response = await fetch(`${API_URL}/db/organizers/${id}`, {
+    method: 'PATCH',
+    headers,
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) throw new Error('Failed to update organizer');
+  return response.json();
+}
+
+export async function deleteOrganizer(id: string) {
+  const response = await fetch(`${API_URL}/db/organizers/${id}`, {
+    method: 'DELETE',
+    headers,
+  });
+  if (!response.ok) throw new Error('Failed to delete organizer');
+  return response.json();
+}
+

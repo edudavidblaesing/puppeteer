@@ -498,6 +498,8 @@ app.post('/admin/sql', verifyToken, async (req, res) => {
 const geocodeCache = new Map();
 const GEOCODE_DELAY = 1100; // ms between requests to respect rate limit
 let lastGeocodeTime = 0;
+let consecutiveGeocodeErrors = 0;
+const MAX_GEOCODE_ERRORS = 5;
 
 async function geocodeAddress(address, city, country) {
     if (!address && !city) return null;
@@ -578,6 +580,15 @@ async function geocodeAddress(address, city, country) {
         return geocodeCache.get(fullAddress);
     }
 
+    // Skip if we've had too many errors
+    if (consecutiveGeocodeErrors >= MAX_GEOCODE_ERRORS) {
+        // Only log once every 10 calls to avoid spam
+        if (Math.random() < 0.1) {
+            console.warn('Geocoding skipped due to too many consecutive errors (403/429)');
+        }
+        return null;
+    }
+
     // Rate limiting
     const now = Date.now();
     const timeSinceLastRequest = now - lastGeocodeTime;
@@ -600,15 +611,21 @@ async function geocodeAddress(address, city, country) {
                 `https://nominatim.openstreetmap.org/search?format=json&q=${query}&limit=1`,
                 {
                     headers: {
-                        'User-Agent': 'SocialEventsAdmin/1.0 (contact@example.com)'
+                        'User-Agent': 'SocialEventsScraper/1.0 (admin@socialevents.com)'
                     }
                 }
             );
 
             if (!response.ok) {
                 console.warn(`Geocoding failed for "${searchAddress}": ${response.status}`);
+                if (response.status === 403 || response.status === 429) {
+                    consecutiveGeocodeErrors++;
+                }
                 continue;
             }
+
+            // Reset counter on success (if we got here, at least one strategy worked)
+            consecutiveGeocodeErrors = 0;
 
             const data = await response.json();
 
@@ -683,6 +700,19 @@ function markProxyBlocked(proxy) {
     blockedProxies.add(proxy);
     console.log(`Proxy ${proxy} marked as BLOCKED. Blocked proxies: ${blockedProxies.size}/${PROXY_LIST.length}`);
 }
+
+app.get('/', (req, res) => {
+    res.json({
+        service: 'Event Scraper Service',
+        status: 'running',
+        endpoints: [
+            '/health',
+            '/proxy-status',
+            '/scrape/events',
+            '/db/stats'
+        ]
+    });
+});
 
 app.get('/health', (req, res) => {
     res.json({
@@ -1746,7 +1776,17 @@ app.get('/db/events', async (req, res) => {
                        JOIN scraped_events se ON se.id = esl.scraped_event_id
                        WHERE esl.event_id = e.id),
                        '[]'
-                   ) as source_references
+                   ) as source_references,
+                   COALESCE(
+                       (SELECT json_agg(json_build_object(
+                           'id', o.id,
+                           'name', o.name
+                       ))
+                       FROM event_organizers eo
+                       JOIN organizers o ON o.id = eo.organizer_id
+                       WHERE eo.event_id = e.id),
+                       '[]'
+                   ) as organizers_list
             FROM events e
             LEFT JOIN venues v ON e.venue_id = v.id OR (v.name = e.venue_name AND v.city = e.venue_city)
             WHERE 1=1`;
@@ -3114,6 +3154,141 @@ app.get('/db/artists/search', async (req, res) => {
     } catch (error) {
         console.error('Artist search error:', error);
         res.json({ data: [], error: error.message });
+    }
+});
+
+// ==========================================
+// ORGANIZER ENDPOINTS
+// ==========================================
+
+// Get organizers
+app.get('/db/organizers', async (req, res) => {
+    try {
+        const { search, limit = 50, offset = 0 } = req.query;
+        
+        let query = `
+            SELECT o.*,
+                   (SELECT COUNT(*) FROM event_organizers eo WHERE eo.organizer_id = o.id) as event_count
+            FROM organizers o
+            WHERE 1=1
+        `;
+        const params = [];
+        let paramIndex = 1;
+
+        if (search) {
+            query += ` AND o.name ILIKE $${paramIndex}`;
+            params.push(`%${search}%`);
+            paramIndex++;
+        }
+
+        query += ` ORDER BY o.name ASC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+        params.push(limit, offset);
+
+        const result = await pool.query(query, params);
+        
+        // Get total count
+        let countQuery = 'SELECT COUNT(*) FROM organizers o WHERE 1=1';
+        const countParams = [];
+        if (search) {
+            countQuery += ' AND o.name ILIKE $1';
+            countParams.push(`%${search}%`);
+        }
+        const countResult = await pool.query(countQuery, countParams);
+
+        res.json({
+            data: result.rows,
+            total: parseInt(countResult.rows[0].count)
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get single organizer
+app.get('/db/organizers/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const result = await pool.query('SELECT * FROM organizers WHERE id = $1', [id]);
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Organizer not found' });
+        }
+        
+        res.json(result.rows[0]);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Create organizer
+app.post('/db/organizers', async (req, res) => {
+    try {
+        const { name, description, website_url, image_url } = req.body;
+        
+        if (!name) {
+            return res.status(400).json({ error: 'Name is required' });
+        }
+
+        const id = uuidv4();
+        const result = await pool.query(`
+            INSERT INTO organizers (id, name, description, website_url, image_url)
+            VALUES ($1, $2, $3, $4, $5)
+            RETURNING *
+        `, [id, name, description, website_url, image_url]);
+
+        res.status(201).json(result.rows[0]);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Update organizer
+app.patch('/db/organizers/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const updates = req.body;
+        
+        const fields = Object.keys(updates).filter(key => 
+            ['name', 'description', 'website_url', 'image_url'].includes(key)
+        );
+        
+        if (fields.length === 0) {
+            return res.status(400).json({ error: 'No valid fields to update' });
+        }
+
+        const setClause = fields.map((field, i) => `${field} = $${i + 2}`).join(', ');
+        const values = fields.map(field => updates[field]);
+        
+        const result = await pool.query(`
+            UPDATE organizers 
+            SET ${setClause}, updated_at = CURRENT_TIMESTAMP
+            WHERE id = $1
+            RETURNING *
+        `, [id, ...values]);
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Organizer not found' });
+        }
+
+        res.json(result.rows[0]);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Delete organizer
+app.delete('/db/organizers/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const result = await pool.query('DELETE FROM organizers WHERE id = $1 RETURNING id', [id]);
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Organizer not found' });
+        }
+
+        res.json({ message: 'Organizer deleted successfully' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
     }
 });
 
@@ -5314,6 +5489,10 @@ async function scrapeResidentAdvisor(city, options = {}) {
                                 country { name }
                             }
                         }
+                        promoters {
+                            id
+                            name
+                        }
                         artists { id name }
                     }
                     listingDate
@@ -5371,6 +5550,10 @@ async function scrapeResidentAdvisor(city, options = {}) {
             artists_json: (e.artists || []).map(a => ({
                 source_artist_id: a.id,
                 name: a.name
+            })),
+            organizers_json: (e.promoters || []).map(p => ({
+                source_organizer_id: p.id,
+                name: p.name
             })),
             price_info: null,
             raw_data: { ...e, listingDate: listing.listingDate },
@@ -5565,8 +5748,8 @@ async function saveScrapedEvents(events, options = {}) {
                     source_code, source_event_id, title, date, start_time, end_time,
                     content_url, flyer_front, description, venue_name, venue_address,
                     venue_city, venue_country, venue_latitude, venue_longitude,
-                    artists_json, price_info, raw_data, has_changes, changes
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+                    artists_json, organizers_json, price_info, raw_data, has_changes, changes
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
                 ON CONFLICT (source_code, source_event_id) DO UPDATE SET
                     title = EXCLUDED.title,
                     date = EXCLUDED.date,
@@ -5582,6 +5765,7 @@ async function saveScrapedEvents(events, options = {}) {
                     venue_latitude = COALESCE(EXCLUDED.venue_latitude, scraped_events.venue_latitude),
                     venue_longitude = COALESCE(EXCLUDED.venue_longitude, scraped_events.venue_longitude),
                     artists_json = EXCLUDED.artists_json,
+                    organizers_json = EXCLUDED.organizers_json,
                     price_info = EXCLUDED.price_info,
                     raw_data = EXCLUDED.raw_data,
                     has_changes = EXCLUDED.has_changes,
@@ -5605,6 +5789,7 @@ async function saveScrapedEvents(events, options = {}) {
                 venueLat,
                 venueLon,
                 JSON.stringify(event.artists_json),
+                JSON.stringify(event.organizers_json || []),
                 event.price_info ? JSON.stringify(event.price_info) : null,
                 JSON.stringify(event.raw_data),
                 hasChanges,
@@ -5627,7 +5812,7 @@ async function saveScrapedEvents(events, options = {}) {
             }
 
             // Save scraped venue if present
-            if (event.venue_raw && event.venue_raw.source_venue_id) {
+            if (event.venue_raw && event.venue_raw.source_venue_id && event.venue_raw.name) {
                 const venueKey = `${event.source_code}:${event.venue_raw.source_venue_id}`;
                 if (!savedVenues.has(venueKey)) {
                     await pool.query(`
@@ -5684,6 +5869,30 @@ async function saveScrapedEvents(events, options = {}) {
                             JSON.stringify(artist)
                         ]);
                         savedArtists.add(artistKey);
+                    }
+                }
+            }
+
+            // Save scraped organizers if present
+            const savedOrganizers = new Set();
+            for (const organizer of (event.organizers_json || [])) {
+                if (organizer.source_organizer_id) {
+                    const organizerKey = `${event.source_code}:${organizer.source_organizer_id}`;
+                    if (!savedOrganizers.has(organizerKey)) {
+                        await pool.query(`
+                            INSERT INTO scraped_organizers (
+                                source_code, source_id, name, raw_data
+                            ) VALUES ($1, $2, $3, $4)
+                            ON CONFLICT (source_code, source_id) DO UPDATE SET
+                                name = EXCLUDED.name,
+                                updated_at = CURRENT_TIMESTAMP
+                        `, [
+                            event.source_code,
+                            organizer.source_organizer_id,
+                            organizer.name,
+                            JSON.stringify(organizer)
+                        ]);
+                        savedOrganizers.add(organizerKey);
                     }
                 }
             }
@@ -5795,7 +6004,7 @@ function mergeSourceData(sources, fieldMapping = null) {
         'title', 'date', 'start_time', 'end_time', 'description',
         'flyer_front', 'content_url', 'ticket_url', 'price_info',
         'venue_name', 'venue_address', 'venue_city', 'venue_country',
-        'venue_latitude', 'venue_longitude'
+        'venue_latitude', 'venue_longitude', 'artists_json', 'organizers_json'
     ];
 
     for (const field of fields) {
@@ -6377,6 +6586,11 @@ async function refreshMainEvent(eventId) {
         await linkArtistsToEvent(eventId, merged.artists_json);
     }
 
+    // Link organizers to event
+    if (merged.organizers_json && Array.isArray(merged.organizers_json)) {
+        await linkOrganizersToEvent(eventId, merged.organizers_json);
+    }
+
     console.log(`[Refresh] Updated main event ${eventId} with merged data from ${sourcesResult.rows.length} sources${venueId ? `, linked to venue ${venueId}` : ''}${hasChanges ? ' (changes detected)' : ''}`);
 }
 
@@ -6411,11 +6625,49 @@ async function linkArtistsToEvent(eventId, artistsArray) {
 
         // Link artist to event
         await pool.query(`
-            INSERT INTO event_artists (event_id, artist_id, artist_name, performance_order)
-            VALUES ($1, $2, $3, $4)
+            INSERT INTO event_artists (event_id, artist_id, billing_order)
+            VALUES ($1, $2, $3)
             ON CONFLICT (event_id, artist_id) DO UPDATE SET
-                performance_order = EXCLUDED.performance_order
-        `, [eventId, artistId, artistName, i + 1]);
+                billing_order = EXCLUDED.billing_order
+        `, [eventId, artistId, i + 1]);
+    }
+}
+
+// Link organizers to event in event_organizers junction table
+async function linkOrganizersToEvent(eventId, organizersArray) {
+    if (!organizersArray || organizersArray.length === 0) return;
+
+    for (let i = 0; i < organizersArray.length; i++) {
+        const organizerName = typeof organizersArray[i] === 'string' ? organizersArray[i] : organizersArray[i].name;
+        if (!organizerName) continue;
+
+        // Try to find existing organizer by name
+        const organizerResult = await pool.query(`
+            SELECT id FROM organizers
+            WHERE LOWER(name) = LOWER($1)
+            LIMIT 1
+        `, [organizerName]);
+
+        let organizerId = null;
+        if (organizerResult.rows.length > 0) {
+            organizerId = organizerResult.rows[0].id;
+        } else {
+            // Create new organizer
+            const { v4: uuidv4 } = require('uuid');
+            organizerId = uuidv4();
+            await pool.query(`
+                INSERT INTO organizers (id, name, created_at, updated_at)
+                VALUES ($1, $2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            `, [organizerId, organizerName]);
+            console.log(`[Organizer] Created ${organizerName} with ID ${organizerId}`);
+        }
+
+        // Link organizer to event
+        await pool.query(`
+            INSERT INTO event_organizers (event_id, organizer_id, role)
+            VALUES ($1, $2, 'promoter')
+            ON CONFLICT (event_id, organizer_id) DO NOTHING
+        `, [eventId, organizerId]);
     }
 }
 
@@ -6653,6 +6905,14 @@ async function matchAndLinkEvents(options = {}) {
                         artistsStr,
                         publishStatus
                     ]);
+
+                    // Link artists and organizers
+                    if (scraped.artists_json && Array.isArray(scraped.artists_json)) {
+                        await linkArtistsToEvent(eventId, scraped.artists_json);
+                    }
+                    if (scraped.organizers_json && Array.isArray(scraped.organizers_json)) {
+                        await linkOrganizersToEvent(eventId, scraped.organizers_json);
+                    }
 
                     // Link to the new main event
                     await pool.query(`
@@ -6923,6 +7183,108 @@ async function matchAndLinkVenues(options = {}) {
     return { processed: unlinked.length, matched, created, results: results.slice(0, 50) };
 }
 
+// Match and link organizers from scraped_organizers to main organizers table
+async function matchAndLinkOrganizers(options = {}) {
+    const { dryRun = false, minConfidence = 0.7 } = options;
+    const { v4: uuidv4 } = require('uuid');
+
+    // Get unlinked scraped organizers (not in organizer_scraped_links)
+    const unlinkedResult = await pool.query(`
+        SELECT so.* FROM scraped_organizers so
+        WHERE NOT EXISTS (
+            SELECT 1 FROM organizer_scraped_links osl WHERE osl.scraped_organizer_id = so.id
+        )
+        ORDER BY so.name
+        LIMIT 1000
+    `);
+
+    const unlinked = unlinkedResult.rows;
+    let matched = 0, created = 0;
+    const results = [];
+
+    console.log(`[Match Organizers] Processing ${unlinked.length} unlinked scraped organizers`);
+
+    for (const scraped of unlinked) {
+        // Try to find matching main organizer by name
+        const potentialMatches = await pool.query(`
+            SELECT o.*, 
+                   (SELECT array_agg(so.source_code) FROM organizer_scraped_links osl 
+                    JOIN scraped_organizers so ON so.id = osl.scraped_organizer_id 
+                    WHERE osl.organizer_id = o.id) as existing_sources
+            FROM organizers o
+            WHERE LOWER(o.name) = LOWER($1)
+            OR similarity(LOWER(o.name), LOWER($1)) > 0.6
+        `, [scraped.name || '']);
+
+        let bestMatch = null;
+        let bestScore = 0;
+
+        for (const potential of potentialMatches.rows) {
+            // Skip if already linked from same source
+            if (potential.existing_sources?.includes(scraped.source_code)) continue;
+
+            // Calculate match score based on name similarity
+            const nameScore = stringSimilarity(scraped.name || '', potential.name || '');
+            
+            if (nameScore > bestScore && nameScore >= minConfidence) {
+                bestScore = nameScore;
+                bestMatch = potential;
+            }
+        }
+
+        if (bestMatch) {
+            // Link to existing main organizer
+            if (!dryRun) {
+                await pool.query(`
+                    INSERT INTO organizer_scraped_links (organizer_id, scraped_organizer_id, match_confidence)
+                    VALUES ($1, $2, $3)
+                    ON CONFLICT (organizer_id, scraped_organizer_id) DO NOTHING
+                `, [bestMatch.id, scraped.id, bestScore]);
+            }
+            matched++;
+            results.push({
+                action: 'matched',
+                scraped: { id: scraped.id, name: scraped.name, source: scraped.source_code },
+                main: { id: bestMatch.id, name: bestMatch.name },
+                confidence: bestScore
+            });
+        } else {
+            // Create new main organizer
+            if (!dryRun) {
+                const organizerId = uuidv4();
+                
+                await pool.query(`
+                    INSERT INTO organizers (id, name, description, image_url, website, created_at, updated_at)
+                    VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                `, [
+                    organizerId,
+                    scraped.name,
+                    scraped.description,
+                    scraped.image_url,
+                    scraped.url
+                ]);
+
+                // Link scraped organizer to new main organizer
+                await pool.query(`
+                    INSERT INTO organizer_scraped_links (organizer_id, scraped_organizer_id, match_confidence, is_primary)
+                    VALUES ($1, $2, 1.0, true)
+                `, [organizerId, scraped.id]);
+
+                created++;
+                results.push({
+                    action: 'created',
+                    scraped: { id: scraped.id, name: scraped.name, source: scraped.source_code },
+                    main: { id: organizerId, name: scraped.name }
+                });
+            }
+        }
+    }
+
+    console.log(`[Match Organizers] Processed ${unlinked.length}: ${created} created, ${matched} matched`);
+
+    return { processed: unlinked.length, matched, created, results: results.slice(0, 50) };
+}
+
 // Deduplicate main events that have the same date/venue and similar titles
 async function deduplicateMainEvents() {
     let merged = 0;
@@ -7093,7 +7455,13 @@ app.post('/scrape/events', async (req, res) => {
         // Optionally run matching
         let matchResult = null;
         if (match) {
-            matchResult = await matchAndLinkEvents({ dryRun: false });
+            const [events, artists, venues, organizers] = await Promise.all([
+                matchAndLinkEvents({ dryRun: false }),
+                matchAndLinkArtists({ dryRun: false, minConfidence: 0.7 }),
+                matchAndLinkVenues({ dryRun: false, minConfidence: 0.7 }),
+                matchAndLinkOrganizers({ dryRun: false, minConfidence: 0.7 })
+            ]);
+            matchResult = { events, artists, venues, organizers };
         }
 
         res.json({
@@ -7144,13 +7512,15 @@ app.post('/scrape/match', async (req, res) => {
         const eventResult = await matchAndLinkEvents({ dryRun, minConfidence });
         const artistResult = await matchAndLinkArtists({ dryRun, minConfidence: 0.7 });
         const venueResult = await matchAndLinkVenues({ dryRun, minConfidence: 0.7 });
+        const organizerResult = await matchAndLinkOrganizers({ dryRun, minConfidence: 0.7 });
 
         res.json({
             success: true,
             dryRun,
             events: eventResult,
             artists: artistResult,
-            venues: venueResult
+            venues: venueResult,
+            organizers: organizerResult
         });
     } catch (error) {
         console.error('Match error:', error);
@@ -8928,6 +9298,20 @@ async function performAutoScrape() {
     }
     
     console.log('[Auto-Scrape] Scheduled scrape completed');
+
+    // Run matching to link scraped data to main tables
+    console.log('[Auto-Scrape] Running matching...');
+    try {
+        const [eventMatch, artistMatch, venueMatch, organizerMatch] = await Promise.all([
+            matchAndLinkEvents({ dryRun: false }),
+            matchAndLinkArtists({ dryRun: false, minConfidence: 0.7 }),
+            matchAndLinkVenues({ dryRun: false, minConfidence: 0.7 }),
+            matchAndLinkOrganizers({ dryRun: false, minConfidence: 0.7 })
+        ]);
+        console.log(`[Auto-Scrape] Matching completed: Events: ${eventMatch.processed}, Artists: ${artistMatch.processed}, Venues: ${venueMatch.processed}, Organizers: ${organizerMatch.processed}`);
+    } catch (matchError) {
+        console.error('[Auto-Scrape] Error during matching:', matchError);
+    }
     
     // Send notification if Telegram is configured
     if (bot && TELEGRAM_CHAT_ID) {
@@ -8979,8 +9363,8 @@ async function startServer() {
             console.log(`Proxy list loaded: ${PROXY_LIST.length} proxies`);
 
             try {
-                console.log('Launching browser with first proxy...');
-                currentProxy = getNextProxy();
+                console.log('Launching browser...');
+                // Let initBrowser handle proxy selection based on env var
                 await initBrowser();
                 console.log(`Browser launched with proxy: ${currentProxy}`);
             } catch (err) {

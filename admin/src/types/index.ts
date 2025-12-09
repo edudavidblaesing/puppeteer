@@ -55,6 +55,7 @@ export interface Event {
   created_at: string;
   updated_at: string;
   source_references?: SourceReference[];
+  organizers_list?: { id: string; name: string }[];
 }
 
 export interface Venue {
@@ -79,6 +80,17 @@ export interface Artist {
   image_url?: string | null;
   genres?: string[] | null;
   bio?: string | null;
+}
+
+export interface Organizer {
+  id: string;
+  name: string;
+  description?: string | null;
+  website_url?: string | null;
+  image_url?: string | null;
+  event_count?: number;
+  created_at?: string;
+  updated_at?: string;
 }
 
 // Event-Artist relationship
