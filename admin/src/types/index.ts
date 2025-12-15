@@ -25,8 +25,37 @@ export const EVENT_TYPES: { value: EventType; label: string; icon: string; color
 export interface SourceReference {
   id: string;
   source_code: string;
-  title: string;
+  title?: string;
+  date?: string;
+  start_time?: string;
+  end_time?: string;
+  content_url?: string;
+  flyer_front?: string;
+  description?: string;
+  venue_name?: string;
+  venue_address?: string;
+  venue_city?: string;
+  venue_country?: string;
+  price_info?: any;
   confidence?: number;
+  // For other entities
+  name?: string;
+  address?: string;
+  city?: string;
+  country?: string;
+  image_url?: string;
+  genres?: any;
+  latitude?: number;
+  longitude?: number;
+  timezone?: string;
+  provider?: string;
+  event_type?: string;
+  ticket_url?: string;
+  venue_type?: string;
+  artist_type?: string;
+  phone?: string;
+  email?: string;
+  bio?: string;
 }
 
 export interface Event {
@@ -56,20 +85,27 @@ export interface Event {
   updated_at: string;
   source_references?: SourceReference[];
   organizers_list?: { id: string; name: string }[];
+  ticket_url?: string | null;
+  artists_list?: { id: string; name: string }[];
 }
 
 export interface Venue {
   id: string;
   name: string;
-  address: string | null;
-  city: string | null;
-  country: string | null;
-  latitude: number | null;
-  longitude: number | null;
-  content_url: string | null;
-  venue_type?: string | null;
-  phone?: string | null;
-  email?: string | null;
+  address?: string;
+  city?: string;
+  city_id?: number;
+  country?: string;
+  postal_code?: string;
+  latitude?: number;
+  longitude?: number;
+  content_url?: string;
+  venue_type?: string;
+  phone?: string;
+  email?: string;
+  events?: Event[];
+  source_references?: SourceReference[];
+  is_active?: boolean;
 }
 
 export interface Artist {
@@ -78,19 +114,26 @@ export interface Artist {
   country: string | null;
   content_url: string | null;
   image_url?: string | null;
+  artist_type?: string | null;
   genres?: string[] | null;
   bio?: string | null;
+  source_references?: SourceReference[];
+  events?: Event[];
 }
 
 export interface Organizer {
   id: string;
   name: string;
+  provider?: string | null;
   description?: string | null;
   website_url?: string | null;
   image_url?: string | null;
   event_count?: number;
   created_at?: string;
   updated_at?: string;
+  source_references?: SourceReference[];
+  events?: Event[];
+  venues?: Venue[];
 }
 
 // Event-Artist relationship
@@ -134,6 +177,17 @@ export interface Stats {
   events_by_city: { venue_city: string; count: string }[];
 }
 
+export interface SourceConfig {
+  id?: number;
+  city_id?: number;
+  source_id: number;
+  source_name?: string;
+  source_code?: string;
+  external_id: string; // e.g., Area ID or city slug
+  config_json?: any;
+  is_active: boolean;
+}
+
 export interface City {
   id?: number;
   name: string;
@@ -145,6 +199,16 @@ export interface City {
   is_active?: boolean;
   event_count: number;
   venue_count: number;
+  source_references?: SourceReference[];
+  source_configs?: SourceConfig[];
+}
+// User type
+export interface User {
+  id?: number;
+  username: string;
+  role: 'superadmin' | 'admin';
+  password?: string;
+  created_at?: string;
 }
 
 export interface DashboardStats {
@@ -181,20 +245,38 @@ export function getEventTiming(event: Event): EventTiming {
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const eventDate = new Date(event.date);
+  // Ensure eventDate is just the date part (midnight)
   const eventDateOnly = new Date(eventDate.getFullYear(), eventDate.getMonth(), eventDate.getDate());
 
-  // Parse start and end times if available
-  const startTime = parseTime(event.start_time);
-  const endTime = event.end_time ? parseTime(event.end_time) : [23, 59] as [number, number];
+  let eventStart: Date;
+  let eventEnd: Date;
 
-  const eventStart = new Date(eventDateOnly);
-  eventStart.setHours(startTime[0], startTime[1]);
+  // Check if start_time is a full ISO timestamp
+  if (event.start_time && event.start_time.includes('T')) {
+    eventStart = new Date(event.start_time);
+  } else {
+    // Fallback: use event.date + parsed time
+    const startTime = parseTime(event.start_time);
+    eventStart = new Date(eventDateOnly);
+    eventStart.setHours(startTime[0], startTime[1]);
+  }
 
-  const eventEnd = new Date(eventDateOnly);
-  eventEnd.setHours(endTime[0], endTime[1]);
-  // If end time is before start time, event ends next day
-  if (endTime[0] < startTime[0]) {
-    eventEnd.setDate(eventEnd.getDate() + 1);
+  // Check if end_time is a full ISO timestamp
+  if (event.end_time && event.end_time.includes('T')) {
+    eventEnd = new Date(event.end_time);
+  } else {
+    // Fallback: use event.date + parsed time (+1 day logic)
+    const startTime = parseTime(event.start_time);
+    const endTime = event.end_time ? parseTime(event.end_time) : [23, 59] as [number, number];
+
+    eventEnd = new Date(eventDateOnly);
+    eventEnd.setHours(endTime[0], endTime[1]);
+
+    // If end time is before start time (and not explicit date), assume it ends next day
+    // Note: compare purely based on hours if dates are assumed same initially
+    if (endTime[0] < startTime[0]) {
+      eventEnd.setDate(eventEnd.getDate() + 1);
+    }
   }
 
   const threeDaysAgo = new Date(today);
@@ -202,7 +284,7 @@ export function getEventTiming(event: Event): EventTiming {
 
   if (now >= eventStart && now <= eventEnd) {
     return 'ongoing';
-  } else if (eventDateOnly > today) {
+  } else if (eventStart > now) {
     return 'upcoming';
   } else if (eventDateOnly >= threeDaysAgo) {
     return 'recent'; // expired within last 3 days

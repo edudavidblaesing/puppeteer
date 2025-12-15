@@ -52,20 +52,24 @@ const CITY_ZOOM = 12;
 
 interface EventMapProps {
   events: Event[];
-  cities: City[];
+  cities?: City[];
   onEventClick?: (event: Event) => void;
   onCityChange?: (city: string) => void;
   selectedCity?: string;
   selectedEventId?: string;
+  center?: [number, number];
+  zoom?: number;
 }
 
 export default function EventMap({
   events,
-  cities,
+  cities = [],
   onEventClick,
   onCityChange,
   selectedCity,
-  selectedEventId
+  selectedEventId,
+  center,
+  zoom
 }: EventMapProps) {
   const mapRef = useRef<L.Map | null>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -277,6 +281,14 @@ export default function EventMap({
       mapRef.current = null;
     };
   }, [cityConfig, selectedCity, events.length]);
+
+  // Update map view when center or zoom props change
+  useEffect(() => {
+    if (!mapRef.current || !center) return;
+
+    isProgrammaticMove.current = true;
+    mapRef.current.setView(center, zoom || 15);
+  }, [center, zoom]);
 
   // Create a stable key for events to detect actual changes
   const eventsKey = useMemo(() => {

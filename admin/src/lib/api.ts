@@ -1,6 +1,6 @@
-import { Event, Organizer } from '@/types';
+import { Event, Organizer, Venue, City } from '@/types';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://pptr.davidblaesing.com';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3007';
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'your-secure-api-key-here';
 
 const headers = {
@@ -54,7 +54,7 @@ export async function updateEvent(id: string, data: Partial<Event>) {
 }
 
 export async function createEvent(data: Partial<Event>) {
-  const response = await fetch(`${API_URL}/db/events/create`, {
+  const response = await fetch(`${API_URL}/db/events`, {
     method: 'POST',
     headers,
     body: JSON.stringify(data),
@@ -118,7 +118,7 @@ export async function fetchMapEvents(params?: {
 }
 
 export async function syncEvents(city: string, limit: number = 100) {
-  const response = await fetch(`${API_URL}/db/sync`, {
+  const response = await fetch(`${API_URL}/db/events/sync`, {
     method: 'POST',
     headers,
     body: JSON.stringify({ city, limit }),
@@ -133,8 +133,8 @@ export async function fetchStats() {
   return response.json();
 }
 
-export async function fetchVenues(params?: { 
-  city?: string; 
+export async function fetchVenues(params?: {
+  city?: string;
   search?: string;
   limit?: number;
   offset?: number;
@@ -352,7 +352,13 @@ export async function fetchAdminCities(params?: { search?: string; limit?: numbe
   return response.json();
 }
 
-export async function createCity(data: { name: string; country?: string; latitude?: number; longitude?: number; timezone?: string }) {
+export async function fetchCity(id: string) {
+  const response = await fetch(`${API_URL}/db/cities/${id}`, { headers });
+  if (!response.ok) throw new Error('Failed to fetch city');
+  return response.json();
+}
+
+export async function createCity(data: Partial<City>) {
   const response = await fetch(`${API_URL}/db/cities`, {
     method: 'POST',
     headers,
@@ -423,7 +429,7 @@ export async function createVenue(data: { name: string; address?: string; city?:
   return response.json();
 }
 
-export async function updateVenue(id: string, data: Partial<{ name: string; address: string; city: string; country: string; latitude: number; longitude: number; content_url: string }>) {
+export async function updateVenue(id: string, data: Partial<Venue>) {
   const response = await fetch(`${API_URL}/db/venues/${id}`, {
     method: 'PATCH',
     headers,
@@ -459,10 +465,16 @@ export async function fetchDashboard() {
 // ============== Multi-Source Scraping API ==============
 
 export async function scrapeEvents(params: { sources?: string[]; city: string; limit?: number; match?: boolean }) {
-  const response = await fetch(`${API_URL}/scrape/events`, {
+  // Use pipeline for multi-source scraping
+  const response = await fetch(`${API_URL}/sync/pipeline`, {
     method: 'POST',
     headers,
-    body: JSON.stringify(params),
+    body: JSON.stringify({
+      cities: [params.city],
+      sources: params.sources || ['ra'],
+      enrichAfter: false,
+      dedupeAfter: false
+    }),
   });
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
@@ -472,10 +484,14 @@ export async function scrapeEvents(params: { sources?: string[]; city: string; l
 }
 
 export async function scrapeTicketmaster(params: { city: string; limit?: number }) {
-  const response = await fetch(`${API_URL}/scrape/ticketmaster`, {
+  const response = await fetch(`${API_URL}/scrape/run`, {
     method: 'POST',
     headers,
-    body: JSON.stringify(params),
+    body: JSON.stringify({
+      city: params.city,
+      source: 'tm',
+      limit: params.limit
+    }),
   });
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
@@ -650,6 +666,32 @@ export async function deduplicateData(type: 'all' | 'events' | 'venues' | 'artis
   return response.json();
 }
 
+// Ensure configured cities fetcher is available
+export async function fetchConfiguredCities() {
+  const response = await fetch(`${API_URL}/scrape/cities`, { headers });
+  if (!response.ok) throw new Error('Failed to fetch configured cities');
+  return response.json();
+}
+
+// Fetch all event sources
+export async function fetchSources() {
+  const response = await fetch(`${API_URL}/db/sources`, { headers });
+  if (!response.ok) throw new Error('Failed to fetch sources');
+  const json = await response.json();
+  return json.data || [];
+}
+
+// Toggle source active state
+export async function toggleSource(id: number | string, isActive: boolean) {
+  const response = await fetch(`${API_URL}/db/sources/${id}`, {
+    method: 'PATCH',
+    headers,
+    body: JSON.stringify({ is_active: isActive }),
+  });
+  if (!response.ok) throw new Error('Failed to toggle source');
+  return response.json();
+}
+
 // ============== Scrape History API ==============
 
 export async function fetchScrapeHistory(params?: { days?: number; groupBy?: 'day' | 'hour' }) {
@@ -670,16 +712,21 @@ export async function fetchRecentScrapes(limit: number = 20) {
 
 // ============== Sync Pipeline API ==============
 
-// Get sync job status
-export async function getSyncStatus() {
-  const response = await fetch(`${API_URL}/sync/status`, {
+// Get sync job status (scrape status)
+export async function getScrapeStatus() {
+  const response = await fetch(`${API_URL}/scrape/status`, {
     method: 'GET',
     headers,
   });
   if (!response.ok) {
-    throw new Error('Failed to fetch sync status');
+    throw new Error('Failed to fetch scrape status');
   }
   return response.json();
+}
+
+// Deprecated: use getScrapeStatus
+export async function getSyncStatus() {
+  return getScrapeStatus();
 }
 
 // Direct sync pipeline - scrapes, matches, enriches, and dedupes
@@ -796,6 +843,15 @@ export async function updateOrganizer(id: string, data: Partial<Organizer>) {
     body: JSON.stringify(data),
   });
   if (!response.ok) throw new Error('Failed to update organizer');
+  return response.json();
+}
+
+export async function resetDatabase() {
+  const response = await fetch(`${API_URL}/db/reset`, {
+    method: 'POST',
+    headers,
+  });
+  if (!response.ok) throw new Error('Failed to reset database');
   return response.json();
 }
 

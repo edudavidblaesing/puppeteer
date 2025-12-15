@@ -16,7 +16,7 @@ export default function LoginPage() {
   // Redirect if already logged in
   useEffect(() => {
     if (!isLoading && user) {
-      router.push('/events');
+      router.push('/');
     }
   }, [user, isLoading, router]);
 

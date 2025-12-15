@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-const API_URL = 'https://pptr.davidblaesing.com';
+const API_URL = 'http://localhost:3007';
 const API_KEY = 'your-secure-api-key-here';
 
 const headers = {

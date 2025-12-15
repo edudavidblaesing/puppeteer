@@ -30,6 +30,7 @@ ALTER TABLE venues ADD COLUMN IF NOT EXISTS email VARCHAR(255);
 ALTER TABLE venues ADD COLUMN IF NOT EXISTS social_links JSONB;
 
 -- Create a distinct cities table for dropdowns (populated from events data)
+DROP TABLE IF EXISTS cities CASCADE;
 CREATE TABLE IF NOT EXISTS cities (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,

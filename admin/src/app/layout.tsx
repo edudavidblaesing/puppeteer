@@ -3,6 +3,7 @@ import { Inter } from 'next/font/google';
 import './globals.css';
 import { Navigation } from '@/components/Navigation';
 import { AuthProvider } from '@/contexts/AuthContext';
+import { ToastProvider } from '@/contexts/ToastContext';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -36,14 +37,16 @@ export default function RootLayout({
       </head>
       <body className={`${inter.className} h-screen overflow-hidden bg-white dark:bg-gray-950`}>
         <AuthProvider>
-          <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-950">
-            <div className="flex-shrink-0">
-              <Navigation />
+          <ToastProvider>
+            <div className="h-full flex bg-gray-50 dark:bg-gray-950">
+              <div className="flex-shrink-0 h-full">
+                <Navigation />
+              </div>
+              <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
+                {children}
+              </main>
             </div>
-            <main className="flex-1 flex flex-col min-h-0 overflow-hidden">
-              {children}
-            </main>
-          </div>
+          </ToastProvider>
         </AuthProvider>
       </body>
     </html>

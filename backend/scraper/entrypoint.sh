@@ -9,4 +9,4 @@ echo "Running database migrations..."
 socat TCP-LISTEN:9223,fork,reuseaddr TCP:127.0.0.1:9222 &
 
 # Start the Node.js application
-exec node server.js
+exec npm start

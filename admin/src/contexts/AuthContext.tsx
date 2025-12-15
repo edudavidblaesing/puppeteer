@@ -6,6 +6,7 @@ import { useRouter, usePathname } from 'next/navigation';
 interface User {
   id: number;
   username: string;
+  role: 'superadmin' | 'admin';
 }
 
 interface AuthContextType {
@@ -17,7 +18,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://pptr.davidblaesing.com';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3007';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -96,7 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
           },
-        }).catch(() => {}); // Ignore errors
+        }).catch(() => { }); // Ignore errors
       }
     } finally {
       localStorage.removeItem('admin_token');

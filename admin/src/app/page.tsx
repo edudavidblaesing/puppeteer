@@ -1,7 +1,7 @@
 'use client';
 
-import { AdminDashboard } from '@/components/AdminDashboard';
+import { NewDashboard } from '@/components/NewDashboard';
 
-export default function Page() {
-  return <AdminDashboard />;
+export default function Home() {
+  return <NewDashboard />;
 }

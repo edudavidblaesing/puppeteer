@@ -1,14 +1,14 @@
 #!/bin/bash
 
+API_URL=${API_URL:-"http://localhost:3007"}
+
 echo "🌍 Starting venue geocoding process..."
+echo "Using API: $API_URL"
 echo ""
 
 # Start geocoding in background
 echo "Starting background geocoding for all venues without coordinates..."
-curl -X POST 'https://pptr.davidblaesing.com/db/venues/geocode-all' \
-  -H 'Content-Type: application/json' \
-  -H 'x-api-key: your-secure-api-key-here' \
-  -d '{"limit": 500, "background": true}' | jq '.'
+curl -X POST "$API_URL/db/venues/geocode-all"   -H 'Content-Type: application/json'   -H 'x-api-key: your-secure-api-key-here'   -d '{"limit": 500, "background": true}' | jq '.'
 
 echo ""
 echo "Waiting 5 seconds before checking status..."
@@ -18,8 +18,7 @@ sleep 5
 for i in {1..30}; do
   echo ""
   echo "Status check #$i:"
-  STATUS=$(curl -s 'https://pptr.davidblaesing.com/db/venues/geocode/status' \
-    -H 'x-api-key: your-secure-api-key-here')
+  STATUS=$(curl -s "$API_URL/db/venues/geocode/status"     -H 'x-api-key: your-secure-api-key-here')
   echo "$STATUS" | jq '.'
   
   # Check if still in progress
@@ -38,6 +37,5 @@ for i in {1..30}; do
 done
 
 echo ""
-echo "📊 Final stats:"
-curl -s 'https://pptr.davidblaesing.com/scrape/stats' \
-  -H 'x-api-key: your-secure-api-key-here' | jq '{total_main_venues, total_main_events}'
+echo "�� Final stats:"
+curl -s "$API_URL/scrape/stats"   -H 'x-api-key: your-secure-api-key-here' | jq '{total_main_venues, total_main_events}'

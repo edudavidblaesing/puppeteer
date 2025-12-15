@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react';
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { SourceIcon } from './ui/SourceIcon';
 
 interface DataPoint {
   timestamp: string;
@@ -159,7 +160,7 @@ export function MultiLineChart({ data, lines, height = 120, showLegend = true }:
             strokeDasharray="2,2"
           />
         ))}
-        
+
         {lines.map((line) => {
           const points = chartData.data.map((d, i) => {
             const x = padding + (i / (chartData.data.length - 1 || 1)) * (width - padding * 2);
@@ -185,7 +186,7 @@ export function MultiLineChart({ data, lines, height = 120, showLegend = true }:
           );
         })}
       </svg>
-      
+
       {showLegend && (
         <div className="flex gap-4 mt-2 text-xs">
           {lines.map(line => (
@@ -215,13 +216,13 @@ interface StatCardProps {
   variant?: 'default' | 'highlight' | 'success' | 'warning';
 }
 
-export function StatCard({ 
-  label, 
-  value, 
-  subtext, 
-  trend, 
+export function StatCard({
+  label,
+  value,
+  subtext,
+  trend,
   trendLabel,
-  sparkData, 
+  sparkData,
   sparkColor = '#6366f1',
   icon,
   variant = 'default'
@@ -239,7 +240,7 @@ export function StatCard({
         <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">{label}</span>
         {icon && <span className="text-gray-400 dark:text-gray-500">{icon}</span>}
       </div>
-      
+
       <div className="flex items-end justify-between">
         <div>
           <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
@@ -253,7 +254,7 @@ export function StatCard({
             </div>
           )}
         </div>
-        
+
         {sparkData && sparkData.length > 1 && (
           <div className="w-20 h-8">
             <Sparkline data={sparkData} color={sparkColor} height={32} />
@@ -275,22 +276,22 @@ interface EntityStatsProps {
   updatedKey?: string;
 }
 
-export function EntityStats({ 
-  title, 
-  total, 
-  newCount = 0, 
-  updatedCount = 0, 
+export function EntityStats({
+  title,
+  total,
+  newCount = 0,
+  updatedCount = 0,
   icon,
   historyData = [],
   newKey = 'events_inserted',
   updatedKey = 'events_updated'
 }: EntityStatsProps) {
-  const sparkNew = useMemo(() => 
-    historyData.slice(-14).reverse().map(d => Number(d[newKey]) || 0), 
+  const sparkNew = useMemo(() =>
+    historyData.slice(-14).reverse().map(d => Number(d[newKey]) || 0),
     [historyData, newKey]
   );
-  const sparkUpdated = useMemo(() => 
-    historyData.slice(-14).reverse().map(d => Number(d[updatedKey]) || 0), 
+  const sparkUpdated = useMemo(() =>
+    historyData.slice(-14).reverse().map(d => Number(d[updatedKey]) || 0),
     [historyData, updatedKey]
   );
 
@@ -300,11 +301,11 @@ export function EntityStats({
         {icon && <span className="text-gray-400 dark:text-gray-500">{icon}</span>}
         <span className="text-sm font-medium text-gray-600 dark:text-gray-300">{title}</span>
       </div>
-      
+
       <div className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-3">
         {total.toLocaleString()}
       </div>
-      
+
       <div className="grid grid-cols-2 gap-4">
         <div>
           <div className="flex items-center justify-between mb-1">
@@ -357,22 +358,13 @@ export function RecentActivity({ activities }: RecentActivityProps) {
       {activities.map((activity) => (
         <div
           key={activity.id}
-          className={`flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors ${
-            activity.error 
-              ? 'bg-red-50 dark:bg-red-900/10 hover:bg-red-100 dark:hover:bg-red-900/20' 
-              : 'hover:bg-gray-50 dark:hover:bg-gray-800/50'
-          }`}
+          className={`flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors ${activity.error
+            ? 'bg-red-50 dark:bg-red-900/10 hover:bg-red-100 dark:hover:bg-red-900/20'
+            : 'hover:bg-gray-50 dark:hover:bg-gray-800/50'
+            }`}
         >
           <div className="flex items-center gap-2">
-            {activity.source_code === 'ra' ? (
-              <img src="/ra-logo.jpg" alt="RA" className="h-4 w-auto rounded-sm" title="Resident Advisor" />
-            ) : activity.source_code === 'ticketmaster' ? (
-              <img src="/ticketmaster-logo.png" alt="TM" className="h-4 w-auto rounded-sm" title="Ticketmaster" />
-            ) : (
-              <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
-                {activity.source_code?.toUpperCase()}
-              </span>
-            )}
+            <SourceIcon sourceCode={activity.source_code} className="h-4 w-4 rounded-sm" />
             <span className="font-medium capitalize text-gray-900 dark:text-gray-100">{activity.city}</span>
             {activity.scrape_type === 'scheduled' && (
               <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-700">
@@ -420,9 +412,9 @@ export function ActivityTimeline({ data, height = 160 }: ActivityTimelineProps) 
   }
 
   // Check if there's any meaningful data
-  const hasData = data.some(d => 
-    (Number(d.events_fetched) || 0) > 0 || 
-    (Number(d.events_inserted) || 0) > 0 || 
+  const hasData = data.some(d =>
+    (Number(d.events_fetched) || 0) > 0 ||
+    (Number(d.events_inserted) || 0) > 0 ||
     (Number(d.events_updated) || 0) > 0
   );
 
@@ -449,7 +441,7 @@ export function ActivityTimeline({ data, height = 160 }: ActivityTimelineProps) 
         height={height}
         showLegend={true}
       />
-      
+
       {/* Date range labels */}
       <div className="flex justify-between text-[10px] text-gray-400 dark:text-gray-500 mt-1 px-1">
         {data.length > 0 && (
@@ -462,3 +454,4 @@ export function ActivityTimeline({ data, height = 160 }: ActivityTimelineProps) 
     </div>
   );
 }
+export const ScrapeCharts = ActivityTimeline;

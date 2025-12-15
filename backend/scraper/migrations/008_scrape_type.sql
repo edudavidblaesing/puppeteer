@@ -9,6 +9,7 @@ ADD COLUMN IF NOT EXISTS scrape_type VARCHAR(20) DEFAULT 'manual' CHECK (scrape_
 CREATE INDEX IF NOT EXISTS idx_scrape_history_type ON scrape_history(scrape_type);
 
 -- Update view to include scrape_type
+DROP VIEW IF EXISTS scrape_daily_stats;
 CREATE OR REPLACE VIEW scrape_daily_stats AS
 SELECT 
     DATE(created_at) as date,
