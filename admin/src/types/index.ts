@@ -38,6 +38,8 @@ export interface SourceReference {
   venue_country?: string;
   price_info?: any;
   confidence?: number;
+  updated_at?: string;
+  last_synced_at?: string;
   // For other entities
   name?: string;
   address?: string;
@@ -186,6 +188,23 @@ export interface SourceConfig {
   external_id: string; // e.g., Area ID or city slug
   config_json?: any;
   is_active: boolean;
+  scopes?: string[];
+  enabled_scopes?: string[];
+  entity_type?: string; // configuration for filtering
+}
+
+// Event Source (Global Definition)
+export interface Source {
+  id: number;
+  name: string;
+  code: string;
+  url: string;
+  type?: string;
+  is_active: boolean;
+  scopes?: string[];
+  enabled_scopes?: string[]; // Global setting for this source
+  entity_type?: string; // Legacy
+  created_at?: string;
 }
 
 export interface City {

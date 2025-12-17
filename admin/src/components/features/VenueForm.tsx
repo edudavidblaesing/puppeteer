@@ -10,7 +10,7 @@ import { Star } from 'lucide-react';
 import { RelatedEventsList } from '@/components/features/RelatedEventsList';
 import { getBestSourceForField, SOURCE_PRIORITY } from '@/lib/smartMerge';
 import { MapPin, Globe, Link as LinkIcon, Phone, Mail, FileText, Search, X, Trash2 } from 'lucide-react';
-import { fetchCities, updateEvent } from '@/lib/api'; // Added updateEvent
+import { fetchCities, updateEvent, fetchEvent } from '@/lib/api'; // Added updateEvent, fetchEvent
 import { Modal } from '@/components/ui/Modal'; // Added Modal
 import { EventForm } from '@/components/features/EventForm'; // Added EventForm
 import { useToast } from '@/contexts/ToastContext';
@@ -21,6 +21,7 @@ interface VenueFormProps {
   onDelete?: (id: string) => Promise<void>;
   onCancel: () => void;
   isLoading?: boolean;
+  isModal?: boolean;
 }
 
 const VENUE_TYPES = [
@@ -34,7 +35,14 @@ const VENUE_TYPES = [
   'Other'
 ];
 
-export function VenueForm({ initialData, onSubmit, onDelete, onCancel, isLoading }: VenueFormProps) {
+export function VenueForm({
+  initialData,
+  onSubmit,
+  onDelete,
+  onCancel,
+  isLoading,
+  isModal = false
+}: VenueFormProps) {
   const { success, error: showError } = useToast();
   const [formData, setFormData] = useState<Partial<Venue>>({
     name: '',
@@ -51,8 +59,14 @@ export function VenueForm({ initialData, onSubmit, onDelete, onCancel, isLoading
 
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
 
-  const handleEditEvent = (event: Event) => {
-    setEditingEvent(event);
+  const handleEditEvent = async (event: Event) => {
+    try {
+      const fullEvent = await fetchEvent(event.id);
+      setEditingEvent(fullEvent || event);
+    } catch (e) {
+      console.error(e);
+      setEditingEvent(event);
+    }
   };
 
   const handleEventSubmit = async (data: Partial<Event>) => {
@@ -218,30 +232,33 @@ export function VenueForm({ initialData, onSubmit, onDelete, onCancel, isLoading
   return (
     <div className="h-full flex flex-col bg-white dark:bg-gray-900">
       {/* Header */}
-      <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between bg-gray-50 dark:bg-gray-900/50">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-          {initialData && initialData.id ? 'Edit Venue' : 'New Venue'}
-        </h2>
-        <div className="flex items-center gap-2">
-          {initialData && initialData.id && onDelete && (
+      {/* Header */}
+      {!isModal && (
+        <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between bg-gray-50 dark:bg-gray-900/50">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+            {initialData && initialData.id ? 'Edit Venue' : 'New Venue'}
+          </h2>
+          <div className="flex items-center gap-2">
+            {initialData && initialData.id && onDelete && (
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={() => onDelete(initialData.id!)}
+                disabled={isLoading}
+                leftIcon={<Trash2 className="w-4 h-4" />}
+              >
+                Delete
+              </Button>
+            )}
             <Button
-              variant="danger"
+              variant="ghost"
               size="sm"
-              onClick={() => onDelete(initialData.id!)}
-              disabled={isLoading}
-              leftIcon={<Trash2 className="w-4 h-4" />}
-            >
-              Delete
-            </Button>
-          )}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onCancel}
-            leftIcon={<X className="w-4 h-4" />}
-          />
+              onClick={onCancel}
+              leftIcon={<X className="w-4 h-4" />}
+            />
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Scrollable Content */}
       <div className="flex-1 overflow-y-auto p-6">
@@ -524,6 +541,12 @@ export function VenueForm({ initialData, onSubmit, onDelete, onCancel, isLoading
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                   leftIcon={<Phone className="w-4 h-4" />}
                 />
+                <SourceFieldOptions
+                  sources={initialData?.source_references}
+                  field="phone"
+                  currentValue={formData.phone}
+                  onSelect={(val) => setFormData({ ...formData, phone: val })}
+                />
               </div>
               <div>
                 <Input
@@ -531,6 +554,12 @@ export function VenueForm({ initialData, onSubmit, onDelete, onCancel, isLoading
                   value={formData.email || ''}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   leftIcon={<Mail className="w-4 h-4" />}
+                />
+                <SourceFieldOptions
+                  sources={initialData?.source_references}
+                  field="email"
+                  currentValue={formData.email}
+                  onSelect={(val) => setFormData({ ...formData, email: val })}
                 />
               </div>
             </div>
@@ -572,11 +601,13 @@ export function VenueForm({ initialData, onSubmit, onDelete, onCancel, isLoading
           isOpen={!!editingEvent}
           onClose={() => setEditingEvent(null)}
           title="Edit Event"
+          noPadding
         >
           <EventForm
             initialData={editingEvent}
             onSubmit={handleEventSubmit}
             onCancel={() => setEditingEvent(null)}
+            isModal
           />
         </Modal>
       )}

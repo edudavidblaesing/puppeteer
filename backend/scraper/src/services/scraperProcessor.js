@@ -96,7 +96,7 @@ function hasEventChanged(existing, incoming) {
 
 // Process and save scraped events
 async function processScrapedEvents(events, options = {}) {
-    const { geocodeMissing = true } = options;
+    const { geocodeMissing = true, scopes = ['event', 'venue', 'artist', 'organizer'] } = options;
     let inserted = 0, updated = 0, geocoded = 0;
 
     // Track stats
@@ -110,6 +110,11 @@ async function processScrapedEvents(events, options = {}) {
     };
 
     if (!events || events.length === 0) return stats;
+
+    const canScrapeEvent = scopes.includes('event');
+    const canScrapeVenue = scopes.includes('venue');
+    const canScrapeArtist = scopes.includes('artist');
+    const canScrapeOrganizer = scopes.includes('organizer');
 
     for (const event of events) {
         try {
@@ -141,10 +146,11 @@ async function processScrapedEvents(events, options = {}) {
             event.end_time = extractTime(event.end_time);
 
             // Geocode if coordinates are missing and we have address info
+            // Only geocode if we are capturing venue data OR event data (which also stores lat/lon)
             let venueLat = event.venue_latitude;
             let venueLon = event.venue_longitude;
 
-            if (geocodeMissing && (!venueLat || !venueLon) && (event.venue_address || event.venue_name)) {
+            if (geocodeMissing && (canScrapeVenue || canScrapeEvent) && (!venueLat || !venueLon) && (event.venue_address || event.venue_name)) {
                 try {
                     // Try to find existing coordinates first
                     const existingCoords = await checkExistingCoordinates(event);
@@ -191,79 +197,82 @@ async function processScrapedEvents(events, options = {}) {
             const organizersJsonStr = event.organizers_json ? JSON.stringify(event.organizers_json) : null;
             const priceInfoJsonStr = event.price_info ? JSON.stringify(event.price_info) : null;
 
-            // Check if existing
-            const existingResult = await pool.query(
-                `SELECT * FROM scraped_events WHERE source_code = $1 AND source_event_id = $2`,
-                [event.source_code, event.source_event_id]
-            );
+            // --- 1. Save Scraped Event ---
+            if (canScrapeEvent) {
+                // Check if existing
+                const existingResult = await pool.query(
+                    `SELECT * FROM scraped_events WHERE source_code = $1 AND source_event_id = $2`,
+                    [event.source_code, event.source_event_id]
+                );
 
-            let shouldUpdate = false;
-            let isNew = false;
+                let shouldUpdate = false;
+                let isNew = false;
 
-            if (existingResult.rows.length === 0) {
-                isNew = true;
-                stats.inserted++;
-            } else {
-                const existing = existingResult.rows[0];
-                if (hasEventChanged(existing, event)) {
-                    shouldUpdate = true;
-                    stats.updated++;
+                if (existingResult.rows.length === 0) {
+                    isNew = true;
+                    stats.inserted++;
                 } else {
-                    stats.unmodified++;
+                    const existing = existingResult.rows[0];
+                    if (hasEventChanged(existing, event)) {
+                        shouldUpdate = true;
+                        stats.updated++;
+                    } else {
+                        stats.unmodified++;
+                    }
+                }
+
+                if (isNew) {
+                    // Insert New
+                    await pool.query(`
+                        INSERT INTO scraped_events (
+                            source_code, source_event_id, title, date, start_time, end_time,
+                            content_url, flyer_front, description, venue_name, venue_address,
+                            venue_city, venue_country, venue_latitude, venue_longitude,
+                            artists_json, organizers_json, price_info, raw_data, updated_at
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, CURRENT_TIMESTAMP)
+                    `, [
+                        event.source_code, event.source_event_id, event.title, event.date,
+                        event.start_time, event.end_time, event.content_url, event.flyer_front,
+                        event.description, event.venue_name, event.venue_address, event.venue_city,
+                        event.venue_country, venueLat, venueLon,
+                        artistsJsonStr, organizersJsonStr, priceInfoJsonStr, event.raw_data
+                    ]);
+                } else if (shouldUpdate) {
+                    // Update Existing
+                    await pool.query(`
+                        UPDATE scraped_events SET
+                            title = $1,
+                            date = $2,
+                            start_time = $3,
+                            end_time = $4,
+                            content_url = $5,
+                            flyer_front = $6,
+                            description = $7,
+                            venue_name = $8,
+                            venue_address = $9,
+                            venue_city = $10,
+                            venue_country = $11,
+                            venue_latitude = $12,
+                            venue_longitude = $13,
+                            artists_json = $14,
+                            organizers_json = $15,
+                            price_info = $16,
+                            raw_data = $17,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE source_code = $18 AND source_event_id = $19
+                    `, [
+                        event.title, event.date,
+                        event.start_time, event.end_time, event.content_url, event.flyer_front,
+                        event.description, event.venue_name, event.venue_address, event.venue_city,
+                        event.venue_country, venueLat, venueLon,
+                        artistsJsonStr, organizersJsonStr, priceInfoJsonStr, event.raw_data,
+                        event.source_code, event.source_event_id
+                    ]);
                 }
             }
 
-            if (isNew) {
-                // Insert New
-                await pool.query(`
-                    INSERT INTO scraped_events (
-                        source_code, source_event_id, title, date, start_time, end_time,
-                        content_url, flyer_front, description, venue_name, venue_address,
-                        venue_city, venue_country, venue_latitude, venue_longitude,
-                        artists_json, organizers_json, price_info, raw_data, updated_at
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, CURRENT_TIMESTAMP)
-                `, [
-                    event.source_code, event.source_event_id, event.title, event.date,
-                    event.start_time, event.end_time, event.content_url, event.flyer_front,
-                    event.description, event.venue_name, event.venue_address, event.venue_city,
-                    event.venue_country, venueLat, venueLon,
-                    artistsJsonStr, organizersJsonStr, priceInfoJsonStr, event.raw_data
-                ]);
-            } else if (shouldUpdate) {
-                // Update Existing
-                await pool.query(`
-                    UPDATE scraped_events SET
-                        title = $1,
-                        date = $2,
-                        start_time = $3,
-                        end_time = $4,
-                        content_url = $5,
-                        flyer_front = $6,
-                        description = $7,
-                        venue_name = $8,
-                        venue_address = $9,
-                        venue_city = $10,
-                        venue_country = $11,
-                        venue_latitude = $12,
-                        venue_longitude = $13,
-                        artists_json = $14,
-                        organizers_json = $15,
-                        price_info = $16,
-                        raw_data = $17,
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE source_code = $18 AND source_event_id = $19
-                `, [
-                    event.title, event.date,
-                    event.start_time, event.end_time, event.content_url, event.flyer_front,
-                    event.description, event.venue_name, event.venue_address, event.venue_city,
-                    event.venue_country, venueLat, venueLon,
-                    artistsJsonStr, organizersJsonStr, priceInfoJsonStr, event.raw_data,
-                    event.source_code, event.source_event_id
-                ]);
-            }
-
-            // Save Scraped Venue
-            if (event.venue_raw) {
+            // --- 2. Save Scraped Venue ---
+            if (canScrapeVenue && event.venue_raw) {
                 const v = event.venue_raw;
                 const venueRes = await pool.query(`
                     INSERT INTO scraped_venues (
@@ -287,8 +296,8 @@ async function processScrapedEvents(events, options = {}) {
                 if (venueRes.rows[0].inserted) stats.venuesCreated++;
             }
 
-            // Save Scraped Artists
-            if (event.artists_json && Array.isArray(event.artists_json)) {
+            // --- 3. Save Scraped Artists ---
+            if (canScrapeArtist && event.artists_json && Array.isArray(event.artists_json)) {
                 for (const artist of event.artists_json) {
                     if (!artist.name) continue;
                     const artistRes = await pool.query(`
@@ -309,16 +318,14 @@ async function processScrapedEvents(events, options = {}) {
                         artist.image_url, artist.content_url || null,
                         artist.type || null
                     ]);
-                    if (artistRes.rows[0].inserted) stats.artistsCreated++; // Reuse metric or add new one? Keeping it simple.
+                    if (artistRes.rows[0].inserted) stats.artistsCreated++;
                 }
             }
 
-            // Save Scraped Organizers
-            if (event.organizers_json && Array.isArray(event.organizers_json)) {
+            // --- 4. Save Scraped Organizers ---
+            if (canScrapeOrganizer && event.organizers_json && Array.isArray(event.organizers_json)) {
                 for (const organizer of event.organizers_json) {
                     if (!organizer.name) continue;
-                    // Use source_organizer_id if available, otherwise fallback to name as ID could be tricky
-                    // RA provides ID.
                     if (!organizer.source_organizer_id) continue;
 
                     await pool.query(`

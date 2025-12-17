@@ -59,6 +59,7 @@ interface EventMapProps {
   selectedEventId?: string;
   center?: [number, number];
   zoom?: number;
+  minimal?: boolean; // New prop for static view
 }
 
 export default function EventMap({
@@ -69,7 +70,8 @@ export default function EventMap({
   selectedCity,
   selectedEventId,
   center,
-  zoom
+  zoom,
+  minimal = false
 }: EventMapProps) {
   const mapRef = useRef<L.Map | null>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -87,7 +89,7 @@ export default function EventMap({
     onCityChangeRef.current = onCityChange;
   }, [onEventClick, onCityChange]);
 
-  // Build city config from dynamic cities
+  // Build city config from dynamic cities (truncated logic... keep existing)
   const cityConfig = useMemo(() => {
     const config: Record<string, { coords: [number, number]; eventCount: number; venueCount: number }> = {};
 
@@ -107,8 +109,9 @@ export default function EventMap({
     return config;
   }, [cities]);
 
-  // Group events by venue
+  // Group events by venue ... (keep existing)
   const venueData = useMemo(() => {
+    // ... no change needed mostly, but minimal will affect markers if we want? No, keep logic
     const venues: Record<string, {
       name: string;
       events: Event[];
@@ -118,8 +121,7 @@ export default function EventMap({
       rejectedCount: number;
     }> = {};
 
-    // Filter events by selected city if one is selected
-    const filteredEvents = selectedCity 
+    const filteredEvents = selectedCity
       ? events.filter(e => e.venue_city === selectedCity)
       : events;
 
@@ -129,17 +131,14 @@ export default function EventMap({
       if (!venues[venueName]) {
         let coords: [number, number] | null = null;
 
-        // First priority: Use venue coordinates from database (venue_latitude/venue_longitude)
         if ((event as any).venue_latitude && (event as any).venue_longitude) {
           coords = [(event as any).venue_latitude, (event as any).venue_longitude];
         }
 
-        // Second priority: Use event coordinates if available (legacy)
         if (!coords && event.latitude && event.longitude) {
           coords = [event.latitude, event.longitude];
         }
 
-        // Third priority: Try to find coordinates from known venues
         if (!coords) {
           for (const [name, venueCoords] of Object.entries(VENUE_COORDS)) {
             if (venueName.toLowerCase().includes(name.toLowerCase())) {
@@ -148,9 +147,6 @@ export default function EventMap({
             }
           }
         }
-
-        // No city center fallback - only show venues with real coordinates
-        // If coords is still null, the venue won't appear on the map
 
         venues[venueName] = {
           name: venueName,
@@ -161,7 +157,6 @@ export default function EventMap({
           rejectedCount: 0,
         };
       } else if (!venues[venueName].coords) {
-        // Update venue coords if we find them in any event
         if ((event as any).venue_latitude && (event as any).venue_longitude) {
           venues[venueName].coords = [(event as any).venue_latitude, (event as any).venue_longitude];
         } else if (event.latitude && event.longitude) {
@@ -170,7 +165,6 @@ export default function EventMap({
       }
 
       venues[venueName].events.push(event);
-      // Track status counts
       if (event.publish_status === 'approved') venues[venueName].approvedCount++;
       else if (event.publish_status === 'pending') venues[venueName].pendingCount++;
       else venues[venueName].rejectedCount++;
@@ -179,7 +173,7 @@ export default function EventMap({
     return venues;
   }, [events, cityConfig, selectedCity]);
 
-  // Get city coordinates
+  // Get city coords ... (keep)
   const getCityCoords = useCallback((cityName: string): [number, number] | null => {
     return cityConfig[cityName]?.coords || null;
   }, [cityConfig]);
@@ -190,20 +184,29 @@ export default function EventMap({
 
     const initialCoords = selectedCity && cityConfig[selectedCity]
       ? cityConfig[selectedCity].coords
-      : EUROPE_VIEW.coords;
-    const initialZoom = selectedCity ? CITY_ZOOM : EUROPE_VIEW.zoom;
+      : center || EUROPE_VIEW.coords;
+    const initialZoom = zoom || (selectedCity ? CITY_ZOOM : EUROPE_VIEW.zoom);
 
     const map = L.map(mapContainerRef.current, {
-      zoomControl: false,
+      zoomControl: !minimal,
+      dragging: !minimal,
+      touchZoom: !minimal,
+      scrollWheelZoom: !minimal,
+      doubleClickZoom: !minimal,
+      boxZoom: !minimal,
+      keyboard: !minimal,
+      attributionControl: !minimal
     }).setView(initialCoords, initialZoom);
 
-    L.control.zoom({ position: 'bottomright' }).addTo(map);
+    if (!minimal) {
+      L.control.zoom({ position: 'bottomright' }).addTo(map);
+    }
 
-    // Detect dark mode and use appropriate tile layer
-    const isDarkMode = document.documentElement.classList.contains('dark') || 
-                       window.matchMedia('(prefers-color-scheme: dark)').matches;
-    
-    const tileUrl = isDarkMode 
+    // Detect dark mode...
+    const isDarkMode = document.documentElement.classList.contains('dark') ||
+      window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+    const tileUrl = isDarkMode
       ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
       : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
 
@@ -324,7 +327,7 @@ export default function EventMap({
           const eventDate = new Date(e.date);
           const today = new Date();
           if (eventDate.toDateString() !== today.toDateString()) return false;
-          
+
           const startTime = e.start_time.includes('T') ? new Date(e.start_time) : new Date(`${e.date}T${e.start_time}`);
           const endTime = e.end_time.includes('T') ? new Date(e.end_time) : new Date(`${e.date}T${e.end_time}`);
           return today >= startTime && today <= endTime;
@@ -334,7 +337,7 @@ export default function EventMap({
         let bgColor = 'bg-white dark:bg-gray-900';
         let borderColor = 'border-gray-300 dark:border-gray-700';
         let extraClass = '';
-        
+
         // Match list item backgrounds based on status
         if (rejectedCount === eventCount) {
           // All rejected
@@ -533,100 +536,106 @@ export default function EventMap({
       <div ref={mapContainerRef} className="h-full w-full" style={{ zIndex: 1 }} />
 
       {/* City Quick Select */}
-      <div className="absolute top-3 left-3 flex flex-wrap gap-1 max-w-[60%]" style={{ zIndex: 1000 }}>
-        {availableCities.map(({ name, eventCount }) => (
-          <button
-            key={name}
-            onClick={() => {
-              const coords = getCityCoords(name);
-              if (coords && mapRef.current && mapRef.current.getContainer()) {
-                try {
-                  isProgrammaticMove.current = true;
-                  mapRef.current.setView(coords, CITY_ZOOM, { animate: true });
-                  if (onCityChange) onCityChange(name);
-                } catch (err) {
-                  console.warn('Map setView error:', err);
+      {!minimal && (
+        <div className="absolute top-3 left-3 flex flex-wrap gap-1 max-w-[60%]" style={{ zIndex: 1000 }}>
+          {availableCities.map(({ name, eventCount }) => (
+            <button
+              key={name}
+              onClick={() => {
+                const coords = getCityCoords(name);
+                if (coords && mapRef.current && mapRef.current.getContainer()) {
+                  try {
+                    isProgrammaticMove.current = true;
+                    mapRef.current.setView(coords, CITY_ZOOM, { animate: true });
+                    if (onCityChange) onCityChange(name);
+                  } catch (err) {
+                    console.warn('Map setView error:', err);
+                  }
                 }
-              }
-            }}
-            className={clsx(
-              'px-2 py-1 text-xs font-medium rounded-full shadow transition-all',
-              selectedCity === name
-                ? 'bg-gray-800 text-white dark:bg-gray-700'
-                : 'bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700'
-            )}
-          >
-            {name} ({eventCount})
-          </button>
-        ))}
-        {availableCities.length > 1 && (
-          <button
-            onClick={() => {
-              if (mapRef.current && mapRef.current.getContainer()) {
-                try {
-                  isProgrammaticMove.current = true;
-                  mapRef.current.setView(EUROPE_VIEW.coords, EUROPE_VIEW.zoom, { animate: true });
-                  if (onCityChange) onCityChange('');
-                } catch (err) {
-                  console.warn('Map setView error:', err);
+              }}
+              className={clsx(
+                'px-2 py-1 text-xs font-medium rounded-full shadow transition-all',
+                selectedCity === name
+                  ? 'bg-gray-800 text-white dark:bg-gray-700'
+                  : 'bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700'
+              )}
+            >
+              {name} ({eventCount})
+            </button>
+          ))}
+          {availableCities.length > 1 && (
+            <button
+              onClick={() => {
+                if (mapRef.current && mapRef.current.getContainer()) {
+                  try {
+                    isProgrammaticMove.current = true;
+                    mapRef.current.setView(EUROPE_VIEW.coords, EUROPE_VIEW.zoom, { animate: true });
+                    if (onCityChange) onCityChange('');
+                  } catch (err) {
+                    console.warn('Map setView error:', err);
+                  }
                 }
-              }
-            }}
-            className={clsx(
-              'px-2 py-1 text-xs font-medium rounded-full shadow transition-all',
-              !selectedCity ? 'bg-gray-800 text-white dark:bg-gray-700' : 'bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700'
-            )}
-          >
-            All
-          </button>
-        )}
-      </div>
-
-      {/* Legend */}
-      <div className="absolute bottom-16 left-3 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-3" style={{ zIndex: 1000 }}>
-        <div className="space-y-2">
-          <div className="flex items-center">
-            <div className="w-4 h-4 rounded bg-emerald-500 mr-2 live-marker-pulse"></div>
-            <span className="text-xs text-gray-800 dark:text-gray-200 font-medium">LIVE</span>
-          </div>
-          <div className="flex items-center">
-            <div className="w-4 h-4 rounded bg-emerald-500 mr-2"></div>
-            <span className="text-xs text-gray-600 dark:text-gray-300">Published</span>
-          </div>
-          <div className="flex items-center">
-            <div className="w-4 h-4 rounded pending-stripes mr-2 border border-amber-500"></div>
-            <span className="text-xs text-gray-600 dark:text-gray-300">Pending</span>
-          </div>
-          <div className="flex items-center">
-            <div className="w-4 h-4 rounded bg-gray-400/60 mr-2"></div>
-            <span className="text-xs text-gray-600 dark:text-gray-300">Rejected</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Stats */}
-      <div className="absolute top-3 right-3 bg-white dark:bg-gray-800 rounded-lg shadow-lg px-3 py-2" style={{ zIndex: 1000 }}>
-        <div className="text-xs text-gray-600 dark:text-gray-300">
-          <span className="font-semibold text-gray-900 dark:text-gray-100">{events.length}</span> events
-          <span className="mx-1">•</span>
-          <span className="font-semibold text-emerald-600">
-            {events.filter(e => e.is_published).length}
-          </span>{' '}
-          published
-          {currentZoom >= 10 && (
-            <>
-              <span className="mx-1">•</span>
-              <span className="font-semibold text-gray-600 dark:text-gray-400">
-                {Object.keys(venueData).length}
-              </span>{' '}
-              venues
-            </>
+              }}
+              className={clsx(
+                'px-2 py-1 text-xs font-medium rounded-full shadow transition-all',
+                !selectedCity ? 'bg-gray-800 text-white dark:bg-gray-700' : 'bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700'
+              )}
+            >
+              All
+            </button>
           )}
         </div>
-      </div>
+      )}
+
+      {/* Legend */}
+      {!minimal && (
+        <div className="absolute bottom-16 left-3 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-3" style={{ zIndex: 1000 }}>
+          <div className="space-y-2">
+            <div className="flex items-center">
+              <div className="w-4 h-4 rounded bg-emerald-500 mr-2 live-marker-pulse"></div>
+              <span className="text-xs text-gray-800 dark:text-gray-200 font-medium">LIVE</span>
+            </div>
+            <div className="flex items-center">
+              <div className="w-4 h-4 rounded bg-emerald-500 mr-2"></div>
+              <span className="text-xs text-gray-600 dark:text-gray-300">Published</span>
+            </div>
+            <div className="flex items-center">
+              <div className="w-4 h-4 rounded pending-stripes mr-2 border border-amber-500"></div>
+              <span className="text-xs text-gray-600 dark:text-gray-300">Pending</span>
+            </div>
+            <div className="flex items-center">
+              <div className="w-4 h-4 rounded bg-gray-400/60 mr-2"></div>
+              <span className="text-xs text-gray-600 dark:text-gray-300">Rejected</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Stats */}
+      {!minimal && (
+        <div className="absolute top-3 right-3 bg-white dark:bg-gray-800 rounded-lg shadow-lg px-3 py-2" style={{ zIndex: 1000 }}>
+          <div className="text-xs text-gray-600 dark:text-gray-300">
+            <span className="font-semibold text-gray-900 dark:text-gray-100">{events.length}</span> events
+            <span className="mx-1">•</span>
+            <span className="font-semibold text-emerald-600">
+              {events.filter(e => e.is_published).length}
+            </span>{' '}
+            published
+            {currentZoom >= 10 && (
+              <>
+                <span className="mx-1">•</span>
+                <span className="font-semibold text-gray-600 dark:text-gray-400">
+                  {Object.keys(venueData).length}
+                </span>{' '}
+                venues
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Zoom indicator */}
-      {currentZoom >= 10 && selectedCity && (
+      {!minimal && currentZoom >= 10 && selectedCity && (
         <div className="absolute bottom-3 right-16 bg-gray-800 dark:bg-gray-700 text-white rounded-lg shadow-lg px-3 py-1.5" style={{ zIndex: 1000 }}>
           <span className="text-xs font-medium">📍 {selectedCity} - Venue View</span>
         </div>

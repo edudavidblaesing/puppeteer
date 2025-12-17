@@ -156,6 +156,13 @@ const updateArtist = async (req, res) => {
         const { id } = req.params;
         const updates = req.body;
 
+        // Fetch current field_sources
+        const currentRes = await pool.query('SELECT field_sources FROM artists WHERE id = $1', [id]);
+        if (currentRes.rows.length === 0) {
+            return res.status(404).json({ error: 'Artist not found' });
+        }
+        const fieldSources = currentRes.rows[0].field_sources || {};
+
         const allowedFields = ['name', 'country', 'content_url', 'image_url', 'artist_type', 'genres', 'bio'];
         const setClauses = [];
         const values = [];
@@ -163,6 +170,7 @@ const updateArtist = async (req, res) => {
 
         for (const [key, value] of Object.entries(updates)) {
             if (allowedFields.includes(key)) {
+                fieldSources[key] = 'og';
                 setClauses.push(`${key} = $${paramIndex++}`);
                 values.push(value);
             }
@@ -171,6 +179,9 @@ const updateArtist = async (req, res) => {
         if (setClauses.length === 0) {
             return res.status(400).json({ error: 'No valid fields to update' });
         }
+
+        setClauses.push(`field_sources = $${paramIndex++}::jsonb`);
+        values.push(JSON.stringify(fieldSources));
 
         setClauses.push('updated_at = CURRENT_TIMESTAMP');
         values.push(id);

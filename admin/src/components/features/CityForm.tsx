@@ -369,7 +369,13 @@ export function CityForm({ initialData, onSubmit, onDelete, onCancel, isLoading 
 
               <div className="space-y-3">
                 {availableSources
-                  .filter(s => s.code !== 'manual' && s.code !== 'original' && (s.entity_type === 'event' || !s.entity_type))
+                  .filter(s => {
+                    if (s.code === 'manual' || s.code === 'original') return false;
+                    // Include if it scrapes events or venues (needs city config)
+                    if (s.scopes) return s.scopes.some((scope: string) => ['event', 'venue'].includes(scope));
+                    // Fallback
+                    return s.entity_type === 'event' || !s.entity_type;
+                  })
                   .map(source => {
                     const config = getSourceConfig(source.id);
                     const isActive = config?.is_active ?? false;
@@ -389,7 +395,7 @@ export function CityForm({ initialData, onSubmit, onDelete, onCancel, isLoading 
                               checked={isActive}
                               onChange={(e) => updateSourceConfig(source.id, 'is_active', e.target.checked)}
                               className="rounded text-indigo-600 focus:ring-indigo-500 border-gray-300"
-                              disabled={!!selectedPreset} // Disable toggle if preset is active? Or allow disabling? User said "non editable"
+                            // Allow toggling even if preset is selected
                             />
                             <label htmlFor={`source-${source.id}`} className="font-medium text-sm text-gray-900 dark:text-white cursor-pointer select-none flex items-center gap-2">
                               <SourceIcon sourceCode={source.code} className="w-4 h-4" />

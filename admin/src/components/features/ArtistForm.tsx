@@ -10,7 +10,7 @@ import { Modal } from '@/components/ui/Modal';
 import { RelatedEventsList } from '@/components/features/RelatedEventsList';
 import { getBestSourceForField, SOURCE_PRIORITY } from '@/lib/smartMerge';
 import { Artist, Event } from '@/types';
-import { createArtist, updateArtist, searchArtists, updateEvent } from '@/lib/api';
+import { createArtist, updateArtist, searchArtists, updateEvent, fetchEvent } from '@/lib/api';
 import { SourceReference } from '@/types';
 import { EventForm } from '@/components/features/EventForm';
 import { useToast } from '@/contexts/ToastContext';
@@ -20,6 +20,7 @@ interface ArtistFormProps {
   onSubmit: (data: Partial<Artist>) => Promise<void>;
   onDelete?: (id: string) => Promise<void>;
   onCancel: () => void;
+  isModal?: boolean;
 }
 
 
@@ -27,7 +28,8 @@ export function ArtistForm({
   initialData,
   onSubmit,
   onDelete,
-  onCancel
+  onCancel,
+  isModal = false
 }: ArtistFormProps) {
   const { success, error: showError } = useToast();
   const [formData, setFormData] = useState<Partial<Artist>>(initialData || {
@@ -41,8 +43,16 @@ export function ArtistForm({
   });
   const [editingEvent, setEditingEvent] = useState<Event | null>(null); // New state
 
-  const handleEditEvent = (event: Event) => {
-    setEditingEvent(event);
+  const handleEditEvent = async (event: Event) => {
+    try {
+      // Fetch full event details to ensure we have source_references and full artist lists
+      const fullEvent = await fetchEvent(event.id);
+      setEditingEvent(fullEvent || event); // Fallback to partial if fetch fails but shouldn't happen
+    } catch (e) {
+      console.error('Failed to fetch full event details', e);
+      // Fallback to partial
+      setEditingEvent(event);
+    }
   };
 
   const handleEventSubmit = async (data: Partial<Event>) => {
@@ -52,8 +62,6 @@ export function ArtistForm({
       success('Event updated successfully');
       setEditingEvent(null);
       // Optional: Refresh list mechanism?
-      // Since specific event is updated in DB, user might need reload to see changes in "Related Events" list if titles changed.
-      // But preserving view is key.
     } catch (e) {
       console.error(e);
       showError('Failed to update event');
@@ -236,32 +244,34 @@ export function ArtistForm({
   return (
     <div className="h-full flex flex-col bg-white dark:bg-gray-900">
       {/* Header */}
-      <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between bg-gray-50 dark:bg-gray-900/50">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-          {initialData ? 'Edit Artist' : 'New Artist'}
-        </h2>
-        <div className="flex items-center gap-2">
-          {initialData && onDelete && (
+      {!isModal && (
+        <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between bg-gray-50 dark:bg-gray-900/50">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+            {initialData ? 'Edit Artist' : 'New Artist'}
+          </h2>
+          <div className="flex items-center gap-2">
+            {initialData && onDelete && (
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={handleDelete}
+                disabled={isSubmitting}
+                leftIcon={<Trash2 className="w-4 h-4" />}
+              >
+                Delete
+              </Button>
+            )}
             <Button
-              variant="danger"
+              variant="ghost"
               size="sm"
-              onClick={handleDelete}
-              disabled={isSubmitting}
-              leftIcon={<Trash2 className="w-4 h-4" />}
-            >
-              Delete
-            </Button>
-          )}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onCancel}
-            leftIcon={<X className="w-4 h-4" />}
-          />
+              onClick={onCancel}
+              leftIcon={<X className="w-4 h-4" />}
+            />
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Form Content */}
+
       <div className="flex-1 overflow-y-auto p-6" onClick={() => setShowSuggestions(false)}>
         <form id="artist-form" onSubmit={handleSubmit} className="space-y-6 max-w-2xl mx-auto">
 
@@ -506,11 +516,13 @@ export function ArtistForm({
           isOpen={!!editingEvent}
           onClose={() => setEditingEvent(null)}
           title="Edit Event"
+          noPadding
         >
           <EventForm
             initialData={editingEvent}
             onSubmit={handleEventSubmit}
             onCancel={() => setEditingEvent(null)}
+            isModal
           />
         </Modal>
       )}

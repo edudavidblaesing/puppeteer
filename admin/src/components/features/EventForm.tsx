@@ -31,6 +31,7 @@ interface EventFormProps {
   onDelete?: (id: string) => Promise<void>;
   onCancel: () => void;
   isLoading?: boolean;
+  isModal?: boolean;
 }
 
 export function EventForm({
@@ -38,7 +39,8 @@ export function EventForm({
   onSubmit,
   onDelete,
   onCancel,
-  isLoading = false
+  isLoading = false,
+  isModal = false
 }: EventFormProps) {
   const [formData, setFormData] = useState<Partial<Event>>(initialData || {
     title: '',
@@ -390,12 +392,14 @@ export function EventForm({
         onClose={() => setShowVenueModal(false)}
         title={editingVenueData?.id ? 'Edit Venue' : 'Create New Venue'}
         size="lg"
+        noPadding
       >
         <div className="h-[600px]">
           <VenueForm
             initialData={editingVenueData || { name: venueSearchQuery }}
             onSubmit={handleCreateVenue}
             onCancel={() => setShowVenueModal(false)}
+            isModal
           />
         </div>
       </Modal>
@@ -405,47 +409,51 @@ export function EventForm({
         onClose={() => setShowArtistModal(false)}
         title={editingArtistData?.id ? 'Edit Artist' : 'Create New Artist'}
         size="lg"
+        noPadding
       >
         <div className="h-[600px]">
           <ArtistForm
             initialData={editingArtistData || { name: artistSearchQuery } as Artist}
             onSubmit={handleCreateArtist}
             onCancel={() => setShowArtistModal(false)}
+            isModal
           />
         </div>
       </Modal>
 
       <form onSubmit={handleSubmit} className="flex flex-col h-full min-h-0 relative">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between bg-gray-50 dark:bg-gray-900/50">
-          <div className="flex items-center gap-3">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-              {initialData ? 'Edit Event' : 'New Event'}
-            </h2>
-          </div>
-          <div className="flex items-center gap-2">
-            {initialData && onDelete && (
+        {!isModal && (
+          <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between bg-gray-50 dark:bg-gray-900/50">
+            <div className="flex items-center gap-3">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                {initialData ? 'Edit Event' : 'New Event'}
+              </h2>
+            </div>
+            <div className="flex items-center gap-2">
+              {initialData && onDelete && (
+                <Button
+                  type="button"
+                  variant="danger"
+                  size="sm"
+                  onClick={() => onDelete(initialData.id)}
+                  disabled={isLoading}
+                >
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+              )}
               <Button
                 type="button"
-                variant="danger"
+                variant="ghost"
                 size="sm"
-                onClick={() => onDelete(initialData.id)}
+                onClick={onCancel}
                 disabled={isLoading}
               >
-                <Trash2 className="w-4 h-4" />
+                <X className="w-4 h-4" />
               </Button>
-            )}
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={onCancel}
-              disabled={isLoading}
-            >
-              <X className="w-4 h-4" />
-            </Button>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
@@ -704,171 +712,183 @@ export function EventForm({
               />
             </div>
 
-            {/* Venue Selector / Display */}
-            {formData.venue_id ? (
-              <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4 border border-gray-200 dark:border-gray-700 flex items-start justify-between">
-                <div>
-                  <h4 className="font-medium text-gray-900 dark:text-gray-100 flex items-center gap-2">
-                    {formData.venue_name}
-                    <span className="text-xs px-2 py-0.5 rounded bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">Linked</span>
-                  </h4>
-                  <p className="text-sm text-gray-500 mt-1">{formData.venue_address}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">{[formData.venue_city, formData.venue_country].filter(Boolean).join(', ')}</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button variant="ghost" size="sm" onClick={handleEditVenue}>Edit</Button>
-                  <Button variant="ghost" size="sm" onClick={removeVenue} className="text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20">
-                    <X className="w-4 h-4" />
-                  </Button>
-                </div>
+            <div className="flex gap-4 items-start">
+              {/* Left Column: Map */}
+              <div className="w-32 h-32 flex-shrink-0 bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 relative mt-1">
+                {formData.latitude && formData.longitude ? (
+                  <EventMap
+                    events={[formData as Event]}
+                    center={[formData.latitude, formData.longitude]}
+                    zoom={15}
+                    minimal
+                  />
+                ) : (
+                  <div className="flex items-center justify-center h-full text-gray-400">
+                    <MapPin className="w-8 h-8 opacity-20" />
+                  </div>
+                )}
               </div>
-            ) : (
-              /* Search Input */
-              <div className="relative" onClick={(e) => e.stopPropagation()}>
-                <Input
-                  value={venueSearchQuery}
-                  onChange={handleVenueSearchChange}
-                  onFocus={() => { if (venueSuggestions.length > 0) setShowVenueSuggestions(true); }}
-                  placeholder="Search for a venue..."
-                  leftIcon={<Search className="w-4 h-4" />}
-                />
-                {isVenueSearching && (
-                  <div className="absolute right-3 top-[38px] animate-spin h-4 w-4 border-2 border-indigo-500 rounded-full border-t-transparent"></div>
+
+              {/* Right Column: Inputs */}
+              <div className="flex-1 space-y-4">
+                {/* Venue Selector / Display */}
+                {formData.venue_id ? (
+                  <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4 border border-gray-200 dark:border-gray-700 flex items-start justify-between">
+                    <div>
+                      <h4 className="font-medium text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                        {formData.venue_name}
+                        <span className="text-xs px-2 py-0.5 rounded bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">Linked</span>
+                      </h4>
+                      <p className="text-sm text-gray-500 mt-1">{formData.venue_address}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">{[formData.venue_city, formData.venue_country].filter(Boolean).join(', ')}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button variant="ghost" size="sm" onClick={handleEditVenue}>Edit</Button>
+                      <Button variant="ghost" size="sm" onClick={removeVenue} className="text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20">
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  /* Search Input */
+                  <div className="relative" onClick={(e) => e.stopPropagation()}>
+                    <Input
+                      value={venueSearchQuery}
+                      onChange={handleVenueSearchChange}
+                      onFocus={() => { if (venueSuggestions.length > 0) setShowVenueSuggestions(true); }}
+                      placeholder="Search for a venue..."
+                      leftIcon={<Search className="w-4 h-4" />}
+                    />
+                    {isVenueSearching && (
+                      <div className="absolute right-3 top-[38px] animate-spin h-4 w-4 border-2 border-indigo-500 rounded-full border-t-transparent"></div>
+                    )}
+
+                    {showVenueSuggestions && venueSearchQuery.length > 1 && (
+                      <div className="absolute z-10 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg mt-1 max-h-60 overflow-y-auto">
+                        {venueSuggestions.map(venue => (
+                          <div
+                            key={venue.id}
+                            className="px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer text-sm"
+                            onClick={() => selectVenue(venue)}
+                          >
+                            <p className="font-medium text-gray-900 dark:text-white">{venue.name}</p>
+                            <p className="text-xs text-gray-500 truncate">{venue.address}, {venue.city}</p>
+                          </div>
+                        ))}
+                        <div
+                          className="px-4 py-2 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 cursor-pointer text-sm text-indigo-600 dark:text-indigo-400 border-t border-gray-100 dark:border-gray-700 font-medium flex items-center gap-2"
+                          onClick={openCreateVenueForQuery}
+                        >
+                          <Plus className="w-4 h-4" /> Create "{venueSearchQuery}"
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Or Manual Details Fallback */}
+                    {formData.venue_name && !formData.venue_id && (
+                      <div className="mt-2 text-xs text-orange-500 flex items-center gap-1">
+                        <AlertTriangle className="w-3 h-3" /> Using manual venue details. Link to a venue for better data.
+                      </div>
+                    )}
+                  </div>
                 )}
 
-                {showVenueSuggestions && venueSearchQuery.length > 1 && (
-                  <div className="absolute z-10 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg mt-1 max-h-60 overflow-y-auto">
-                    {venueSuggestions.map(venue => (
-                      <div
-                        key={venue.id}
-                        className="px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer text-sm"
-                        onClick={() => selectVenue(venue)}
-                      >
-                        <p className="font-medium text-gray-900 dark:text-white">{venue.name}</p>
-                        <p className="text-xs text-gray-500 truncate">{venue.address}, {venue.city}</p>
+                {!formData.venue_id && (
+                  <div className="pt-2 pl-2 border-l-2 border-gray-100 dark:border-gray-800 ml-1 space-y-3">
+                    <p className="text-xs text-gray-400 uppercase font-semibold">Manual Venue Details (Fallback)</p>
+                    <div>
+                      <Input
+                        label="Venue Name"
+                        value={formData.venue_name || ''}
+                        onChange={(e) => setFormData({ ...formData, venue_name: e.target.value })}
+                      />
+                      <SourceFieldOptions
+                        sources={initialData?.source_references}
+                        field="venue_name"
+                        currentValue={formData.venue_name}
+                        onSelect={(val) => setFormData({ ...formData, venue_name: val })}
+                      />
+                    </div>
+                    <div>
+                      <Input
+                        label="Address"
+                        value={formData.venue_address || ''}
+                        onChange={(e) => setFormData({ ...formData, venue_address: e.target.value })}
+                      />
+                      <SourceFieldOptions
+                        sources={initialData?.source_references}
+                        field="venue_address"
+                        currentValue={formData.venue_address}
+                        onSelect={(val) => setFormData({ ...formData, venue_address: val })}
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Input
+                          label="City"
+                          value={formData.venue_city || ''}
+                          onChange={(e) => setFormData({ ...formData, venue_city: e.target.value })}
+                        />
+                        <SourceFieldOptions
+                          sources={initialData?.source_references}
+                          field="venue_city"
+                          currentValue={formData.venue_city}
+                          onSelect={(val) => setFormData({ ...formData, venue_city: val })}
+                        />
                       </div>
-                    ))}
-                    <div
-                      className="px-4 py-2 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 cursor-pointer text-sm text-indigo-600 dark:text-indigo-400 border-t border-gray-100 dark:border-gray-700 font-medium flex items-center gap-2"
-                      onClick={openCreateVenueForQuery}
-                    >
-                      <Plus className="w-4 h-4" /> Create "{venueSearchQuery}"
+                      <div>
+                        <Input
+                          label="Country"
+                          value={formData.venue_country || ''}
+                          onChange={(e) => setFormData({ ...formData, venue_country: e.target.value })}
+                        />
+                        <SourceFieldOptions
+                          sources={initialData?.source_references}
+                          field="venue_country"
+                          currentValue={formData.venue_country}
+                          onSelect={(val) => setFormData({ ...formData, venue_country: val })}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Input
+                          label="Latitude"
+                          type="number"
+                          step="any"
+                          value={formData.latitude || ''}
+                          onChange={(e) => setFormData({ ...formData, latitude: parseFloat(e.target.value) })}
+                        />
+                        <SourceFieldOptions
+                          sources={initialData?.source_references}
+                          field="latitude"
+                          currentValue={formData.latitude}
+                          onSelect={(val) => setFormData({ ...formData, latitude: val })}
+                        />
+                      </div>
+                      <div>
+                        <Input
+                          label="Longitude"
+                          type="number"
+                          step="any"
+                          value={formData.longitude || ''}
+                          onChange={(e) => setFormData({ ...formData, longitude: parseFloat(e.target.value) })}
+                        />
+                        <SourceFieldOptions
+                          sources={initialData?.source_references}
+                          field="longitude"
+                          currentValue={formData.longitude}
+                          onSelect={(val) => setFormData({ ...formData, longitude: val })}
+                        />
+                      </div>
                     </div>
                   </div>
                 )}
-
-                {/* Or Manual Details Fallback */}
-                {formData.venue_name && !formData.venue_id && (
-                  <div className="mt-2 text-xs text-orange-500 flex items-center gap-1">
-                    <AlertTriangle className="w-3 h-3" /> Using manual venue details. Link to a venue for better data.
-                  </div>
-                )}
               </div>
-            )}
-
-            {/* Manual Venue Details (Collapsed if valid venue linked, or always show for fallback/editing?) 
-              Let's hide them if venue_id is set to keep it clean, or show as disabled/readonly 
-              User asked for "remove venue" -> which unlinks it.
-              If unlinked, we show these fields.
-          */}
-            {!formData.venue_id && (
-              <div className="pt-2 pl-2 border-l-2 border-gray-100 dark:border-gray-800 ml-1 space-y-3">
-                <p className="text-xs text-gray-400 uppercase font-semibold">Manual Venue Details (Fallback)</p>
-                <div>
-                  <Input
-                    label="Venue Name"
-                    value={formData.venue_name || ''}
-                    onChange={(e) => setFormData({ ...formData, venue_name: e.target.value })}
-                  />
-                  <SourceFieldOptions
-                    sources={initialData?.source_references}
-                    field="venue_name"
-                    currentValue={formData.venue_name}
-                    onSelect={(val) => setFormData({ ...formData, venue_name: val })}
-                  />
-                </div>
-                <div>
-                  <Input
-                    label="Address"
-                    value={formData.venue_address || ''}
-                    onChange={(e) => setFormData({ ...formData, venue_address: e.target.value })}
-                  />
-                  <SourceFieldOptions
-                    sources={initialData?.source_references}
-                    field="venue_address"
-                    currentValue={formData.venue_address}
-                    onSelect={(val) => setFormData({ ...formData, venue_address: val })}
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Input
-                      label="City"
-                      value={formData.venue_city || ''}
-                      onChange={(e) => setFormData({ ...formData, venue_city: e.target.value })}
-                    />
-                    <SourceFieldOptions
-                      sources={initialData?.source_references}
-                      field="venue_city"
-                      currentValue={formData.venue_city}
-                      onSelect={(val) => setFormData({ ...formData, venue_city: val })}
-                    />
-                  </div>
-                  <div>
-                    <Input
-                      label="Country"
-                      value={formData.venue_country || ''}
-                      onChange={(e) => setFormData({ ...formData, venue_country: e.target.value })}
-                    />
-                    <SourceFieldOptions
-                      sources={initialData?.source_references}
-                      field="venue_country"
-                      currentValue={formData.venue_country}
-                      onSelect={(val) => setFormData({ ...formData, venue_country: val })}
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <Input
-                    label="Latitude"
-                    type="number"
-                    step="any"
-                    value={formData.latitude || ''}
-                    onChange={(e) => setFormData({ ...formData, latitude: parseFloat(e.target.value) })}
-                  />
-                  <Input
-                    label="Longitude"
-                    type="number"
-                    step="any"
-                    value={formData.longitude || ''}
-                    onChange={(e) => setFormData({ ...formData, longitude: parseFloat(e.target.value) })}
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* Map Preview Toggle */}
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setShowMap(!showMap)}
-              className="w-full mt-2"
-            >
-              {showMap ? 'Hide Map' : 'Show Map Preview'}
-            </Button>
-
-            {showMap && (
-              <div className="h-64 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 relative mt-2">
-                <EventMap
-                  events={formData.latitude && formData.longitude ? [formData as Event] : []}
-                  center={formData.latitude && formData.longitude ? [formData.latitude, formData.longitude] : undefined}
-                  zoom={15}
-                />
-              </div>
-            )}
+            </div>
           </div>
+
 
           {/* Media & Links */}
           <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-gray-800">

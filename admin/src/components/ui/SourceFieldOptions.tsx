@@ -52,6 +52,13 @@ export function SourceFieldOptions({ sources, field, onSelect, currentValue, lab
               {isBest && <Star className="w-3 h-3 text-amber-500 fill-current flex-shrink-0" />}
               <SourceIcon sourceCode={source.source_code} className="w-3 h-3 flex-shrink-0" />
               <span className="truncate max-w-[300px]">{displayVal}</span>
+              {/* Smart Update Indicator */}
+              {source.updated_at && source.last_synced_at && new Date(source.updated_at) > new Date(source.last_synced_at) && !isSelected && (
+                <span className="flex h-2 w-2 relative" title="New update available">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                </span>
+              )}
             </button>
           );
         })}

@@ -16,8 +16,9 @@ async function refreshMainEvent(eventId) {
     const current = currentResult.rows[0];
 
     // Get all linked scraped events ordered by source priority
+    // Using event_scraped_links (active table)
     const sourcesResult = await pool.query(`
-        SELECT se.*, esl.match_confidence
+        SELECT se.*, esl.match_confidence, esl.last_synced_at
         FROM event_scraped_links esl
         JOIN scraped_events se ON se.id = esl.scraped_event_id
         WHERE esl.event_id = $1
@@ -34,7 +35,70 @@ async function refreshMainEvent(eventId) {
 
     if (sourcesResult.rows.length === 0) return;
 
-    const { merged, fieldSources } = mergeSourceData(sourcesResult.rows);
+    let sourcesToMerge = [...sourcesResult.rows];
+
+    // Create a virtual 'original/manual' source from current event data
+    // This ensures that if we have locked/manual fields (tracked in field_sources), they take priority (1)
+    if (current) {
+        // Parse current field_sources
+        const currentFieldSources = current.field_sources || {};
+        const manualSource = {
+            source_code: 'og',
+            priority: 1, // Highest priority
+            // Populate fields if they are explicitly marked as 'og' OR if field_sources is empty (legacy data protection)
+            // But if we treat ALL legacy data as 'og', we stop auto-updates for everything.
+            // Better approach: If field_sources is empty, we DON'T add manual source, we let scraper win (Auto-Enrich).
+            // BUT if user edited it, they expect it to stay.
+            // Compromise: We only add fields that are explicitly 'og' in field_sources.
+            // If field_sources is empty, we assume it's open for update (or we rely on 'modified' flag if we had one).
+            // User request: "Preserving Original Entities... original entity remains intact".
+            // accurate interpretation: "Once I have it, don't change it unless I say so".
+            // So we SHOULD treat current values as 'og' if they exist.
+        };
+
+        // If field_sources exists, we strictly follow it.
+        // If it's the specific case where we want to protect manual edits:
+        // We copy fields from 'current' to 'manualSource' IF current.field_sources[field] === 'og'
+
+        let hasManualFields = false;
+
+        // List of fields we manage
+        const managedFields = [
+            'title', 'date', 'start_time', 'end_time', 'description',
+            'flyer_front', 'content_url', 'venue_name', 'venue_address',
+            'venue_city', 'venue_country', 'artists'
+        ];
+
+        managedFields.forEach(field => {
+            // If expressly 'og', OR if we want to be conservative and protect all non-empty current values?
+            // Let's stick to explicit 'og' for now to allow auto-enrichment of new scrapes.
+            // BUT, if I "Edit" an event, I update field_sources to 'og' for that field? 
+            // Currently updateEvent DOES NOT set field_sources to 'og'. I need to fix that too!
+            // For now, let's assume if field_sources is missing, we protect nothing (auto-update).
+            // Wait, if I created an event manually, it has 'og'? 'manual_...' ID events usually don't have scraped links initially.
+
+            if (currentFieldSources && currentFieldSources[field] === 'og') {
+                manualSource[field] = current[field];
+                hasManualFields = true;
+            }
+        });
+
+        if (hasManualFields) {
+            sourcesToMerge.push(manualSource);
+        }
+    }
+
+    const { merged, fieldSources } = mergeSourceData(sourcesToMerge);
+
+    // Identify which Scraped Sources actually contributed to the final result
+    // fieldSources is map: { title: 'ra', date: 'tm', ... }
+    const contributingSourceCodes = new Set(Object.values(fieldSources));
+
+    // We also want to "Touch" last_synced_at for sources that are "consistent" with the result?
+    // No, strictly those that "Provided" the value.
+    // If 'ra' provided title, we accept 'ra's update.
+    // If 'tm' provided date, we accept 'tm's update.
+    // If 'eb' provided nothing, and 'eb' has changes... we ignore 'eb'. Dot remains. Correct.
 
     // Extract date as YYYY-MM-DD string
     let dateStr = null;
@@ -43,7 +107,7 @@ async function refreshMainEvent(eventId) {
         dateStr = d.toISOString().split('T')[0];
     }
 
-    // Handle start_time (could be Date, ISO string, or HH:mm)
+    // Handle start_time
     let startTimestamp = merged.start_time;
     if (startTimestamp && typeof startTimestamp === 'string' && !startTimestamp.includes('T') && dateStr) {
         startTimestamp = `${dateStr} ${startTimestamp}`;
@@ -55,14 +119,12 @@ async function refreshMainEvent(eventId) {
         endTimestamp = `${dateStr} ${endTimestamp}`;
     }
 
-    // Convert artists_json to string for events table
-    const artistsStr = merged.artists_json && merged.artists_json.length > 0
-        ? JSON.stringify(merged.artists_json)
-        : null;
-
-    // Note: We don't overwrite manual edits here if we were tracking them,
-    // but for now we trust the source merge logic.
-    // However, for certain fields we might want to respect existing main event data if it's cleaner.
+    // Convert artists_json/array to string/jsonb
+    // merged.artists might be array from 'artists_json' property in sources?
+    // mergeSourceData usually takes 'artists' field.
+    // scraped_events has `artists_json` (jsonb) and `artists` (text).
+    // mergeSourceData generic logic picks value.
+    const artistsVal = merged.artists || (merged.artists_json ? JSON.stringify(merged.artists_json) : null);
 
     await pool.query(`
         UPDATE events SET
@@ -78,14 +140,35 @@ async function refreshMainEvent(eventId) {
             venue_city = COALESCE($10, venue_city),
             venue_country = COALESCE($11, venue_country),
             artists = COALESCE($12, artists),
+            field_sources = $13,
             updated_at = CURRENT_TIMESTAMP
-        WHERE id = $13
+        WHERE id = $14
     `, [
         merged.title, dateStr, startTimestamp, endTimestamp,
         merged.description, merged.flyer_front, merged.content_url,
         merged.venue_name, merged.venue_address, merged.venue_city, merged.venue_country,
-        artistsStr, eventId
+        artistsVal,
+        JSON.stringify(fieldSources),
+        eventId
     ]);
+
+    // Update last_synced_at logic
+    // We only update for scraped_events that contributed to at least one field
+    // source_code might not be unique in array, but usually is (one link per source code?).
+    // Actually scraped_events.source_code.
+    // We filter the original sourcesResult
+
+    const contributingScrapedIds = sourcesResult.rows
+        .filter(s => contributingSourceCodes.has(s.source_code))
+        .map(s => s.id); // s.id is scraped_event.id
+
+    if (contributingScrapedIds.length > 0) {
+        await pool.query(`
+            UPDATE event_scraped_links
+            SET last_synced_at = CURRENT_TIMESTAMP
+            WHERE event_id = $1 AND scraped_event_id = ANY($2::int[])
+        `, [eventId, contributingScrapedIds]);
+    }
 }
 
 // Find or create venue and return venue_id
@@ -493,91 +576,112 @@ async function matchAndLinkEvents(options = {}) {
 
 // Refresh main artist with best data from linked sources
 async function refreshMainArtist(artistId) {
+    // Get current artist state
+    const currentResult = await pool.query(`
+        SELECT * FROM artists WHERE id = $1
+    `, [artistId]);
+
+    if (currentResult.rows.length === 0) return;
+    const current = currentResult.rows[0];
+
     const sourcesResult = await pool.query(`
-        SELECT sa.*, asl.match_confidence
+        SELECT sa.*, asl.match_confidence, asl.last_synced_at
         FROM artist_scraped_links asl
         JOIN scraped_artists sa ON sa.id = asl.scraped_artist_id
         WHERE asl.artist_id = $1
         ORDER BY 
             CASE sa.source_code 
-                WHEN 'original' THEN 1 
+                WHEN 'og' THEN 1 
                 WHEN 'manual' THEN 1
                 WHEN 'musicbrainz' THEN 2
-                WHEN 'ra' THEN 5 
-                WHEN 'ticketmaster' THEN 6 
                 ELSE 10 
             END ASC
     `, [artistId]);
 
     if (sourcesResult.rows.length === 0) return;
 
-    // Use existing merge logic or simplified
-    // We want specifically: name, country, artist_type, genres, image_url, content_url
-    const { merged } = mergeSourceData(sourcesResult.rows, [
-        'name', 'country', 'artist_type', 'genres', 'image_url', 'content_url'
+    let sourcesToMerge = [...sourcesResult.rows];
+
+    // Inject "Current" as Manual Source (og) if needed
+    if (current) {
+        const currentFieldSources = current.field_sources || {};
+        const manualSource = {
+            source_code: 'og',
+            priority: 1
+        };
+        let hasManualFields = false;
+
+        // Fields managed for artists
+        const managedFields = ['name', 'country', 'artist_type', 'genres', 'image_url', 'content_url', 'bio'];
+
+        managedFields.forEach(field => {
+            // Same logic as events: If current has value and is explicitly 'og', keep it.
+            // Or if field_sources is empty, maybe protect? 
+            // We'll stick to explicit 'og' for Smart Update contract.
+            if (currentFieldSources && currentFieldSources[field] === 'og') {
+                manualSource[field] = current[field];
+                hasManualFields = true;
+            }
+        });
+
+        if (hasManualFields) {
+            sourcesToMerge.push(manualSource);
+        }
+    }
+
+    const { merged, fieldSources } = mergeSourceData(sourcesToMerge, [
+        'name', 'country', 'artist_type', 'genres', 'image_url', 'content_url', 'bio'
     ]);
 
-    // Update main artist
-    // Note: Genres are often JSON arrays in scraped_artists but string[] or JSONB in artists?
-    // In scraped_artists they are JSON strings (scraperProcessor line 168).
-    // In matchingService create (lines 553+), they are ignored or passed null?
-    // We should parse them if they are strings.
+    // Handle genres (often JSON/Text)
+    // mergeSourceData picks the raw value from scraped_artists (which might be JSON string).
+    // Or from current (which might be array/jsonb).
+    // We should ensure it's JSON format for DB if column is JSONB.
+    // artists.genres is usually JSONB (based on recent migrations for other tables, let's assume JSONB or TEXT array).
+    // The previous code didn't parse it.
+    // If scraped_artists.genres is json string, and we put it in jsonb column, Postgres might auto-cast if valid?
 
-    // Actually mergeSourceData returns the raw value.
-    // scraped_artists.genres is TEXT or JSONB? 
-    // In migration 001/016 it might be JSONB or TEXT.
-    // If it is JSON-stringified TEXT, we need to handle it.
+    // Better safely stringify if it's an object/array, or leave as string.
+    let genresVal = merged.genres;
+    if (typeof genresVal === 'object' && genresVal !== null) {
+        genresVal = JSON.stringify(genresVal);
+    }
 
-    // Safe approach: Use params only if value exists
     await pool.query(`
         UPDATE artists SET
-            country = COALESCE(country, $1),
-            artist_type = COALESCE(artist_type, $2),
-            image_url = COALESCE($3, image_url),
-            content_url = COALESCE($4, content_url),
+            name = COALESCE($1, name),
+            country = COALESCE($2, country),
+            artist_type = COALESCE($3, artist_type),
+            image_url = COALESCE($4, image_url),
+            content_url = COALESCE($5, content_url),
+            genres = COALESCE($6, genres),
+            field_sources = $7,
             updated_at = CURRENT_TIMESTAMP
-        WHERE id = $5
+        WHERE id = $8
     `, [
+        merged.name,
         merged.country,
         merged.artist_type,
         merged.image_url,
         merged.content_url,
+        genresVal,
+        JSON.stringify(fieldSources),
         artistId
     ]);
 
-    // Note: We prioritize retaining existing data for image/content if it exists (COALESCE usage order),
-    // OR we overwrite if Enrichment is better?
-    // User said "original entity gets the best match".
-    // If we trust MB/RA more than null, we use COALESCE(current, new).
-    // But if we want to *enrich* (fill gaps), COALESCE(current, new) is correct.
-    // If we want to *improve* (overwrite bad data), we need logic.
-    // "Most data" -> fill gaps. I'll stick to filling gaps (COALESCE(target, source)).
-    // Wait, Standard SQL COALESCE(a,b) returns first non-null. 
-    // If I want to update `country` IF it's null, I do `country = COALESCE(country, new)`.
-    // If I want to update `country` with `new` (unless new is null), I do `country = COALESCE(new, country)`.
+    // Update last_synced_at
+    const contributingSourceCodes = new Set(Object.values(fieldSources));
+    const contributingScrapedIds = sourcesResult.rows
+        .filter(s => contributingSourceCodes.has(s.source_code))
+        .map(s => s.id);
 
-    // Strategy: "Enrichment". Fill missing holes.
-    // The query above `country = COALESCE(country, $1)` keeps existing country.
-    // This assumes existing data is good.
-    // But if current country is NULL, it takes $1. Correct.
-
-    // However, for Manual sources, we want them to win. 
-    // If the merged result comes from Manual (priority 1), it should overwrite.
-    // The mergeSourceData returns the TOP priority value.
-    // So `merged.country` IS the best value.
-    // So we should use `country = COALESCE($1, country)` to OVERWRITE existing with Best.
-    // (If $1 is null, keep existing).
-
-    // Revised Query:
-    /*
-    UPDATE artists SET
-        country = COALESCE($1, country),
-        artist_type = COALESCE($2, artist_type),
-        image_url = COALESCE($3, image_url),
-        content_url = COALESCE($4, content_url),
-        updated_at = CURRENT_TIMESTAMP
-    WHERE id = $5
-    */
+    if (contributingScrapedIds.length > 0) {
+        await pool.query(`
+            UPDATE artist_scraped_links
+            SET last_synced_at = CURRENT_TIMESTAMP
+            WHERE artist_id = $1 AND scraped_artist_id = ANY($2::int[])
+        `, [artistId, contributingScrapedIds]);
+    }
 }
 
 // Match and link artists
@@ -751,6 +855,99 @@ async function matchAndLinkArtists(options = {}) {
     return { processed: unlinked.length, matched, created, results: results.slice(0, 50) };
 }
 
+// Refresh main venue with best data from linked sources
+async function refreshMainVenue(venueId) {
+    // Get current venue state
+    const currentResult = await pool.query(`
+        SELECT * FROM venues WHERE id = $1
+    `, [venueId]);
+
+    if (currentResult.rows.length === 0) return;
+    const current = currentResult.rows[0];
+
+    const sourcesResult = await pool.query(`
+        SELECT sv.*, vsl.match_confidence, vsl.last_synced_at
+        FROM venue_scraped_links vsl
+        JOIN scraped_venues sv ON sv.id = vsl.scraped_venue_id
+        WHERE vsl.venue_id = $1
+        ORDER BY 
+            CASE sv.source_code 
+                WHEN 'og' THEN 1 
+                WHEN 'manual' THEN 1
+                ELSE 10 
+            END ASC
+    `, [venueId]);
+
+    if (sourcesResult.rows.length === 0) return;
+
+    let sourcesToMerge = [...sourcesResult.rows];
+
+    // Inject "Current" as Manual Source (og) if needed
+    if (current) {
+        const currentFieldSources = current.field_sources || {};
+        const manualSource = {
+            source_code: 'og',
+            priority: 1
+        };
+        let hasManualFields = false;
+
+        const managedFields = ['name', 'address', 'city', 'country', 'latitude', 'longitude', 'content_url'];
+
+        managedFields.forEach(field => {
+            if (currentFieldSources && currentFieldSources[field] === 'og') {
+                manualSource[field] = current[field];
+                hasManualFields = true;
+            }
+        });
+
+        if (hasManualFields) {
+            sourcesToMerge.push(manualSource);
+        }
+    }
+
+    const { merged, fieldSources } = mergeSourceData(sourcesToMerge, [
+        'name', 'address', 'city', 'country', 'latitude', 'longitude', 'content_url'
+    ]);
+
+    await pool.query(`
+        UPDATE venues SET
+            name = COALESCE($1, name),
+            address = COALESCE($2, address),
+            city = COALESCE($3, city),
+            country = COALESCE($4, country),
+            latitude = COALESCE($5, latitude),
+            longitude = COALESCE($6, longitude),
+            content_url = COALESCE($7, content_url),
+            field_sources = $8,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $9
+    `, [
+        merged.name,
+        merged.address,
+        merged.city,
+        merged.country,
+        merged.latitude,
+        merged.longitude,
+        merged.content_url,
+        JSON.stringify(fieldSources),
+        venueId
+    ]);
+
+    // Update last_synced_at
+    const contributingSourceCodes = new Set(Object.values(fieldSources));
+    const contributingScrapedIds = sourcesResult.rows
+        .filter(s => contributingSourceCodes.has(s.source_code))
+        .map(s => s.id);
+
+    if (contributingScrapedIds.length > 0) {
+        await pool.query(`
+            UPDATE venue_scraped_links
+            SET last_synced_at = CURRENT_TIMESTAMP
+            WHERE venue_id = $1 AND scraped_venue_id = ANY($2::int[])
+        `, [venueId, contributingScrapedIds]);
+    }
+}
+
 // Match and link venues (main venues table)
 async function matchAndLinkVenues(options = {}) {
     const { dryRun = false, minConfidence = 0.7 } = options;
@@ -809,6 +1006,10 @@ async function matchAndLinkVenues(options = {}) {
                     VALUES ($1, $2, $3)
                     ON CONFLICT (venue_id, scraped_venue_id) DO NOTHING
                 `, [bestMatch.id, scraped.id, bestScore]);
+
+                if (!dryRun) {
+                    await refreshMainVenue(bestMatch.id);
+                }
             }
             matched++;
             results.push({

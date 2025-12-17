@@ -8,7 +8,7 @@ const TICKETMASTER_API_KEY = process.env.TICKETMASTER_API_KEY || 'nxUv3tE9qx64KG
 // Check if source is configured for a city
 async function getCitySourceConfig(cityName, sourceCode) {
     const result = await pool.query(`
-        SELECT csc.*, es.code as source_code 
+        SELECT csc.*, es.code as source_code, es.scopes, es.enabled_scopes
         FROM city_source_configs csc
         JOIN cities c ON c.id = csc.city_id
         JOIN event_sources es ON es.id = csc.source_id
@@ -208,7 +208,11 @@ async function getConfiguredCities() {
             SELECT 
                 c.name,
                 c.country,
-                JSON_OBJECT_AGG(es.code, csc.is_active) as sources
+                JSON_OBJECT_AGG(es.code, json_build_object(
+                    'isActive', csc.is_active,
+                    'enabledScopes', es.enabled_scopes,
+                    'externalId', csc.external_id
+                )) as sources
             FROM cities c
             JOIN city_source_configs csc ON csc.city_id = c.id
             JOIN event_sources es ON es.id = csc.source_id
@@ -232,5 +236,6 @@ async function getConfiguredCities() {
 module.exports = {
     scrapeResidentAdvisor,
     scrapeTM,
-    getConfiguredCities
+    getConfiguredCities,
+    getCitySourceConfig
 };

@@ -220,8 +220,8 @@ async function getEvent(req, res) {
                        se.start_time, se.end_time, se.content_url, se.flyer_front, 
                        se.venue_name, se.venue_address, se.venue_city, se.venue_country, 
                        se.description, se.price_info, se.ticket_url, se.event_type,
-                       se.latitude, se.longitude,
-                       esl.match_confidence as confidence
+                       se.latitude, se.longitude, se.updated_at,
+                       esl.match_confidence as confidence, esl.last_synced_at
                 FROM event_scraped_links esl
                 JOIN scraped_events se ON se.id = esl.scraped_event_id
                 WHERE esl.event_id = $1
@@ -243,8 +243,8 @@ async function getEvent(req, res) {
                            se.start_time, se.end_time, se.content_url, se.flyer_front, 
                            se.venue_name, se.venue_address, se.venue_city, se.venue_country, 
                            se.description, se.price_info, se.ticket_url,
-                           se.latitude, se.longitude,
-                           esl.match_confidence as confidence
+                           se.latitude, se.longitude, se.updated_at,
+                           esl.match_confidence as confidence, esl.last_synced_at
                     FROM unified_events ue
                     JOIN event_source_links esl ON esl.unified_event_id = ue.id
                     JOIN scraped_events se ON se.id = esl.scraped_event_id
@@ -412,6 +412,13 @@ async function updateEvent(req, res) {
         const { id } = req.params;
         const updates = req.body;
 
+        // Fetch current field_sources to update them
+        const currentRes = await pool.query('SELECT field_sources FROM events WHERE id = $1', [id]);
+        if (currentRes.rows.length === 0) {
+            return res.status(404).json({ error: 'Event not found' });
+        }
+        const fieldSources = currentRes.rows[0].field_sources || {};
+
         const allowedFields = [
             'title', 'date', 'start_time', 'end_time', 'content_url',
             'flyer_front', 'description', 'venue_id', 'venue_name',
@@ -425,6 +432,9 @@ async function updateEvent(req, res) {
 
         for (const [key, value] of Object.entries(updates)) {
             if (allowedFields.includes(key)) {
+                // validation logic remains same, but we add to fieldSources
+                fieldSources[key] = 'og';
+
                 if ((key === 'start_time' || key === 'end_time') && value && typeof value === 'string') {
                     if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(value)) {
                         const dateValue = updates.date || null;
@@ -450,6 +460,10 @@ async function updateEvent(req, res) {
             return res.status(400).json({ error: 'No valid fields to update' });
         }
 
+        // Add field_sources to update
+        setClauses.push(`field_sources = $${paramIndex++}::jsonb`);
+        values.push(JSON.stringify(fieldSources));
+
         setClauses.push('updated_at = CURRENT_TIMESTAMP');
         values.push(id);
 
@@ -461,6 +475,13 @@ async function updateEvent(req, res) {
         `;
 
         const result = await pool.query(query, values);
+
+        // Update last_synced_at for linked sources since we manually updated the event
+        await pool.query(`
+            UPDATE event_scraped_links
+            SET last_synced_at = CURRENT_TIMESTAMP
+            WHERE event_id = $1
+        `, [id]);
 
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Event not found' });

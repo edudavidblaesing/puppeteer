@@ -216,14 +216,29 @@ async function findMatchingUnifiedArtist(scrapedData, minConfidence = 0.85) {
 async function refreshUnifiedEvent(unifiedId) {
     // Get all linked sources ordered by priority
     const sourcesResult = await pool.query(`
-        SELECT se.*, esl.priority, esl.is_primary
-        FROM event_source_links esl
+        SELECT se.*, esl.match_confidence, esl.last_synced_at
+        FROM event_scraped_links esl
         JOIN scraped_events se ON se.id = esl.scraped_event_id
-        WHERE esl.unified_event_id = $1
-        ORDER BY esl.priority ASC, esl.is_primary DESC
+        WHERE esl.event_id = $1
+        ORDER BY 
+            CASE se.source_code 
+                WHEN 'og' THEN 1 
+                WHEN 'ra' THEN 5 
+                WHEN 'tm' THEN 6 
+                WHEN 'eb' THEN 7
+                WHEN 'di' THEN 8
+                ELSE 10 
+            END ASC
     `, [unifiedId]);
 
     if (sourcesResult.rows.length === 0) return;
+
+    // Update last_synced_at for all processed links
+    await pool.query(`
+        UPDATE event_scraped_links
+        SET last_synced_at = CURRENT_TIMESTAMP
+        WHERE event_id = $1
+    `, [unifiedId]);
 
     const { merged, fieldSources } = mergeSourceData(sourcesResult.rows);
 
@@ -254,11 +269,15 @@ async function refreshUnifiedEvent(unifiedId) {
 // Refresh unified venue with merged data
 async function refreshUnifiedVenue(unifiedId) {
     const sourcesResult = await pool.query(`
-        SELECT sv.*, vsl.priority
-        FROM venue_source_links vsl
+        SELECT sv.*, vsl.match_confidence
+        FROM venue_scraped_links vsl
         JOIN scraped_venues sv ON sv.id = vsl.scraped_venue_id
-        WHERE vsl.unified_venue_id = $1
-        ORDER BY vsl.priority ASC
+        WHERE vsl.venue_id = $1
+        ORDER BY 
+            CASE sv.source_code 
+                WHEN 'og' THEN 1 
+                ELSE 10 
+            END ASC
     `, [unifiedId]);
 
     if (sourcesResult.rows.length === 0) return;
@@ -266,6 +285,13 @@ async function refreshUnifiedVenue(unifiedId) {
     const { merged, fieldSources } = mergeSourceData(sourcesResult.rows, [
         'name', 'address', 'city', 'country', 'latitude', 'longitude', 'content_url', 'capacity'
     ]);
+
+    // Update last_synced_at
+    await pool.query(`
+        UPDATE venue_scraped_links
+        SET last_synced_at = CURRENT_TIMESTAMP
+        WHERE venue_id = $1
+    `, [unifiedId]);
 
     await pool.query(`
         UPDATE unified_venues SET
@@ -290,11 +316,17 @@ async function refreshUnifiedVenue(unifiedId) {
 // Refresh unified artist with merged data
 async function refreshUnifiedArtist(unifiedId) {
     const sourcesResult = await pool.query(`
-        SELECT sa.*, asl.priority
-        FROM artist_source_links asl
+        SELECT sa.*, asl.match_confidence
+        FROM artist_scraped_links asl
         JOIN scraped_artists sa ON sa.id = asl.scraped_artist_id
-        WHERE asl.unified_artist_id = $1
-        ORDER BY asl.priority ASC
+        WHERE asl.artist_id = $1
+        ORDER BY 
+            CASE sa.source_code 
+                WHEN 'og' THEN 1 
+                WHEN 'manual' THEN 1
+                WHEN 'musicbrainz' THEN 2
+                ELSE 10 
+            END ASC
     `, [unifiedId]);
 
     if (sourcesResult.rows.length === 0) return;
@@ -302,6 +334,13 @@ async function refreshUnifiedArtist(unifiedId) {
     const { merged, fieldSources } = mergeSourceData(sourcesResult.rows, [
         'name', 'genres', 'country', 'image_url', 'content_url'
     ]);
+
+    // Update last_synced_at
+    await pool.query(`
+        UPDATE artist_scraped_links
+        SET last_synced_at = CURRENT_TIMESTAMP
+        WHERE artist_id = $1
+    `, [unifiedId]);
 
     await pool.query(`
         UPDATE unified_artists SET

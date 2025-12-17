@@ -30,9 +30,16 @@ app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 // Keeping it simple.
 
 // Database Init
-// Database Init
 initializeDatabase()
-    .then(() => {
+    .then(async () => {
+        // Run migrations
+        try {
+            const { migrate } = require('../migrate');
+            await migrate();
+        } catch (e) {
+            console.error('Migration error:', e);
+        }
+
         const { ensureDefaultUsers } = require('./controllers/authController');
         return ensureDefaultUsers();
     })
@@ -107,11 +114,31 @@ app.get('/db/sources', async (req, res) => {
 
 app.patch('/db/sources/:id', async (req, res) => {
     const { id } = req.params;
-    const { is_active } = req.body;
+    const updates = req.body;
+
+    // Allowed fields
+    const allowed = ['is_active', 'enabled_scopes'];
+    const fields = [];
+    const values = [];
+    let idx = 1;
+
+    for (const key of Object.keys(updates)) {
+        if (allowed.includes(key)) {
+            fields.push(`${key} = $${idx++}`);
+            values.push(key === 'enabled_scopes' ? JSON.stringify(updates[key]) : updates[key]);
+        }
+    }
+
+    if (fields.length === 0) {
+        return res.status(400).json({ error: 'No valid fields to update' });
+    }
+
+    values.push(id);
+
     try {
         const result = await pool.query(
-            'UPDATE event_sources SET is_active = $1 WHERE id = $2 RETURNING *',
-            [is_active, id]
+            `UPDATE event_sources SET ${fields.join(', ')} WHERE id = $${idx} RETURNING *`,
+            values
         );
         res.json(result.rows[0]);
     } catch (e) {
@@ -119,6 +146,7 @@ app.patch('/db/sources/:id', async (req, res) => {
     }
 });
 
+// Manual Scrape Endpoint
 app.post('/scrape/run', async (req, res) => {
     const { city, source, limit, fullScrape } = req.body;
 
@@ -132,6 +160,11 @@ app.post('/scrape/run', async (req, res) => {
 
         console.log(`[Manual Scrape] Starting ${source} for ${city}`);
 
+        // Get config for scopes
+        const { getCitySourceConfig } = require('./services/scraperService');
+        const config = await getCitySourceConfig(city, source);
+        const scopes = config ? config.enabled_scopes : ['event', 'venue', 'artist', 'organizer'];
+
         try {
             if (source === 'ra') {
                 events = await scrapeResidentAdvisor(city, { limit });
@@ -141,7 +174,7 @@ app.post('/scrape/run', async (req, res) => {
                 throw new Error(`Unknown source: ${source}`);
             }
 
-            const stats = await processScrapedEvents(events, { geocodeMissing: true });
+            const stats = await processScrapedEvents(events, { geocodeMissing: true, scopes });
 
             await logScrapeHistory({
                 city,
@@ -210,6 +243,11 @@ app.post('/sync/pipeline', async (req, res) => {
                 try {
                     console.log(`[Sync Pipeline] Scraping ${source} for ${city}...`);
                     let events = [];
+                    // Get config for scopes per city/source
+                    const { getCitySourceConfig } = require('./services/scraperService');
+                    const config = await getCitySourceConfig(city, source);
+                    const scopes = config ? config.enabled_scopes : ['event', 'venue', 'artist', 'organizer'];
+
                     if (source === 'ra') {
                         events = await scrapeResidentAdvisor(city, { limit: 20 });
                     } else if (source === 'tm') {
@@ -217,7 +255,7 @@ app.post('/sync/pipeline', async (req, res) => {
                     }
 
                     if (events.length > 0) {
-                        const stats = await processScrapedEvents(events, { geocodeMissing: true });
+                        const stats = await processScrapedEvents(events, { geocodeMissing: true, scopes });
                         await logScrapeHistory({
                             city,
                             source_code: source,
@@ -271,6 +309,7 @@ app.post('/scrape/toggle', (req, res) => {
     res.json({ autoScrapeEnabled, isRunning: isScrapingRunning });
 });
 
+
 async function performAutoScrape() {
     if (!autoScrapeEnabled) {
         console.log('[Auto-Scrape] Skipped - disabled');
@@ -293,7 +332,15 @@ async function performAutoScrape() {
             const city = cityConfig.key; // Lowercase key/name
 
             // Loop through configured sources for this city
-            for (const [source, isActive] of Object.entries(cityConfig.sources)) {
+            // Updated structure: sources is an object where value contains { isActive, enabledScopes, externalId }
+            for (const [source, sourceConfig] of Object.entries(cityConfig.sources)) {
+
+                // Backward compatibility or new structure check
+                const isActive = typeof sourceConfig === 'boolean' ? sourceConfig : sourceConfig.isActive;
+                const scopes = (typeof sourceConfig === 'object' && sourceConfig.enabledScopes)
+                    ? sourceConfig.enabledScopes
+                    : ['event', 'venue', 'artist', 'organizer'];
+
                 if (!isActive) continue;
 
                 try {
@@ -307,7 +354,7 @@ async function performAutoScrape() {
                         events = await scrapeTM(city, { limit: 20 });
                     }
 
-                    const stats = await processScrapedEvents(events);
+                    const stats = await processScrapedEvents(events, { geocodeMissing: true, scopes });
 
                     await logScrapeHistory({
                         city,

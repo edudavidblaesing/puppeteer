@@ -11,7 +11,7 @@ import { RelatedEventsList } from '@/components/features/RelatedEventsList';
 import { getBestSourceForField, SOURCE_PRIORITY } from '@/lib/smartMerge';
 import { RelatedVenuesList } from '@/components/features/RelatedVenuesList';
 import { Save, Trash2, X, Globe, FileText, Image as ImageIcon } from 'lucide-react';
-import { updateEvent } from '@/lib/api'; // Added updateEvent
+import { updateEvent, fetchEvent } from '@/lib/api'; // Added updateEvent, fetchEvent
 import { Modal } from '@/components/ui/Modal'; // Added Modal
 import { EventForm } from '@/components/features/EventForm'; // Added EventForm
 import { useToast } from '@/contexts/ToastContext';
@@ -22,9 +22,17 @@ interface OrganizerFormProps {
   onDelete?: (id: string) => Promise<void>;
   onCancel: () => void;
   isLoading?: boolean;
+  isModal?: boolean;
 }
 
-export function OrganizerForm({ initialData, onSubmit, onDelete, onCancel, isLoading }: OrganizerFormProps) {
+export function OrganizerForm({
+  initialData,
+  onSubmit,
+  onDelete,
+  onCancel,
+  isLoading,
+  isModal = false
+}: OrganizerFormProps) {
   const { success, error: showError } = useToast();
   const [formData, setFormData] = useState<Partial<Organizer>>({
     name: '',
@@ -36,8 +44,14 @@ export function OrganizerForm({ initialData, onSubmit, onDelete, onCancel, isLoa
 
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
 
-  const handleEditEvent = (event: Event) => {
-    setEditingEvent(event);
+  const handleEditEvent = async (event: Event) => {
+    try {
+      const fullEvent = await fetchEvent(event.id);
+      setEditingEvent(fullEvent || event);
+    } catch (e) {
+      console.error(e);
+      setEditingEvent(event);
+    }
   };
 
   const handleEventSubmit = async (data: Partial<Event>) => {
@@ -114,30 +128,35 @@ export function OrganizerForm({ initialData, onSubmit, onDelete, onCancel, isLoa
   return (
     <div className="h-full flex flex-col bg-white dark:bg-gray-900">
       {/* Header */}
-      <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between bg-gray-50 dark:bg-gray-900/50">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-          {initialData?.id ? 'Edit Organizer' : 'New Organizer'}
-        </h2>
-        <div className="flex items-center gap-2">
-          {initialData?.id && onDelete && (
+      {/* Header */}
+      {!isModal && (
+        <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between bg-gray-50 dark:bg-gray-900/50">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+            {initialData?.id ? 'Edit Organizer' : 'New Organizer'}
+          </h2>
+          <div className="flex items-center gap-2">
+            {initialData?.id && onDelete && (
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={() => onDelete(initialData.id!)}
+                disabled={isLoading}
+                leftIcon={<Trash2 className="w-4 h-4" />}
+              >
+                Delete
+              </Button>
+            )}
             <Button
-              variant="danger"
+              variant="ghost"
               size="sm"
-              onClick={() => onDelete(initialData.id!)}
-              disabled={isLoading}
-              leftIcon={<Trash2 className="w-4 h-4" />}
+              onClick={onCancel}
+              leftIcon={<X className="w-4 h-4" />}
             >
-              Delete
+              Cancel
             </Button>
-          )}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onCancel}
-            leftIcon={<X className="w-4 h-4" />}
-          />
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6">
@@ -311,11 +330,13 @@ export function OrganizerForm({ initialData, onSubmit, onDelete, onCancel, isLoa
           isOpen={!!editingEvent}
           onClose={() => setEditingEvent(null)}
           title="Edit Event"
+          noPadding
         >
           <EventForm
             initialData={editingEvent}
             onSubmit={handleEventSubmit}
             onCancel={() => setEditingEvent(null)}
+            isModal
           />
         </Modal>
       )}

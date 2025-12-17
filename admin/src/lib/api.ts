@@ -683,12 +683,16 @@ export async function fetchSources() {
 
 // Toggle source active state
 export async function toggleSource(id: number | string, isActive: boolean) {
+  return updateSource(id, { is_active: isActive });
+}
+
+export async function updateSource(id: number | string, data: Record<string, any>) {
   const response = await fetch(`${API_URL}/db/sources/${id}`, {
     method: 'PATCH',
     headers,
-    body: JSON.stringify({ is_active: isActive }),
+    body: JSON.stringify(data),
   });
-  if (!response.ok) throw new Error('Failed to toggle source');
+  if (!response.ok) throw new Error('Failed to update source');
   return response.json();
 }
 

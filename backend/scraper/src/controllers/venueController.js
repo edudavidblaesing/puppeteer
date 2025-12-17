@@ -624,9 +624,12 @@ const updateVenue = async (req, res) => {
         const { id } = req.params;
         const updates = req.body;
 
-        // Use legacy update logic directly on 'venues' table for now
-        // to ensure we update the main table.
-        // Ideally we should update the 'original' source and then refresh.
+        // Fetch current field_sources
+        const currentRes = await pool.query('SELECT field_sources FROM venues WHERE id = $1', [id]);
+        if (currentRes.rows.length === 0) {
+            return res.status(404).json({ error: 'Venue not found' });
+        }
+        const fieldSources = currentRes.rows[0].field_sources || {};
 
         const allowedFields = ['name', 'address', 'city', 'country', 'content_url', 'latitude', 'longitude'];
         const setClauses = [];
@@ -635,6 +638,7 @@ const updateVenue = async (req, res) => {
 
         for (const [key, value] of Object.entries(updates)) {
             if (allowedFields.includes(key)) {
+                fieldSources[key] = 'og';
                 setClauses.push(`${key} = $${paramIndex++}`);
                 values.push(value);
             }
@@ -643,6 +647,9 @@ const updateVenue = async (req, res) => {
         if (setClauses.length === 0) {
             return res.status(400).json({ error: 'No valid fields to update' });
         }
+
+        setClauses.push(`field_sources = $${paramIndex++}::jsonb`);
+        values.push(JSON.stringify(fieldSources));
 
         setClauses.push('updated_at = CURRENT_TIMESTAMP');
         values.push(id);
