@@ -4,6 +4,7 @@ const { stringSimilarity, cleanVenueAddress } = require('../utils/stringUtils');
 const { geocodeAddress } = require('./geocoder');
 const { mergeSourceData } = require('./unifiedService');
 const { searchArtist, getArtistDetails } = require('./musicBrainzService');
+const spotifyService = require('./spotifyService');
 
 // Refresh main event with merged data from all linked scraped sources
 async function refreshMainEvent(eventId) {
@@ -594,6 +595,7 @@ async function refreshMainArtist(artistId) {
                 WHEN 'og' THEN 1 
                 WHEN 'manual' THEN 1
                 WHEN 'musicbrainz' THEN 2
+                WHEN 'spotify' THEN 3
                 ELSE 10 
             END ASC
     `, [artistId]);
@@ -738,6 +740,43 @@ async function matchAndLinkArtists(options = {}) {
 
                 await refreshMainArtist(bestMatch.id);
             }
+            // Check for missing high-value fields (Setup for Best Data Wins)
+            if (!bestMatch.image_url && !dryRun) {
+                try {
+                    const spotArtist = await spotifyService.searchArtist(scraped.name);
+                    if (spotArtist && stringSimilarity(scraped.name, spotArtist.name) > 0.8) {
+                        const spotifyData = await spotifyService.getArtistDetails(spotArtist.id);
+                        if (spotifyData && spotifyData.image_url) {
+                            // Insert Spotify Source
+                            const spotRes = await pool.query(`
+                                    INSERT INTO scraped_artists (
+                                        source_code, source_artist_id, name, country, genres, image_url, content_url, artist_type, updated_at
+                                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)
+                                    ON CONFLICT (source_code, source_artist_id) DO UPDATE SET
+                                        image_url = EXCLUDED.image_url,
+                                        updated_at = CURRENT_TIMESTAMP
+                                    RETURNING id
+                                `, [
+                                'spotify', spotifyData.source_artist_id, spotifyData.name, null,
+                                JSON.stringify(spotifyData.genres), spotifyData.image_url, spotifyData.content_url, 'artist'
+                            ]);
+
+                            // Link it
+                            await pool.query(`
+                                    INSERT INTO artist_scraped_links (artist_id, scraped_artist_id, match_confidence)
+                                    VALUES ($1, $2, 1.0)
+                                    ON CONFLICT DO NOTHING
+                                `, [bestMatch.id, spotRes.rows[0].id]);
+
+                            // Refresh to pull in the image
+                            await refreshMainArtist(bestMatch.id);
+                        }
+                    }
+                } catch (err) {
+                    console.warn(`[Spotify] Enrichment failed for matched ${scraped.name}: ${err.message}`);
+                }
+            }
+
             matched++;
             results.push({
                 action: 'matched',
@@ -747,71 +786,104 @@ async function matchAndLinkArtists(options = {}) {
             });
         } else {
             // NO LOCAL MATCH FOUND
-            // Try MusicBrainz lookup to enrich/find authoritative data
-            let musicBrainzArtist = null;
+
+            // --- Enrichment Phase (MusicBrainz & Spotify) ---
+            let musicBrainzData = null;
+            let spotifyData = null;
             let mbScrapedId = null;
+            let spotifyScrapedId = null;
 
             if (!dryRun) {
+                // 1. MusicBrainz Lookup
                 try {
                     const mbResults = await searchArtist(scraped.name);
                     if (mbResults.length > 0) {
                         const top = mbResults[0];
-                        // Verify similarity
                         if (stringSimilarity(scraped.name, top.name) > 0.8) {
-                            const details = await getArtistDetails(top.id);
-
-                            // Insert/Update MusicBrainz entry in scraped_artists
-                            // We need to store it so we can link it
+                            musicBrainzData = await getArtistDetails(top.id);
+                            // Insert MusicBrainz Source
                             const mbRes = await pool.query(`
                                 INSERT INTO scraped_artists (
                                     source_code, source_artist_id, name, country, genres, image_url, content_url, artist_type, updated_at
                                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)
                                 ON CONFLICT (source_code, source_artist_id) DO UPDATE SET
-                                    name = EXCLUDED.name,
-                                    country = COALESCE(EXCLUDED.country, scraped_artists.country),
-                                    genres = COALESCE(EXCLUDED.genres, scraped_artists.genres),
-                                    artist_type = COALESCE(EXCLUDED.artist_type, scraped_artists.artist_type),
-                                    content_url = COALESCE(EXCLUDED.content_url, scraped_artists.content_url),
                                     updated_at = CURRENT_TIMESTAMP
                                 RETURNING id
                             `, [
-                                details.source_code,
-                                details.source_artist_id,
-                                details.name,
-                                details.country,
-                                JSON.stringify(details.genres_list), // MusicBrainz service returns flattened list
-                                null, // MB doesn't give direct image easily in basic query, usually requires cover art archive or fan art
-                                details.content_url,
-                                details.artist_type
+                                'musicbrainz', // forced source code
+                                musicBrainzData.source_artist_id,
+                                musicBrainzData.name,
+                                musicBrainzData.country,
+                                JSON.stringify(musicBrainzData.genres_list),
+                                null, // MB usually no image
+                                musicBrainzData.content_url,
+                                musicBrainzData.artist_type
                             ]);
-
                             mbScrapedId = mbRes.rows[0].id;
-                            musicBrainzArtist = details;
                         }
                     }
                 } catch (err) {
                     console.warn(`[MusicBrainz] Lookup failed for ${scraped.name}: ${err.message}`);
                 }
-            }
 
-            if (!dryRun) {
+                // 2. Spotify Lookup (Best Data: Image & Genres)
+                // We try Spotify if MB is missing OR if we just want rich data.
+                // Assuming "Best Data Wins", we always check Spotify for visuals.
+                try {
+                    const spotArtist = await spotifyService.searchArtist(scraped.name);
+                    if (spotArtist) {
+                        if (stringSimilarity(scraped.name, spotArtist.name) > 0.8) {
+                            spotifyData = await spotifyService.getArtistDetails(spotArtist.id);
+
+                            // Insert Spotify Source
+                            const spotRes = await pool.query(`
+                                INSERT INTO scraped_artists (
+                                    source_code, source_artist_id, name, country, genres, image_url, content_url, artist_type, updated_at
+                                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)
+                                ON CONFLICT (source_code, source_artist_id) DO UPDATE SET
+                                    image_url = EXCLUDED.image_url,
+                                    genres = EXCLUDED.genres,
+                                    updated_at = CURRENT_TIMESTAMP
+                                RETURNING id
+                            `, [
+                                'spotify',
+                                spotifyData.source_artist_id,
+                                spotifyData.name,
+                                null, // Spotify API usually doesn't give country of origin for artist (available_markets is distinct)
+                                JSON.stringify(spotifyData.genres),
+                                spotifyData.image_url,
+                                spotifyData.content_url,
+                                'artist' // generic type
+                            ]);
+                            spotifyScrapedId = spotRes.rows[0].id;
+                        }
+                    }
+                } catch (err) {
+                    console.warn(`[Spotify] Lookup failed for ${scraped.name}: ${err.message}`);
+                }
+
                 const artistId = uuidv4();
 
-                // Determine initial data for main artist
-                // Prefer MusicBrainz if available
-                const initialName = musicBrainzArtist ? musicBrainzArtist.name : scraped.name;
-                const initialCountry = musicBrainzArtist ? musicBrainzArtist.country : (scraped.country || null);
-                const initialUrl = musicBrainzArtist ? musicBrainzArtist.content_url : scraped.content_url;
-                const initialImage = scraped.image_url; // MB usually doesn't have image
-                const initialType = musicBrainzArtist ? musicBrainzArtist.artist_type : (scraped.artist_type || null);
+                // Determine Best Initial Data
+                // Priority: MusicBrainz (Meta), Spotify (Image/Genre), Scraper (Fallback)
+                const initialName = musicBrainzData?.name || spotifyData?.name || scraped.name;
+                const initialCountry = musicBrainzData?.country || scraped.country || null;
+                const initialUrl = musicBrainzData?.content_url || spotifyData?.content_url || scraped.content_url;
+                // Image Priority: Spotify > Scraper > MB (usually null)
+                const initialImage = spotifyData?.image_url || scraped.image_url || null;
+                // Genres: Merge? Or Spotify? Spotify has good pop genres. MB has tag-clouds.
+                // For now, let's rely on refreshMainArtist logic to merge them, 
+                // but for initial creation we assume MB or Spotify is good.
+                const initialType = musicBrainzData?.artist_type || scraped.artist_type || null;
 
                 await pool.query(`
                     INSERT INTO artists (id, source_code, source_id, name, country, content_url, image_url, artist_type, created_at, updated_at)
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 `, [
                     artistId,
-                    musicBrainzArtist ? 'musicbrainz' : scraped.source_code,
-                    musicBrainzArtist ? musicBrainzArtist.source_artist_id : scraped.source_artist_id,
+                    // Main source identity
+                    musicBrainzData ? 'musicbrainz' : (spotifyData ? 'spotify' : scraped.source_code),
+                    musicBrainzData ? musicBrainzData.source_artist_id : (spotifyData ? spotifyData.source_artist_id : scraped.source_artist_id),
                     initialName,
                     initialCountry,
                     initialUrl,
@@ -819,7 +891,12 @@ async function matchAndLinkArtists(options = {}) {
                     initialType
                 ]);
 
-                // Link MusicBrainz Source if exists
+                // Link Sources
+                await pool.query(`
+                    INSERT INTO artist_scraped_links (artist_id, scraped_artist_id, match_confidence, is_primary)
+                    VALUES ($1, $2, 1.0, $3)
+                `, [artistId, scraped.id, !(mbScrapedId || spotifyScrapedId)]); // Primary if no enriched sources
+
                 if (mbScrapedId) {
                     await pool.query(`
                         INSERT INTO artist_scraped_links (artist_id, scraped_artist_id, match_confidence, is_primary)
@@ -827,27 +904,20 @@ async function matchAndLinkArtists(options = {}) {
                     `, [artistId, mbScrapedId]);
                 }
 
-                // Link Original Scraped Source
-                // If MB exists, MB is primary (priority via code='musicbrainz' handled in refresh), 
-                // but scraper logic sets is_primary=true for this one in else block below.
-                // We should probably set is_primary=true for MB if it exists, and false for this one?
-                // Actually `refreshMainArtist` uses priority score based on source_code, so is_primary flag is less critical for data merge,
-                // but good for UI.
-
-                const isPrimary = !mbScrapedId; // If MB used, it's primary
-
-                await pool.query(`
-                    INSERT INTO artist_scraped_links (artist_id, scraped_artist_id, match_confidence, is_primary)
-                    VALUES ($1, $2, 1.0, $3)
-                `, [artistId, scraped.id, isPrimary]);
+                if (spotifyScrapedId) {
+                    await pool.query(`
+                        INSERT INTO artist_scraped_links (artist_id, scraped_artist_id, match_confidence, is_primary)
+                        VALUES ($1, $2, 1.0, false)
+                    `, [artistId, spotifyScrapedId]);
+                }
 
                 created++;
                 results.push({
                     action: 'created',
                     scraped: { id: scraped.id, name: scraped.name, source: scraped.source_code },
-                    main: { id: artistId, name: initialName, enriched: !!musicBrainzArtist }
+                    main: { id: artistId, name: initialName, enriched: !!(musicBrainzData || spotifyData) }
                 });
-            }
+            } // end if !dryRun
         }
     }
 
