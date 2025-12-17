@@ -1,6 +1,6 @@
 import { User } from '@/types';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3007';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://pptr.davidblaesing.com';
 const headers = {
     'Content-Type': 'application/json',
     'x-api-key': process.env.NEXT_PUBLIC_API_KEY || '',

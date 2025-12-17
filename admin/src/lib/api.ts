@@ -1,6 +1,6 @@
 import { Event, Organizer, Venue, City } from '@/types';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3007';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://pptr.davidblaesing.com';
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'your-secure-api-key-here';
 
 const headers = {

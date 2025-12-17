@@ -575,11 +575,11 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
   const filteredEvents = useMemo(() => {
     // Apply smart sorting: timing first (Live > Upcoming > Past), then status
     const sorted = sortEventsSmart(events);
-    console.log('Sorted events:', sorted.slice(0, 5).map(e => ({ 
-      title: e.title, 
-      date: e.date, 
+    console.log('Sorted events:', sorted.slice(0, 5).map(e => ({
+      title: e.title,
+      date: e.date,
       timing: getEventTiming(e),
-      status: e.publish_status 
+      status: e.publish_status
     })));
     return sorted;
   }, [events]);
@@ -623,15 +623,15 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
     const addressField = activeTab === 'venues' ? editForm.address : editForm.venue_address;
     const cityField = activeTab === 'venues' ? editForm.city : editForm.venue_city;
     const countryField = activeTab === 'venues' ? editForm.country : editForm.venue_country;
-    
+
     if (!addressField || !cityField) {
       setGeocodeError('Please provide at least address and city');
       return;
     }
-    
+
     setIsGeocoding(true);
     setGeocodeError('');
-    
+
     try {
       // Clean and normalize address components
       const cleanAddress = (str: string) => {
@@ -685,9 +685,9 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
           `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchAddress)}&limit=1`,
           { headers: { 'User-Agent': 'SocialEventsAdmin/1.0' } }
         );
-        
+
         const data = await response.json();
-        
+
         if (data && data.length > 0) {
           result = data[0];
           break;
@@ -696,7 +696,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
         // Small delay between requests to respect rate limits
         await new Promise(resolve => setTimeout(resolve, 300));
       }
-      
+
       if (result) {
         setEditForm({
           ...editForm,
@@ -719,15 +719,15 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
   const reverseGeocode = async (lat: number, lon: number) => {
     setIsGeocoding(true);
     setGeocodeError('');
-    
+
     try {
       const response = await fetch(
         `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`,
         { headers: { 'User-Agent': 'SocialEventsAdmin/1.0' } }
       );
-      
+
       const data = await response.json();
-      
+
       if (data && data.address) {
         const addr = data.address;
         // Build full address: house_number + road/street
@@ -738,7 +738,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
         } else if (addr.road || addr.pedestrian || addr.path) {
           fullAddress = addr.road || addr.pedestrian || addr.path;
         }
-        
+
         // Use correct field names based on active tab
         if (activeTab === 'venues') {
           setEditForm({
@@ -1095,10 +1095,10 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
 
     const L = require('leaflet');
     const isDarkMode = document.documentElement.classList.contains('dark');
-    const tileUrl = isDarkMode 
+    const tileUrl = isDarkMode
       ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
       : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
-    
+
     const map = L.map(staticMapRef.current, {
       center: [editForm.latitude, editForm.longitude],
       zoom: 15,
@@ -1111,13 +1111,13 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
       keyboard: false,
       tap: false
     });
-    
+
     L.tileLayer(tileUrl, {
       attribution: '© OSM © CARTO',
       subdomains: 'abcd',
       maxZoom: 19,
     }).addTo(map);
-    
+
     // Add simple marker
     const markerIcon = L.divIcon({
       className: 'simple-marker',
@@ -1125,12 +1125,12 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
       iconSize: [24, 24],
       iconAnchor: [12, 12],
     });
-    
-    L.marker([editForm.latitude, editForm.longitude], { 
+
+    L.marker([editForm.latitude, editForm.longitude], {
       icon: markerIcon,
-      interactive: false 
+      interactive: false
     }).addTo(map);
-    
+
     staticMapInstance.current = map;
 
     return () => {
@@ -1855,9 +1855,9 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                         if (!confirm(`Reject ${pastPendingEvents.length} past pending events?`)) return;
                         try {
                           await setPublishStatus(pastPendingEvents.map(e => e.id), 'rejected');
-                          setEvents(events.map(ev => 
-                            pastPendingEvents.find(pe => pe.id === ev.id) 
-                              ? { ...ev, publish_status: 'rejected' } 
+                          setEvents(events.map(ev =>
+                            pastPendingEvents.find(pe => pe.id === ev.id)
+                              ? { ...ev, publish_status: 'rejected' }
                               : ev
                           ));
                         } catch (err) { console.error(err); }
@@ -1942,9 +1942,9 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                       return (
                         <div
                           key={event.id}
-                          onClick={() => { 
+                          onClick={() => {
                             setShowEditPanel(true);
-                            handleEdit(event); 
+                            handleEdit(event);
                           }}
                           className={clsx(
                             "px-4 py-2.5 flex items-center gap-3 cursor-pointer border-b transition-colors pending-stripes bg-white dark:bg-gray-900 hover:bg-amber-50 dark:hover:bg-gray-800",
@@ -2211,11 +2211,11 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                     </div>
                     <div className="max-h-48 overflow-auto">
                       {scrapedEvents.slice(0, 10).map((event) => (
-                        <div 
-                          key={event.id} 
+                        <div
+                          key={event.id}
                           onClick={() => {
                             // Find if there's a matching main event linked to this scraped event
-                            const mainEvent = events.find(e => 
+                            const mainEvent = events.find(e =>
                               e.source_references?.some((ref: any) => ref.scraped_event_id === event.id)
                             );
                             if (mainEvent) {
@@ -2262,370 +2262,370 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
               {/* RIGHT SIDE - Stats & Controls (when no edit panel) */}
               {!showEditPanel && (
                 <div className="flex-1 overflow-auto p-6 bg-gray-50 dark:bg-gray-900">
-                <div className="max-w-3xl mx-auto space-y-6">
-                  {/* Sync Progress Banner - Shown when syncing */}
-                  {isSyncing && syncProgress && (
-                    <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-700 rounded-lg p-4">
-                      <div className="flex items-start gap-3">
-                        <RefreshCw className="w-5 h-5 text-indigo-600 dark:text-indigo-400 animate-spin flex-shrink-0 mt-0.5" />
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-indigo-900 dark:text-indigo-100 mb-1">Pipeline Running</p>
-                          <div className="space-y-1 text-sm text-indigo-700 dark:text-indigo-300">
-                            <p>{syncProgress}</p>
-                            {scrapeStats?.last_scraped_city && (
-                              <p className="text-xs">
-                                <span className="text-indigo-600 dark:text-indigo-400 font-medium">City:</span> {scrapeStats.last_scraped_city}
-                                {scrapeStats.last_scraped_source && (
-                                  <span className="ml-3">
-                                    <span className="text-indigo-600 dark:text-indigo-400 font-medium">Source:</span> {scrapeStats.last_scraped_source.toUpperCase()}
-                                  </span>
-                                )}
-                              </p>
-                            )}
+                  <div className="max-w-3xl mx-auto space-y-6">
+                    {/* Sync Progress Banner - Shown when syncing */}
+                    {isSyncing && syncProgress && (
+                      <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-700 rounded-lg p-4">
+                        <div className="flex items-start gap-3">
+                          <RefreshCw className="w-5 h-5 text-indigo-600 dark:text-indigo-400 animate-spin flex-shrink-0 mt-0.5" />
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-indigo-900 dark:text-indigo-100 mb-1">Pipeline Running</p>
+                            <div className="space-y-1 text-sm text-indigo-700 dark:text-indigo-300">
+                              <p>{syncProgress}</p>
+                              {scrapeStats?.last_scraped_city && (
+                                <p className="text-xs">
+                                  <span className="text-indigo-600 dark:text-indigo-400 font-medium">City:</span> {scrapeStats.last_scraped_city}
+                                  {scrapeStats.last_scraped_source && (
+                                    <span className="ml-3">
+                                      <span className="text-indigo-600 dark:text-indigo-400 font-medium">Source:</span> {scrapeStats.last_scraped_source.toUpperCase()}
+                                    </span>
+                                  )}
+                                </p>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  )}
+                    )}
 
-                  {/* Last Scraped Info */}
-                  {scrapeStats?.last_scraped_at && !isSyncing && (
-                    <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
-                      <div className="flex items-center justify-between">
+                    {/* Last Scraped Info */}
+                    {scrapeStats?.last_scraped_at && !isSyncing && (
+                      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="w-3 h-3 bg-green-500 dark:bg-green-600 rounded-full animate-pulse" />
+                            <span className="text-sm text-gray-600 dark:text-gray-300">
+                              Last synced: <span className="font-medium text-gray-900 dark:text-gray-100">
+                                {new Date(scrapeStats.last_scraped_at).toLocaleString('en-US', {
+                                  month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                                })}
+                              </span>
+                              {scrapeStats.last_scraped_city && (
+                                <span className="text-gray-500 dark:text-gray-400"> • {scrapeStats.last_scraped_city}</span>
+                              )}
+                              {scrapeStats.last_scraped_source && (
+                                scrapeStats.last_scraped_source === 'ra' ? (
+                                  <img src="/ra-logo.jpg" alt="RA" className="ml-2 h-4 w-auto rounded-sm inline-block" title="Resident Advisor" />
+                                ) : scrapeStats.last_scraped_source === 'ticketmaster' ? (
+                                  <img src="/ticketmaster-logo.png" alt="TM" className="ml-2 h-4 w-auto rounded-sm inline-block" title="Ticketmaster" />
+                                ) : (
+                                  <span className={`ml-2 px-1.5 py-0.5 rounded text-xs font-medium border bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-700`}>
+                                    {scrapeStats.last_scraped_source.toUpperCase()}
+                                  </span>
+                                )
+                              )}
+                            </span>
+                          </div>
+                          {historyTotals && (
+                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                              {historyTotals.total_scrape_runs} total runs
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Next Auto-Scrape Info */}
+                    {scrapeStats?.next_scheduled_scrape && scrapeStats?.auto_scrape_enabled && (
+                      <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-700 rounded-lg p-4">
                         <div className="flex items-center gap-3">
-                          <div className="w-3 h-3 bg-green-500 dark:bg-green-600 rounded-full animate-pulse" />
+                          <div className="w-3 h-3 bg-indigo-500 dark:bg-indigo-400 rounded-full" />
                           <span className="text-sm text-gray-600 dark:text-gray-300">
-                            Last synced: <span className="font-medium text-gray-900 dark:text-gray-100">
-                              {new Date(scrapeStats.last_scraped_at).toLocaleString('en-US', {
+                            Next auto-scrape: <span className="font-medium text-indigo-900 dark:text-indigo-100">
+                              {new Date(scrapeStats.next_scheduled_scrape).toLocaleString('en-US', {
                                 month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
                               })}
                             </span>
-                            {scrapeStats.last_scraped_city && (
-                              <span className="text-gray-500 dark:text-gray-400"> • {scrapeStats.last_scraped_city}</span>
-                            )}
-                            {scrapeStats.last_scraped_source && (
-                              scrapeStats.last_scraped_source === 'ra' ? (
-                                <img src="/ra-logo.jpg" alt="RA" className="ml-2 h-4 w-auto rounded-sm inline-block" title="Resident Advisor" />
-                              ) : scrapeStats.last_scraped_source === 'ticketmaster' ? (
-                                <img src="/ticketmaster-logo.png" alt="TM" className="ml-2 h-4 w-auto rounded-sm inline-block" title="Ticketmaster" />
-                              ) : (
-                                <span className={`ml-2 px-1.5 py-0.5 rounded text-xs font-medium border bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-700`}>
-                                  {scrapeStats.last_scraped_source.toUpperCase()}
-                                </span>
-                              )
-                            )}
+                            <span className="text-gray-500 dark:text-gray-400 ml-2">
+                              (Daily at 2:00 AM • Berlin & Hamburg)
+                            </span>
                           </span>
                         </div>
-                        {historyTotals && (
-                          <span className="text-xs text-gray-500 dark:text-gray-400">
-                            {historyTotals.total_scrape_runs} total runs
-                          </span>
-                        )}
                       </div>
-                    </div>
-                  )}
+                    )}
 
-                  {/* Next Auto-Scrape Info */}
-                  {scrapeStats?.next_scheduled_scrape && scrapeStats?.auto_scrape_enabled && (
-                    <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-700 rounded-lg p-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-3 h-3 bg-indigo-500 dark:bg-indigo-400 rounded-full" />
-                        <span className="text-sm text-gray-600 dark:text-gray-300">
-                          Next auto-scrape: <span className="font-medium text-indigo-900 dark:text-indigo-100">
-                            {new Date(scrapeStats.next_scheduled_scrape).toLocaleString('en-US', {
-                              month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
-                            })}
-                          </span>
-                          <span className="text-gray-500 dark:text-gray-400 ml-2">
-                            (Daily at 2:00 AM • Berlin & Hamburg)
-                          </span>
-                        </span>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Sync Controls Card */}
-                  <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
-                    <h3 className="font-semibold text-lg mb-4 flex items-center gap-2 text-gray-900 dark:text-gray-100">
-                      <CloudDownload className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-                      Fetch New Events
-                    </h3>
-
-                    <div className="space-y-4">
-                      <div className="grid md:grid-cols-2 gap-4">
-                        {/* City Selection */}
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">City</label>
-                          <select
-                            value={scrapeCity}
-                            onChange={(e) => setScrapeCity(e.target.value)}
-                            className="w-full px-3 py-2.5 sm:py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 focus:border-indigo-500 transition-colors text-base sm:text-sm"
-                          >
-                            <option value="all">🌍 All Cities</option>
-                            <optgroup label="🇩🇪 Germany">
-                              <option value="berlin">Berlin</option>
-                              <option value="hamburg">Hamburg</option>
-                              <option value="munich">Munich</option>
-                              <option value="cologne">Cologne</option>
-                              <option value="frankfurt">Frankfurt</option>
-                              <option value="dusseldorf">Düsseldorf</option>
-                              <option value="stuttgart">Stuttgart</option>
-                              <option value="leipzig">Leipzig</option>
-                              <option value="dresden">Dresden</option>
-                            </optgroup>
-                            <optgroup label="🇬🇧 UK">
-                              <option value="london">London</option>
-                              <option value="manchester">Manchester</option>
-                              <option value="birmingham">Birmingham</option>
-                              <option value="glasgow">Glasgow</option>
-                              <option value="bristol">Bristol</option>
-                            </optgroup>
-                            <optgroup label="🇪🇺 Europe">
-                              <option value="amsterdam">Amsterdam</option>
-                              <option value="paris">Paris</option>
-                              <option value="barcelona">Barcelona</option>
-                              <option value="vienna">Vienna</option>
-                              <option value="prague">Prague</option>
-                              <option value="ibiza">Ibiza</option>
-                            </optgroup>
-                            <optgroup label="🇺🇸 USA">
-                              <option value="new york">New York</option>
-                              <option value="los angeles">Los Angeles</option>
-                              <option value="miami">Miami</option>
-                              <option value="detroit">Detroit</option>
-                            </optgroup>
-                          </select>
-                        </div>
-
-                        {/* Source Selection */}
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Sources</label>
-                          <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 mt-3">
-                            <label className="flex items-center gap-2.5 cursor-pointer py-2 sm:py-0 touch-manipulation">
-                              <input
-                                type="checkbox"
-                                checked={scrapeSources.includes('ra')}
-                                onChange={() => toggleSource('ra')}
-                                className="w-5 h-5 sm:w-4 sm:h-4 rounded text-indigo-600 dark:text-indigo-400 border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-indigo-500"
-                              />
-                              <span className="text-sm sm:text-base text-gray-900 dark:text-gray-100 font-medium">Resident Advisor</span>
-                            </label>
-                            <label className="flex items-center gap-2.5 cursor-pointer py-2 sm:py-0 touch-manipulation">
-                              <input
-                                type="checkbox"
-                                checked={scrapeSources.includes('ticketmaster')}
-                                onChange={() => toggleSource('ticketmaster')}
-                                className="w-5 h-5 sm:w-4 sm:h-4 rounded text-indigo-600 dark:text-indigo-400 border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-indigo-500"
-                              />
-                              <span className="text-sm sm:text-base text-gray-900 dark:text-gray-100 font-medium">Ticketmaster</span>
-                            </label>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Sync Button */}
-                      <button
-                        onClick={handleSyncWorkflow}
-                        disabled={isSyncing || scrapeSources.length === 0}
-                        className="w-full px-6 py-3.5 sm:py-3 bg-indigo-600 dark:bg-indigo-500 text-white rounded-lg hover:bg-indigo-700 dark:hover:bg-indigo-600 active:bg-indigo-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 font-medium shadow-lg hover:shadow-xl transition-all touch-manipulation text-base sm:text-sm"
-                      >
-                        {isSyncing ? (
-                          <>
-                            <RefreshCw className="w-5 h-5 sm:w-4 sm:h-4 animate-spin" />
-                            <span className="font-normal">{syncProgress || 'Running Pipeline...'}</span>
-                          </>
-                        ) : (
-                          <>
-                            <CloudDownload className="w-5 h-5 sm:w-4 sm:h-4" />
-                            <span>Sync {scrapeCity === 'all' ? 'All Cities' : scrapeCity.charAt(0).toUpperCase() + scrapeCity.slice(1)}</span>
-                          </>
-                        )}
-                      </button>
-
-                      {/* Pipeline Info */}
-                      <div className="px-3 sm:px-4 py-2.5 sm:py-3 bg-indigo-50 dark:bg-indigo-950/30 rounded-lg border border-indigo-200 dark:border-indigo-800 text-xs sm:text-sm">
-                        <div className="flex items-start gap-2">
-                          <Layers className="w-4 h-4 text-indigo-600 dark:text-indigo-400 flex-shrink-0 mt-0.5" />
-                          <div>
-                            <p className="font-medium text-indigo-900 dark:text-indigo-100">Automated Pipeline</p>
-                            <p className="text-indigo-700 dark:text-indigo-300 mt-0.5">Scrape → Dedupe → Match → Enrich → Sync</p>
-                            {scrapeCity === 'all' && (
-                              <p className="text-amber-600 dark:text-amber-400 mt-2 flex items-center gap-1">
-                                <AlertTriangle className="w-3 h-3" />
-                                Syncing all cities may take several minutes
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Sync Result */}
-                      {syncResult && (
-                        <div className={clsx(
-                          'p-4 rounded-lg border',
-                          syncResult.error
-                            ? 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 border-red-200 dark:border-red-700'
-                            : 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 border-green-200 dark:border-green-700'
-                        )}>
-                          {syncResult.error ? (
-                            <p>Error: {syncResult.error}</p>
-                          ) : (
-                            <div className="space-y-1 text-sm">
-                              <p className="font-medium">✓ Sync completed</p>
-                              {syncResult.scrape && (
-                                <p className="text-xs">{syncResult.scrape.fetched || 0} fetched, {syncResult.scrape.inserted || 0} new</p>
-                              )}
-                              {syncResult.dedupe && (
-                                <p className="text-xs">{syncResult.dedupe.events_merged || 0} events merged</p>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Stats Overview - Clean Minimal Design */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                    <StatCard 
-                      label="Total Events" 
-                      value={scrapeStats?.total_main_events || 0}
-                      subtext={`${scrapeStats?.approved_events || 0} live • ${scrapeStats?.pending_events || 0} pending`}
-                      sparkData={scrapeHistory.slice(-14).reverse().map(d => d.events_inserted || 0)}
-                      sparkColor="#10b981"
-                      icon={<Calendar className="w-4 h-4 sm:w-5 sm:h-5" />}
-                    />
-                    <StatCard 
-                      label="Pending Review" 
-                      value={scrapeStats?.pending_events || 0}
-                      variant="warning"
-                      icon={<AlertTriangle className="w-4 h-4 sm:w-5 sm:h-5" />}
-                    />
-                    <StatCard 
-                      label="Venues" 
-                      value={scrapeStats?.total_main_venues || 0}
-                      subtext={scrapeStats?.total_scraped_venues ? `${scrapeStats.total_scraped_venues} from sources` : undefined}
-                      sparkData={scrapeHistory.slice(-14).reverse().map(d => d.venues_created || 0)}
-                      sparkColor="#6366f1"
-                      icon={<Building2 className="w-4 h-4 sm:w-5 sm:h-5" />}
-                    />
-                    <StatCard 
-                      label="Artists" 
-                      value={scrapeStats?.total_main_artists || 0}
-                      subtext={scrapeStats?.total_scraped_artists ? `${scrapeStats.total_scraped_artists} from sources` : undefined}
-                      sparkData={scrapeHistory.slice(-14).reverse().map(d => d.artists_created || 0)}
-                      sparkColor="#8b5cf6"
-                      icon={<Music className="w-4 h-4 sm:w-5 sm:h-5" />}
-                    />
-                  </div>
-
-                  {/* Source Stats */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700/50 rounded-lg p-4 hover:shadow-md transition-shadow">
-                      <div className="flex items-center gap-2 mb-3">
-                        <img src="/ra-logo.jpg" alt="RA" className="h-5 sm:h-6 w-auto rounded shadow-sm" />
-                        <span className="text-sm sm:text-base font-medium text-gray-600 dark:text-gray-300">Resident Advisor</span>
-                      </div>
-                      <div className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-100">{(scrapeStats?.ra_events || 0).toLocaleString()}</div>
-                      <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-1">events scraped</p>
-                    </div>
-                    <div className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700/50 rounded-lg p-4 hover:shadow-md transition-shadow">
-                      <div className="flex items-center gap-2 mb-3">
-                        <img src="/ticketmaster-logo.png" alt="TM" className="h-5 sm:h-6 w-auto rounded shadow-sm" />
-                        <span className="text-sm sm:text-base font-medium text-gray-600 dark:text-gray-300">Ticketmaster</span>
-                      </div>
-                      <div className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-100">{(scrapeStats?.ticketmaster_events || 0).toLocaleString()}</div>
-                      <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-1">events scraped</p>
-                    </div>
-                  </div>
-
-                  {/* Activity Timeline Chart */}
-                  {scrapeHistory.length > 0 && (
-                    <div className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700/50 rounded-lg p-5">
-                      <div className="flex items-center justify-between mb-4">
-                        <h3 className="font-medium text-gray-900 dark:text-gray-100 flex items-center gap-2">
-                          <Layers className="w-4 h-4 text-gray-400" />
-                          Activity Timeline
-                        </h3>
-                        <span className="text-xs text-gray-400 dark:text-gray-500">Last 30 days</span>
-                      </div>
-                      <ActivityTimeline data={scrapeHistory} height={140} />
-                    </div>
-                  )}
-
-                  {/* Recently Updated Events Section */}
-                  {recentlyUpdatedEvents.length > 0 && (
-                    <div className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700/50 rounded-lg p-5">
-                      <div className="flex items-center justify-between mb-4">
-                        <h3 className="font-medium text-gray-900 dark:text-gray-100 flex items-center gap-2">
-                          <RotateCcw className="w-4 h-4 text-amber-500" />
-                          Recently Updated Events
-                          <span className="px-2 py-0.5 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-xs rounded font-medium">
-                            {recentlyUpdatedEvents.length}
-                          </span>
-                        </h3>
-                      </div>
-                      <div className="space-y-2 max-h-64 overflow-auto">
-                        {recentlyUpdatedEvents.slice(0, 10).map((event) => {
-                          const sources = event.source_references?.reduce((acc: string[], ref: any) => {
-                            if (ref.source_code && !acc.includes(ref.source_code)) acc.push(ref.source_code);
-                            return acc;
-                          }, [] as string[]) || [];
-                          return (
-                            <div 
-                              key={event.id}
-                              onClick={() => { 
-                                setActiveTabState('events'); 
-                                setShowEditPanel(true);
-                                handleEdit(event); 
-                              }}
-                              className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition-colors"
-                            >
-                              <div className="w-8 h-8 rounded bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center flex-shrink-0">
-                                <RotateCcw className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2">
-                                  <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{event.title}</p>
-                                  {(!event.latitude || !event.longitude) && (
-                                    <span title="Missing coordinates" className="flex-shrink-0">
-                                      <MapPin className="w-3 h-3 text-amber-500 dark:text-amber-400" />
-                                    </span>
-                                  )}
-                                </div>
-                                <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{event.venue_name} • {event.venue_city}</p>
-                              </div>
-                              <div className="flex items-center gap-2 flex-shrink-0">
-                                {sources.map((source: string) => (
-                                  source === 'ra' ? (
-                                    <img key={source} src="/ra-logo.jpg" alt="RA" className="h-4 w-auto rounded-sm" />
-                                  ) : source === 'ticketmaster' ? (
-                                    <img key={source} src="/ticketmaster-logo.png" alt="TM" className="h-4 w-auto rounded-sm" />
-                                  ) : null
-                                ))}
-                                <span className="text-xs text-gray-400 dark:text-gray-500">
-                                  {event.updated_at ? format(new Date(event.updated_at), 'MMM d HH:mm') : ''}
-                                </span>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Recent Activity */}
-                  {recentScrapes.length > 0 && (
-                    <div className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700/50 rounded-lg p-5">
-                      <h3 className="font-medium text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
-                        <RefreshCw className="w-4 h-4 text-gray-400" />
-                        Recent Scrapes
+                    {/* Sync Controls Card */}
+                    <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
+                      <h3 className="font-semibold text-lg mb-4 flex items-center gap-2 text-gray-900 dark:text-gray-100">
+                        <CloudDownload className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                        Fetch New Events
                       </h3>
-                      <RecentActivity activities={recentScrapes} />
+
+                      <div className="space-y-4">
+                        <div className="grid md:grid-cols-2 gap-4">
+                          {/* City Selection */}
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">City</label>
+                            <select
+                              value={scrapeCity}
+                              onChange={(e) => setScrapeCity(e.target.value)}
+                              className="w-full px-3 py-2.5 sm:py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 focus:border-indigo-500 transition-colors text-base sm:text-sm"
+                            >
+                              <option value="all">🌍 All Cities</option>
+                              <optgroup label="🇩🇪 Germany">
+                                <option value="berlin">Berlin</option>
+                                <option value="hamburg">Hamburg</option>
+                                <option value="munich">Munich</option>
+                                <option value="cologne">Cologne</option>
+                                <option value="frankfurt">Frankfurt</option>
+                                <option value="dusseldorf">Düsseldorf</option>
+                                <option value="stuttgart">Stuttgart</option>
+                                <option value="leipzig">Leipzig</option>
+                                <option value="dresden">Dresden</option>
+                              </optgroup>
+                              <optgroup label="🇬🇧 UK">
+                                <option value="london">London</option>
+                                <option value="manchester">Manchester</option>
+                                <option value="birmingham">Birmingham</option>
+                                <option value="glasgow">Glasgow</option>
+                                <option value="bristol">Bristol</option>
+                              </optgroup>
+                              <optgroup label="🇪🇺 Europe">
+                                <option value="amsterdam">Amsterdam</option>
+                                <option value="paris">Paris</option>
+                                <option value="barcelona">Barcelona</option>
+                                <option value="vienna">Vienna</option>
+                                <option value="prague">Prague</option>
+                                <option value="ibiza">Ibiza</option>
+                              </optgroup>
+                              <optgroup label="🇺🇸 USA">
+                                <option value="new york">New York</option>
+                                <option value="los angeles">Los Angeles</option>
+                                <option value="miami">Miami</option>
+                                <option value="detroit">Detroit</option>
+                              </optgroup>
+                            </select>
+                          </div>
+
+                          {/* Source Selection */}
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Sources</label>
+                            <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 mt-3">
+                              <label className="flex items-center gap-2.5 cursor-pointer py-2 sm:py-0 touch-manipulation">
+                                <input
+                                  type="checkbox"
+                                  checked={scrapeSources.includes('ra')}
+                                  onChange={() => toggleSource('ra')}
+                                  className="w-5 h-5 sm:w-4 sm:h-4 rounded text-indigo-600 dark:text-indigo-400 border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-indigo-500"
+                                />
+                                <span className="text-sm sm:text-base text-gray-900 dark:text-gray-100 font-medium">Resident Advisor</span>
+                              </label>
+                              <label className="flex items-center gap-2.5 cursor-pointer py-2 sm:py-0 touch-manipulation">
+                                <input
+                                  type="checkbox"
+                                  checked={scrapeSources.includes('ticketmaster')}
+                                  onChange={() => toggleSource('ticketmaster')}
+                                  className="w-5 h-5 sm:w-4 sm:h-4 rounded text-indigo-600 dark:text-indigo-400 border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-indigo-500"
+                                />
+                                <span className="text-sm sm:text-base text-gray-900 dark:text-gray-100 font-medium">Ticketmaster</span>
+                              </label>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Sync Button */}
+                        <button
+                          onClick={handleSyncWorkflow}
+                          disabled={isSyncing || scrapeSources.length === 0}
+                          className="w-full px-6 py-3.5 sm:py-3 bg-indigo-600 dark:bg-indigo-500 text-white rounded-lg hover:bg-indigo-700 dark:hover:bg-indigo-600 active:bg-indigo-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 font-medium shadow-lg hover:shadow-xl transition-all touch-manipulation text-base sm:text-sm"
+                        >
+                          {isSyncing ? (
+                            <>
+                              <RefreshCw className="w-5 h-5 sm:w-4 sm:h-4 animate-spin" />
+                              <span className="font-normal">{syncProgress || 'Running Pipeline...'}</span>
+                            </>
+                          ) : (
+                            <>
+                              <CloudDownload className="w-5 h-5 sm:w-4 sm:h-4" />
+                              <span>Sync {scrapeCity === 'all' ? 'All Cities' : scrapeCity.charAt(0).toUpperCase() + scrapeCity.slice(1)}</span>
+                            </>
+                          )}
+                        </button>
+
+                        {/* Pipeline Info */}
+                        <div className="px-3 sm:px-4 py-2.5 sm:py-3 bg-indigo-50 dark:bg-indigo-950/30 rounded-lg border border-indigo-200 dark:border-indigo-800 text-xs sm:text-sm">
+                          <div className="flex items-start gap-2">
+                            <Layers className="w-4 h-4 text-indigo-600 dark:text-indigo-400 flex-shrink-0 mt-0.5" />
+                            <div>
+                              <p className="font-medium text-indigo-900 dark:text-indigo-100">Automated Pipeline</p>
+                              <p className="text-indigo-700 dark:text-indigo-300 mt-0.5">Scrape → Dedupe → Match → Enrich → Sync</p>
+                              {scrapeCity === 'all' && (
+                                <p className="text-amber-600 dark:text-amber-400 mt-2 flex items-center gap-1">
+                                  <AlertTriangle className="w-3 h-3" />
+                                  Syncing all cities may take several minutes
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Sync Result */}
+                        {syncResult && (
+                          <div className={clsx(
+                            'p-4 rounded-lg border',
+                            syncResult.error
+                              ? 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 border-red-200 dark:border-red-700'
+                              : 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 border-green-200 dark:border-green-700'
+                          )}>
+                            {syncResult.error ? (
+                              <p>Error: {syncResult.error}</p>
+                            ) : (
+                              <div className="space-y-1 text-sm">
+                                <p className="font-medium">✓ Sync completed</p>
+                                {syncResult.scrape && (
+                                  <p className="text-xs">{syncResult.scrape.fetched || 0} fetched, {syncResult.scrape.inserted || 0} new</p>
+                                )}
+                                {syncResult.dedupe && (
+                                  <p className="text-xs">{syncResult.dedupe.events_merged || 0} events merged</p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  )}
+
+                    {/* Stats Overview - Clean Minimal Design */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                      <StatCard
+                        label="Total Events"
+                        value={scrapeStats?.total_main_events || 0}
+                        subtext={`${scrapeStats?.approved_events || 0} live • ${scrapeStats?.pending_events || 0} pending`}
+                        sparkData={scrapeHistory.slice(-14).reverse().map(d => d.events_inserted || 0)}
+                        sparkColor="#10b981"
+                        icon={<Calendar className="w-4 h-4 sm:w-5 sm:h-5" />}
+                      />
+                      <StatCard
+                        label="Pending Review"
+                        value={scrapeStats?.pending_events || 0}
+                        variant="warning"
+                        icon={<AlertTriangle className="w-4 h-4 sm:w-5 sm:h-5" />}
+                      />
+                      <StatCard
+                        label="Venues"
+                        value={scrapeStats?.total_main_venues || 0}
+                        subtext={scrapeStats?.total_scraped_venues ? `${scrapeStats.total_scraped_venues} from sources` : undefined}
+                        sparkData={scrapeHistory.slice(-14).reverse().map(d => d.venues_created || 0)}
+                        sparkColor="#6366f1"
+                        icon={<Building2 className="w-4 h-4 sm:w-5 sm:h-5" />}
+                      />
+                      <StatCard
+                        label="Artists"
+                        value={scrapeStats?.total_main_artists || 0}
+                        subtext={scrapeStats?.total_scraped_artists ? `${scrapeStats.total_scraped_artists} from sources` : undefined}
+                        sparkData={scrapeHistory.slice(-14).reverse().map(d => d.artists_created || 0)}
+                        sparkColor="#8b5cf6"
+                        icon={<Music className="w-4 h-4 sm:w-5 sm:h-5" />}
+                      />
+                    </div>
+
+                    {/* Source Stats */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700/50 rounded-lg p-4 hover:shadow-md transition-shadow">
+                        <div className="flex items-center gap-2 mb-3">
+                          <img src="/ra-logo.jpg" alt="RA" className="h-5 sm:h-6 w-auto rounded shadow-sm" />
+                          <span className="text-sm sm:text-base font-medium text-gray-600 dark:text-gray-300">Resident Advisor</span>
+                        </div>
+                        <div className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-100">{(scrapeStats?.ra_events || 0).toLocaleString()}</div>
+                        <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-1">events scraped</p>
+                      </div>
+                      <div className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700/50 rounded-lg p-4 hover:shadow-md transition-shadow">
+                        <div className="flex items-center gap-2 mb-3">
+                          <img src="/ticketmaster-logo.png" alt="TM" className="h-5 sm:h-6 w-auto rounded shadow-sm" />
+                          <span className="text-sm sm:text-base font-medium text-gray-600 dark:text-gray-300">Ticketmaster</span>
+                        </div>
+                        <div className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-100">{(scrapeStats?.ticketmaster_events || 0).toLocaleString()}</div>
+                        <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-1">events scraped</p>
+                      </div>
+                    </div>
+
+                    {/* Activity Timeline Chart */}
+                    {scrapeHistory.length > 0 && (
+                      <div className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700/50 rounded-lg p-5">
+                        <div className="flex items-center justify-between mb-4">
+                          <h3 className="font-medium text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                            <Layers className="w-4 h-4 text-gray-400" />
+                            Activity Timeline
+                          </h3>
+                          <span className="text-xs text-gray-400 dark:text-gray-500">Last 30 days</span>
+                        </div>
+                        <ActivityTimeline data={scrapeHistory} height={140} />
+                      </div>
+                    )}
+
+                    {/* Recently Updated Events Section */}
+                    {recentlyUpdatedEvents.length > 0 && (
+                      <div className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700/50 rounded-lg p-5">
+                        <div className="flex items-center justify-between mb-4">
+                          <h3 className="font-medium text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                            <RotateCcw className="w-4 h-4 text-amber-500" />
+                            Recently Updated Events
+                            <span className="px-2 py-0.5 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-xs rounded font-medium">
+                              {recentlyUpdatedEvents.length}
+                            </span>
+                          </h3>
+                        </div>
+                        <div className="space-y-2 max-h-64 overflow-auto">
+                          {recentlyUpdatedEvents.slice(0, 10).map((event) => {
+                            const sources = event.source_references?.reduce((acc: string[], ref: any) => {
+                              if (ref.source_code && !acc.includes(ref.source_code)) acc.push(ref.source_code);
+                              return acc;
+                            }, [] as string[]) || [];
+                            return (
+                              <div
+                                key={event.id}
+                                onClick={() => {
+                                  setActiveTabState('events');
+                                  setShowEditPanel(true);
+                                  handleEdit(event);
+                                }}
+                                className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition-colors"
+                              >
+                                <div className="w-8 h-8 rounded bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center flex-shrink-0">
+                                  <RotateCcw className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{event.title}</p>
+                                    {(!event.latitude || !event.longitude) && (
+                                      <span title="Missing coordinates" className="flex-shrink-0">
+                                        <MapPin className="w-3 h-3 text-amber-500 dark:text-amber-400" />
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{event.venue_name} • {event.venue_city}</p>
+                                </div>
+                                <div className="flex items-center gap-2 flex-shrink-0">
+                                  {sources.map((source: string) => (
+                                    source === 'ra' ? (
+                                      <img key={source} src="/ra-logo.jpg" alt="RA" className="h-4 w-auto rounded-sm" />
+                                    ) : source === 'ticketmaster' ? (
+                                      <img key={source} src="/ticketmaster-logo.png" alt="TM" className="h-4 w-auto rounded-sm" />
+                                    ) : null
+                                  ))}
+                                  <span className="text-xs text-gray-400 dark:text-gray-500">
+                                    {event.updated_at ? format(new Date(event.updated_at), 'MMM d HH:mm') : ''}
+                                  </span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Recent Activity */}
+                    {recentScrapes.length > 0 && (
+                      <div className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700/50 rounded-lg p-5">
+                        <h3 className="font-medium text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
+                          <RefreshCw className="w-4 h-4 text-gray-400" />
+                          Recent Scrapes
+                        </h3>
+                        <RecentActivity activities={recentScrapes} />
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
               )}
             </div>
           ) : (
@@ -2806,165 +2806,165 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                             Event Details
                           </h3>
 
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Title</label>
-                          <input
-                            type="text"
-                            value={editForm.title || ''}
-                            onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
-                            className="w-full px-3 py-2.5 sm:py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 focus:border-indigo-500 dark:focus:border-indigo-400 transition-colors"
-                            placeholder="Enter event title"
-                          />
-                          {/* Inline source suggestions for Title */}
-                          {sourceReferences.length > 0 && (
-                            <div className="mt-1 flex flex-wrap gap-2">
-                              {sourceReferences
-                                .filter((s: any) => s.title && s.title !== editForm.title)
-                                .map((source: any, idx: number) => (
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Title</label>
+                            <input
+                              type="text"
+                              value={editForm.title || ''}
+                              onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
+                              className="w-full px-3 py-2.5 sm:py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 focus:border-indigo-500 dark:focus:border-indigo-400 transition-colors"
+                              placeholder="Enter event title"
+                            />
+                            {/* Inline source suggestions for Title */}
+                            {sourceReferences.length > 0 && (
+                              <div className="mt-1 flex flex-wrap gap-2">
+                                {sourceReferences
+                                  .filter((s: any) => s.title && s.title !== editForm.title)
+                                  .map((source: any, idx: number) => (
+                                    <button
+                                      key={`title-${idx}`}
+                                      type="button"
+                                      onClick={() => setEditForm({ ...editForm, title: source.title })}
+                                      className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-700 rounded text-xs text-left transition-colors group max-w-full"
+                                      title={`Use title from ${source.source_code?.toUpperCase()}`}
+                                    >
+                                      {source.source_code === 'ra' ? (
+                                        <img src="/ra-logo.jpg" alt="RA" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                      ) : source.source_code === 'ticketmaster' ? (
+                                        <img src="/ticketmaster-logo.png" alt="TM" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                      ) : (
+                                        <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
+                                      )}
+                                      <span className="truncate max-w-[200px] text-gray-600 dark:text-gray-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
+                                        {source.title}
+                                      </span>
+                                    </button>
+                                  ))}
+                                {/* Reset to original if changed */}
+                                {editingItem && editingItem.title !== editForm.title && (
                                   <button
-                                    key={`title-${idx}`}
                                     type="button"
-                                    onClick={() => setEditForm({ ...editForm, title: source.title })}
-                                    className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-700 rounded text-xs text-left transition-colors group max-w-full"
-                                    title={`Use title from ${source.source_code?.toUpperCase()}`}
+                                    onClick={() => setEditForm({ ...editForm, title: editingItem.title })}
+                                    className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded text-xs text-gray-500 transition-colors"
                                   >
-                                    {source.source_code === 'ra' ? (
-                                      <img src="/ra-logo.jpg" alt="RA" className="h-3 w-auto rounded-sm flex-shrink-0" />
-                                    ) : source.source_code === 'ticketmaster' ? (
-                                      <img src="/ticketmaster-logo.png" alt="TM" className="h-3 w-auto rounded-sm flex-shrink-0" />
-                                    ) : (
-                                      <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
-                                    )}
-                                    <span className="truncate max-w-[200px] text-gray-600 dark:text-gray-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
-                                      {source.title}
-                                    </span>
+                                    <RotateCcw className="w-3 h-3" />
+                                    Reset
                                   </button>
-                                ))}
-                              {/* Reset to original if changed */}
-                              {editingItem && editingItem.title !== editForm.title && (
-                                <button
-                                  type="button"
-                                  onClick={() => setEditForm({ ...editForm, title: editingItem.title })}
-                                  className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded text-xs text-gray-500 transition-colors"
-                                >
-                                  <RotateCcw className="w-3 h-3" />
-                                  Reset
-                                </button>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Date</label>
+                              <input
+                                type="date"
+                                value={editForm.date || ''}
+                                onChange={(e) => setEditForm({ ...editForm, date: e.target.value })}
+                                className="w-full px-3 py-2.5 sm:py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 focus:border-indigo-500 dark:focus:border-indigo-400 transition-colors"
+                              />
+                              {/* Inline source suggestions for Date */}
+                              {sourceReferences.length > 0 && (
+                                <div className="mt-1 flex flex-wrap gap-2">
+                                  {sourceReferences
+                                    .filter((s: any) => s.date && s.date !== editForm.date)
+                                    .map((source: any, idx: number) => {
+                                      // Format source date to YYYY-MM-DD
+                                      let dateStr = '';
+                                      try {
+                                        if (source.date) dateStr = new Date(source.date).toISOString().split('T')[0];
+                                      } catch (e) { return null; }
+
+                                      if (!dateStr || dateStr === editForm.date) return null;
+
+                                      return (
+                                        <button
+                                          key={`date-${idx}`}
+                                          type="button"
+                                          onClick={() => setEditForm({ ...editForm, date: dateStr })}
+                                          className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-700 rounded text-xs text-left transition-colors group"
+                                        >
+                                          {source.source_code === 'ra' ? (
+                                            <img src="/ra-logo.jpg" alt="RA" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                          ) : source.source_code === 'ticketmaster' ? (
+                                            <img src="/ticketmaster-logo.png" alt="TM" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                          ) : (
+                                            <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
+                                          )}
+                                          <span className="text-gray-600 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
+                                            {dateStr}
+                                          </span>
+                                        </button>
+                                      );
+                                    })}
+
+                                </div>
                               )}
                             </div>
-                          )}
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Date</label>
-                            <input
-                              type="date"
-                              value={editForm.date || ''}
-                              onChange={(e) => setEditForm({ ...editForm, date: e.target.value })}
-                              className="w-full px-3 py-2.5 sm:py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 focus:border-indigo-500 dark:focus:border-indigo-400 transition-colors"
-                            />
-                            {/* Inline source suggestions for Date */}
-                            {sourceReferences.length > 0 && (
-                              <div className="mt-1 flex flex-wrap gap-2">
-                                {sourceReferences
-                                  .filter((s: any) => s.date && s.date !== editForm.date)
-                                  .map((source: any, idx: number) => {
-                                    // Format source date to YYYY-MM-DD
-                                    let dateStr = '';
-                                    try {
-                                      if (source.date) dateStr = new Date(source.date).toISOString().split('T')[0];
-                                    } catch (e) { return null; }
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Start Time</label>
+                              <input
+                                type="time"
+                                value={editForm.start_time || ''}
+                                onChange={(e) => setEditForm({ ...editForm, start_time: e.target.value })}
+                                className="w-full px-3 py-2.5 sm:py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 focus:border-indigo-500 dark:focus:border-indigo-400 transition-colors"
+                              />
+                              {/* Inline source suggestions for Time */}
+                              {sourceReferences.length > 0 && (
+                                <div className="mt-1 flex flex-wrap gap-2">
+                                  {sourceReferences
+                                    .filter((s: any) => {
+                                      if (!s.start_time) return false;
+                                      // Normalize time format
+                                      let timeStr = s.start_time;
+                                      if (timeStr.includes('T')) timeStr = timeStr.split('T')[1];
+                                      timeStr = timeStr.substring(0, 5);
+                                      return timeStr !== editForm.start_time;
+                                    })
+                                    .map((source: any, idx: number) => {
+                                      let timeStr = source.start_time;
+                                      if (timeStr.includes('T')) timeStr = timeStr.split('T')[1];
+                                      timeStr = timeStr.substring(0, 5);
 
-                                    if (!dateStr || dateStr === editForm.date) return null;
+                                      return (
+                                        <button
+                                          key={`time-${idx}`}
+                                          type="button"
+                                          onClick={() => setEditForm({ ...editForm, start_time: timeStr })}
+                                          className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-700 rounded text-xs text-left transition-colors group"
+                                        >
+                                          {source.source_code === 'ra' ? (
+                                            <img src="/ra-logo.jpg" alt="RA" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                          ) : source.source_code === 'ticketmaster' ? (
+                                            <img src="/ticketmaster-logo.png" alt="TM" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                          ) : (
+                                            <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
+                                          )}
+                                          <span className="text-gray-600 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
+                                            {timeStr}
+                                          </span>
+                                        </button>
+                                      );
+                                    })}
 
-                                    return (
-                                      <button
-                                        key={`date-${idx}`}
-                                        type="button"
-                                        onClick={() => setEditForm({ ...editForm, date: dateStr })}
-                                        className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-700 rounded text-xs text-left transition-colors group"
-                                      >
-                                        {source.source_code === 'ra' ? (
-                                          <img src="/ra-logo.jpg" alt="RA" className="h-3 w-auto rounded-sm flex-shrink-0" />
-                                        ) : source.source_code === 'ticketmaster' ? (
-                                          <img src="/ticketmaster-logo.png" alt="TM" className="h-3 w-auto rounded-sm flex-shrink-0" />
-                                        ) : (
-                                          <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
-                                        )}
-                                        <span className="text-gray-600 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
-                                          {dateStr}
-                                        </span>
-                                      </button>
-                                    );
-                                  })}
-
-                              </div>
-                            )}
+                                </div>
+                              )}
+                            </div>
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Start Time</label>
-                            <input
-                              type="time"
-                              value={editForm.start_time || ''}  
-                              onChange={(e) => setEditForm({ ...editForm, start_time: e.target.value })}
-                              className="w-full px-3 py-2.5 sm:py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 focus:border-indigo-500 dark:focus:border-indigo-400 transition-colors"
-                            />
-                            {/* Inline source suggestions for Time */}
-                            {sourceReferences.length > 0 && (
-                              <div className="mt-1 flex flex-wrap gap-2">
-                                {sourceReferences
-                                  .filter((s: any) => {
-                                    if (!s.start_time) return false;
-                                    // Normalize time format
-                                    let timeStr = s.start_time;
-                                    if (timeStr.includes('T')) timeStr = timeStr.split('T')[1];
-                                    timeStr = timeStr.substring(0, 5);
-                                    return timeStr !== editForm.start_time;
-                                  })
-                                  .map((source: any, idx: number) => {
-                                    let timeStr = source.start_time;
-                                    if (timeStr.includes('T')) timeStr = timeStr.split('T')[1];
-                                    timeStr = timeStr.substring(0, 5);
-
-                                    return (
-                                      <button
-                                        key={`time-${idx}`}
-                                        type="button"
-                                        onClick={() => setEditForm({ ...editForm, start_time: timeStr })}
-                                        className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-700 rounded text-xs text-left transition-colors group"
-                                      >
-                                        {source.source_code === 'ra' ? (
-                                          <img src="/ra-logo.jpg" alt="RA" className="h-3 w-auto rounded-sm flex-shrink-0" />
-                                        ) : source.source_code === 'ticketmaster' ? (
-                                          <img src="/ticketmaster-logo.png" alt="TM" className="h-3 w-auto rounded-sm flex-shrink-0" />
-                                        ) : (
-                                          <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
-                                        )}
-                                        <span className="text-gray-600 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
-                                          {timeStr}
-                                        </span>
-                                      </button>
-                                    );
-                                  })}
-
-                              </div>
-                            )}
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Event Type</label>
+                            <select
+                              value={editForm.event_type || 'event'}
+                              onChange={(e) => setEditForm({ ...editForm, event_type: e.target.value as EventType })}
+                              className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
+                            >
+                              {EVENT_TYPES.map((type) => (
+                                <option key={type.value} value={type.value}>
+                                  {type.icon} {type.label}
+                                </option>
+                              ))}
+                            </select>
                           </div>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Event Type</label>
-                          <select
-                            value={editForm.event_type || 'event'}
-                            onChange={(e) => setEditForm({ ...editForm, event_type: e.target.value as EventType })}
-                            className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
-                          >
-                            {EVENT_TYPES.map((type) => (
-                              <option key={type.value} value={type.value}>
-                                {type.icon} {type.label}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
                         </div> {/* End Event Details Section */}
 
                         {/* Venue Information Section */}
@@ -2983,7 +2983,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                                   // After a brief delay to ensure tab switch, open the venue
                                   setTimeout(async () => {
                                     try {
-                                      const venueData = await fetch(`http://localhost:3001/db/venues/${editForm.venue_id}`).then(r => r.json());
+                                      const venueData = await fetchVenue(editForm.venue_id);
                                       setEditingItem(venueData);
                                       setEditForm(venueData);
                                     } catch (error) {
@@ -2999,244 +2999,244 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                             )}
                           </div>
 
-                        {editForm.venue_id ? (
-                          // Read-only display when venue is linked
-                          <div className="space-y-3">
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Venue</label>
-                              <div className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
-                                {editForm.venue_name || 'No venue'}
+                          {editForm.venue_id ? (
+                            // Read-only display when venue is linked
+                            <div className="space-y-3">
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Venue</label>
+                                <div className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+                                  {editForm.venue_name || 'No venue'}
+                                </div>
+                              </div>
+                              <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">City</label>
+                                  <div className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+                                    {editForm.venue_city || '-'}
+                                  </div>
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Country</label>
+                                  <div className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+                                    {editForm.venue_country || '-'}
+                                  </div>
+                                </div>
                               </div>
                             </div>
-                            <div className="grid grid-cols-2 gap-3">
-                              <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">City</label>
-                                <div className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
-                                  {editForm.venue_city || '-'}
-                                </div>
-                              </div>
-                              <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Country</label>
-                                <div className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
-                                  {editForm.venue_country || '-'}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        ) : (
-                          // Editable fields when no venue is linked
-                          <>
-                            <div className="relative">
-                              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Venue</label>
-                              <input
-                                ref={venueInputRef}
-                                type="text"
-                                value={editForm.venue_name || ''}
-                                onChange={(e) => {
-                                  setEditForm({ ...editForm, venue_name: e.target.value });
-                                  setVenueSearch(e.target.value);
-                                }}
-                                onFocus={() => venueSearch.length >= 2 && setShowVenueDropdown(true)}
-                                onBlur={() => setTimeout(() => setShowVenueDropdown(false), 200)}
-                                className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-gray-500 bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
-                                placeholder="Type to search venues..."
-                              />
-                              {showVenueDropdown && venueSuggestions.length > 0 && venueDropdownPos.width > 0 && (
-                                <div 
-                                  className="fixed z-[9999] bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-lg shadow-lg max-h-48 overflow-auto"
-                                  style={{ top: `${venueDropdownPos.top}px`, left: `${venueDropdownPos.left}px`, width: `${venueDropdownPos.width}px` }}
-                                >
-                                  {venueSuggestions.map((venue: any) => (
-                                    <button
-                                      key={venue.id}
-                                      type="button"
-                                      onClick={() => {
-                                        setEditForm({
-                                          ...editForm,
-                                          venue_name: venue.name,
-                                          venue_city: venue.city || editForm.venue_city,
-                                          venue_country: venue.country || editForm.venue_country,
-                                          venue_address: venue.address || editForm.venue_address,
-                                          venue_id: venue.id
-                                        });
-                                        setShowVenueDropdown(false);
-                                        setVenueSearch('');
-                                      }}
-                                      className="w-full px-3 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 border-b dark:border-gray-700 last:border-0"
-                                    >
-                                      <Building2 className="w-4 h-4 text-gray-400" />
-                                      <div>
-                                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{venue.name}</p>
-                                        <p className="text-xs text-gray-500 dark:text-gray-400">{venue.city}, {venue.country}</p>
-                                      </div>
-                                    </button>
-                                  ))}
-                                </div>
-                              )}
-                              {/* Inline source suggestions for Venue Name */}
-                              {sourceReferences.length > 0 && (
-                                <div className="mt-1 flex flex-wrap gap-2">
-                                  {sourceReferences
-                                    .filter((s: any) => s.venue_name && s.venue_name !== editForm.venue_name)
-                                    .map((source: any, idx: number) => (
+                          ) : (
+                            // Editable fields when no venue is linked
+                            <>
+                              <div className="relative">
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Venue</label>
+                                <input
+                                  ref={venueInputRef}
+                                  type="text"
+                                  value={editForm.venue_name || ''}
+                                  onChange={(e) => {
+                                    setEditForm({ ...editForm, venue_name: e.target.value });
+                                    setVenueSearch(e.target.value);
+                                  }}
+                                  onFocus={() => venueSearch.length >= 2 && setShowVenueDropdown(true)}
+                                  onBlur={() => setTimeout(() => setShowVenueDropdown(false), 200)}
+                                  className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-gray-500 bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
+                                  placeholder="Type to search venues..."
+                                />
+                                {showVenueDropdown && venueSuggestions.length > 0 && venueDropdownPos.width > 0 && (
+                                  <div
+                                    className="fixed z-[9999] bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-lg shadow-lg max-h-48 overflow-auto"
+                                    style={{ top: `${venueDropdownPos.top}px`, left: `${venueDropdownPos.left}px`, width: `${venueDropdownPos.width}px` }}
+                                  >
+                                    {venueSuggestions.map((venue: any) => (
                                       <button
-                                        key={`venue-${idx}`}
+                                        key={venue.id}
                                         type="button"
-                                        onClick={() => setEditForm({ ...editForm, venue_name: source.venue_name })}
-                                        className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-700 rounded text-xs text-left transition-colors group max-w-full"
+                                        onClick={() => {
+                                          setEditForm({
+                                            ...editForm,
+                                            venue_name: venue.name,
+                                            venue_city: venue.city || editForm.venue_city,
+                                            venue_country: venue.country || editForm.venue_country,
+                                            venue_address: venue.address || editForm.venue_address,
+                                            venue_id: venue.id
+                                          });
+                                          setShowVenueDropdown(false);
+                                          setVenueSearch('');
+                                        }}
+                                        className="w-full px-3 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 border-b dark:border-gray-700 last:border-0"
                                       >
-                                        {source.source_code === 'ra' ? (
-                                          <img src="/ra-logo.jpg" alt="RA" className="h-3 w-auto rounded-sm flex-shrink-0" />
-                                        ) : source.source_code === 'ticketmaster' ? (
-                                          <img src="/ticketmaster-logo.png" alt="TM" className="h-3 w-auto rounded-sm flex-shrink-0" />
-                                        ) : (
-                                          <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
-                                        )}
-                                        <span className="truncate max-w-[200px] text-gray-600 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
-                                          {source.venue_name}
-                                        </span>
+                                        <Building2 className="w-4 h-4 text-gray-400" />
+                                        <div>
+                                          <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{venue.name}</p>
+                                          <p className="text-xs text-gray-500 dark:text-gray-400">{venue.city}, {venue.country}</p>
+                                        </div>
                                       </button>
                                     ))}
-                                  {editingItem && editingItem.venue_name !== editForm.venue_name && (
-                                    <button
-                                      type="button"
-                                      onClick={() => setEditForm({ ...editForm, venue_name: editingItem.venue_name })}
-                                      className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded text-xs text-gray-500 transition-colors"
-                                    >
-                                      <RotateCcw className="w-3 h-3" />
-                                      Reset
-                                    </button>
+                                  </div>
+                                )}
+                                {/* Inline source suggestions for Venue Name */}
+                                {sourceReferences.length > 0 && (
+                                  <div className="mt-1 flex flex-wrap gap-2">
+                                    {sourceReferences
+                                      .filter((s: any) => s.venue_name && s.venue_name !== editForm.venue_name)
+                                      .map((source: any, idx: number) => (
+                                        <button
+                                          key={`venue-${idx}`}
+                                          type="button"
+                                          onClick={() => setEditForm({ ...editForm, venue_name: source.venue_name })}
+                                          className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-700 rounded text-xs text-left transition-colors group max-w-full"
+                                        >
+                                          {source.source_code === 'ra' ? (
+                                            <img src="/ra-logo.jpg" alt="RA" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                          ) : source.source_code === 'ticketmaster' ? (
+                                            <img src="/ticketmaster-logo.png" alt="TM" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                          ) : (
+                                            <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
+                                          )}
+                                          <span className="truncate max-w-[200px] text-gray-600 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
+                                            {source.venue_name}
+                                          </span>
+                                        </button>
+                                      ))}
+                                    {editingItem && editingItem.venue_name !== editForm.venue_name && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setEditForm({ ...editForm, venue_name: editingItem.venue_name })}
+                                        className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded text-xs text-gray-500 transition-colors"
+                                      >
+                                        <RotateCcw className="w-3 h-3" />
+                                        Reset
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                              <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">City</label>
+                                  <select
+                                    value={editForm.venue_city || ''}
+                                    onChange={(e) => setEditForm({ ...editForm, venue_city: e.target.value })}
+                                    className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
+                                  >
+                                    <option value="">Select city...</option>
+                                    {citiesDropdown.map((city) => (
+                                      <option key={`${city.name}-${city.country}`} value={city.name}>
+                                        {city.name}
+                                      </option>
+                                    ))}
+                                    {/* Allow custom entry if not in list */}
+                                    {editForm.venue_city && !citiesDropdown.find(c => c.name === editForm.venue_city) && (
+                                      <option value={editForm.venue_city}>{editForm.venue_city} (custom)</option>
+                                    )}
+                                  </select>
+                                  {sourceReferences.length > 0 && (
+                                    <div className="mt-1 flex flex-wrap gap-2">
+                                      {sourceReferences
+                                        .filter((s: any) => s.venue_city && s.venue_city !== editForm.venue_city)
+                                        .map((source: any, idx: number) => (
+                                          <button
+                                            key={`vcity-${idx}`}
+                                            type="button"
+                                            onClick={() => setEditForm({ ...editForm, venue_city: source.venue_city })}
+                                            className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-700 rounded text-xs text-left transition-colors group max-w-full"
+                                          >
+                                            <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
+                                            <span className="truncate max-w-[200px] text-gray-600 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
+                                              {source.venue_city}
+                                            </span>
+                                          </button>
+                                        ))}
+                                      {editingItem && editingItem.venue_city !== editForm.venue_city && (
+                                        <button
+                                          type="button"
+                                          onClick={() => setEditForm({ ...editForm, venue_city: editingItem.venue_city })}
+                                          className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded text-xs text-gray-500 transition-colors"
+                                        >
+                                          <RotateCcw className="w-3 h-3" />
+                                          Reset
+                                        </button>
+                                      )}
+                                    </div>
                                   )}
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Country</label>
+                                  <select
+                                    value={editForm.venue_country || ''}
+                                    onChange={(e) => setEditForm({ ...editForm, venue_country: e.target.value })}
+                                    className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
+                                  >
+                                    <option value="">Select country...</option>
+                                    {countriesDropdown.map((country) => (
+                                      <option key={country.name} value={country.name}>
+                                        {country.name} {country.code ? `(${country.code})` : ''}
+                                      </option>
+                                    ))}
+                                    {/* Allow custom entry if not in list */}
+                                    {editForm.venue_country && !countriesDropdown.find(c => c.name === editForm.venue_country) && (
+                                      <option value={editForm.venue_country}>{editForm.venue_country} (custom)</option>
+                                    )}
+                                  </select>
+                                  {sourceReferences.length > 0 && (
+                                    <div className="mt-1 flex flex-wrap gap-2">
+                                      {sourceReferences
+                                        .filter((s: any) => s.venue_country && s.venue_country !== editForm.venue_country)
+                                        .map((source: any, idx: number) => (
+                                          <button
+                                            key={`vcountry-${idx}`}
+                                            type="button"
+                                            onClick={() => setEditForm({ ...editForm, venue_country: source.venue_country })}
+                                            className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-700 rounded text-xs text-left transition-colors group max-w-full"
+                                          >
+                                            <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
+                                            <span className="truncate max-w-[200px] text-gray-600 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
+                                              {source.venue_country}
+                                            </span>
+                                          </button>
+                                        ))}
+                                      {editingItem && editingItem.venue_country !== editForm.venue_country && (
+                                        <button
+                                          type="button"
+                                          onClick={() => setEditForm({ ...editForm, venue_country: editingItem.venue_country })}
+                                          className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded text-xs text-gray-500 transition-colors"
+                                        >
+                                          <RotateCcw className="w-3 h-3" />
+                                          Reset
+                                        </button>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </>
+                          )}
+
+                          {/* Location Info - Read-only from Venue */}
+                          {editForm.venue_id && (
+                            <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg p-4">
+                              <div className="flex items-start gap-2 mb-2">
+                                <MapPin className="w-4 h-4 text-indigo-600 dark:text-indigo-400 mt-0.5 flex-shrink-0" />
+                                <div className="flex-1">
+                                  <p className="text-sm font-medium text-indigo-900 dark:text-indigo-100">Location from Venue</p>
+                                  <p className="text-xs text-indigo-700 dark:text-indigo-300 mt-1">
+                                    Event location is managed by the venue. Click "Edit Venue" above to update coordinates.
+                                  </p>
+                                </div>
+                              </div>
+                              {editForm.latitude && editForm.longitude && (
+                                <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                                  <div className="bg-white/50 dark:bg-gray-800/50 rounded px-2 py-1">
+                                    <span className="text-gray-600 dark:text-gray-400">Lat:</span>
+                                    <span className="ml-1 font-mono text-gray-900 dark:text-gray-100">{editForm.latitude}</span>
+                                  </div>
+                                  <div className="bg-white/50 dark:bg-gray-800/50 rounded px-2 py-1">
+                                    <span className="text-gray-600 dark:text-gray-400">Lon:</span>
+                                    <span className="ml-1 font-mono text-gray-900 dark:text-gray-100">{editForm.longitude}</span>
+                                  </div>
                                 </div>
                               )}
                             </div>
-                            <div className="grid grid-cols-2 gap-3">
-                              <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">City</label>
-                                <select
-                                  value={editForm.venue_city || ''}
-                                  onChange={(e) => setEditForm({ ...editForm, venue_city: e.target.value })}
-                                  className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
-                                >
-                                  <option value="">Select city...</option>
-                                  {citiesDropdown.map((city) => (
-                                    <option key={`${city.name}-${city.country}`} value={city.name}>
-                                      {city.name}
-                                    </option>
-                                  ))}
-                                  {/* Allow custom entry if not in list */}
-                                  {editForm.venue_city && !citiesDropdown.find(c => c.name === editForm.venue_city) && (
-                                    <option value={editForm.venue_city}>{editForm.venue_city} (custom)</option>
-                                  )}
-                                </select>
-                                {sourceReferences.length > 0 && (
-                                  <div className="mt-1 flex flex-wrap gap-2">
-                                    {sourceReferences
-                                      .filter((s: any) => s.venue_city && s.venue_city !== editForm.venue_city)
-                                      .map((source: any, idx: number) => (
-                                        <button
-                                          key={`vcity-${idx}`}
-                                          type="button"
-                                          onClick={() => setEditForm({ ...editForm, venue_city: source.venue_city })}
-                                          className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-700 rounded text-xs text-left transition-colors group max-w-full"
-                                        >
-                                          <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
-                                          <span className="truncate max-w-[200px] text-gray-600 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
-                                            {source.venue_city}
-                                          </span>
-                                        </button>
-                                      ))}
-                                    {editingItem && editingItem.venue_city !== editForm.venue_city && (
-                                      <button
-                                        type="button"
-                                        onClick={() => setEditForm({ ...editForm, venue_city: editingItem.venue_city })}
-                                        className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded text-xs text-gray-500 transition-colors"
-                                      >
-                                        <RotateCcw className="w-3 h-3" />
-                                        Reset
-                                      </button>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                              <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Country</label>
-                                <select
-                                  value={editForm.venue_country || ''}
-                                  onChange={(e) => setEditForm({ ...editForm, venue_country: e.target.value })}
-                                  className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
-                                >
-                                  <option value="">Select country...</option>
-                                  {countriesDropdown.map((country) => (
-                                    <option key={country.name} value={country.name}>
-                                      {country.name} {country.code ? `(${country.code})` : ''}
-                                    </option>
-                                  ))}
-                                  {/* Allow custom entry if not in list */}
-                                  {editForm.venue_country && !countriesDropdown.find(c => c.name === editForm.venue_country) && (
-                                    <option value={editForm.venue_country}>{editForm.venue_country} (custom)</option>
-                                  )}
-                                </select>
-                                {sourceReferences.length > 0 && (
-                                  <div className="mt-1 flex flex-wrap gap-2">
-                                    {sourceReferences
-                                      .filter((s: any) => s.venue_country && s.venue_country !== editForm.venue_country)
-                                      .map((source: any, idx: number) => (
-                                        <button
-                                          key={`vcountry-${idx}`}
-                                          type="button"
-                                          onClick={() => setEditForm({ ...editForm, venue_country: source.venue_country })}
-                                          className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-700 rounded text-xs text-left transition-colors group max-w-full"
-                                        >
-                                          <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
-                                          <span className="truncate max-w-[200px] text-gray-600 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
-                                            {source.venue_country}
-                                          </span>
-                                        </button>
-                                      ))}
-                                    {editingItem && editingItem.venue_country !== editForm.venue_country && (
-                                      <button
-                                        type="button"
-                                        onClick={() => setEditForm({ ...editForm, venue_country: editingItem.venue_country })}
-                                        className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded text-xs text-gray-500 transition-colors"
-                                      >
-                                        <RotateCcw className="w-3 h-3" />
-                                        Reset
-                                      </button>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </>
-                        )}
-
-                        {/* Location Info - Read-only from Venue */}
-                        {editForm.venue_id && (
-                          <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg p-4">
-                            <div className="flex items-start gap-2 mb-2">
-                              <MapPin className="w-4 h-4 text-indigo-600 dark:text-indigo-400 mt-0.5 flex-shrink-0" />
-                              <div className="flex-1">
-                                <p className="text-sm font-medium text-indigo-900 dark:text-indigo-100">Location from Venue</p>
-                                <p className="text-xs text-indigo-700 dark:text-indigo-300 mt-1">
-                                  Event location is managed by the venue. Click "Edit Venue" above to update coordinates.
-                                </p>
-                              </div>
-                            </div>
-                            {editForm.latitude && editForm.longitude && (
-                              <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                                <div className="bg-white/50 dark:bg-gray-800/50 rounded px-2 py-1">
-                                  <span className="text-gray-600 dark:text-gray-400">Lat:</span>
-                                  <span className="ml-1 font-mono text-gray-900 dark:text-gray-100">{editForm.latitude}</span>
-                                </div>
-                                <div className="bg-white/50 dark:bg-gray-800/50 rounded px-2 py-1">
-                                  <span className="text-gray-600 dark:text-gray-400">Lon:</span>
-                                  <span className="ml-1 font-mono text-gray-900 dark:text-gray-100">{editForm.longitude}</span>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        )}                        </div> {/* End Venue Information Section */}
+                          )}                        </div> {/* End Venue Information Section */}
 
                         {/* Artists Section */}
                         <div className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-lg p-4">
@@ -3245,224 +3245,224 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                             Artists
                           </h3>
 
-                        <div className="relative">
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Add Artists</label>
                           <div className="relative">
-                            <input
-                              ref={artistInputRef}
-                              type="text"
-                              value={artistSearch}
-                              onChange={(e) => setArtistSearch(e.target.value)}
-                              onFocus={() => artistSearch.length >= 2 && setShowArtistDropdown(true)}
-                              onBlur={() => setTimeout(() => setShowArtistDropdown(false), 200)}
-                              className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-gray-500 bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
-                              placeholder="Type to search artists..."
-                            />
-                            {showArtistDropdown && artistDropdownPos.width > 0 && (artistSuggestions.length > 0 || artistSearch.length >= 2) && (
-                              <div 
-                                className="fixed z-[9999] bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-lg shadow-lg max-h-48 overflow-auto"
-                                style={{ top: `${artistDropdownPos.top}px`, left: `${artistDropdownPos.left}px`, width: `${artistDropdownPos.width}px` }}
-                              >
-                                {artistSuggestions.map((artist: any) => (
-                                  <button
-                                    key={artist.id}
-                                    type="button"
-                                    onClick={() => {
-                                      const currentArtists = editForm.artistsList || [];
-                                      if (!currentArtists.includes(artist.name)) {
-                                        const newArtists = [...currentArtists, artist.name];
-                                        setEditForm({ ...editForm, artistsList: newArtists });
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Add Artists</label>
+                            <div className="relative">
+                              <input
+                                ref={artistInputRef}
+                                type="text"
+                                value={artistSearch}
+                                onChange={(e) => setArtistSearch(e.target.value)}
+                                onFocus={() => artistSearch.length >= 2 && setShowArtistDropdown(true)}
+                                onBlur={() => setTimeout(() => setShowArtistDropdown(false), 200)}
+                                className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-gray-500 bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
+                                placeholder="Type to search artists..."
+                              />
+                              {showArtistDropdown && artistDropdownPos.width > 0 && (artistSuggestions.length > 0 || artistSearch.length >= 2) && (
+                                <div
+                                  className="fixed z-[9999] bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-lg shadow-lg max-h-48 overflow-auto"
+                                  style={{ top: `${artistDropdownPos.top}px`, left: `${artistDropdownPos.left}px`, width: `${artistDropdownPos.width}px` }}
+                                >
+                                  {artistSuggestions.map((artist: any) => (
+                                    <button
+                                      key={artist.id}
+                                      type="button"
+                                      onClick={() => {
+                                        const currentArtists = editForm.artistsList || [];
+                                        if (!currentArtists.includes(artist.name)) {
+                                          const newArtists = [...currentArtists, artist.name];
+                                          setEditForm({ ...editForm, artistsList: newArtists });
+                                        }
+                                        setArtistSearch('');
+                                        setShowArtistDropdown(false);
+                                      }}
+                                      className="w-full px-3 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 border-b dark:border-gray-700 last:border-0"
+                                    >
+                                      {artist.image_url ? (
+                                        <img src={artist.image_url} alt="" className="w-6 h-6 rounded-full object-cover" />
+                                      ) : (
+                                        <Music className="w-4 h-4 text-gray-400" />
+                                      )}
+                                      <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{artist.name}</span>
+                                    </button>
+                                  ))}
+                                  {/* Add "Create new artist" option */}
+                                  {artistSearch.length >= 2 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const currentArtists = editForm.artistsList || [];
+                                        const trimmedSearch = artistSearch.trim();
+                                        if (trimmedSearch && !currentArtists.includes(trimmedSearch)) {
+                                          const newArtists = [...currentArtists, trimmedSearch];
+                                          setEditForm({ ...editForm, artistsList: newArtists });
+                                        }
+                                        setArtistSearch('');
+                                        setShowArtistDropdown(false);
+                                      }}
+                                      className="w-full px-3 py-2 text-left hover:bg-indigo-50 dark:hover:bg-indigo-900/30 flex items-center gap-2 border-t-2 border-indigo-200 dark:border-indigo-700 bg-indigo-50/50 dark:bg-indigo-900/10"
+                                    >
+                                      <Plus className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                                      <span className="text-sm font-medium text-indigo-700 dark:text-indigo-400">
+                                        Create "{artistSearch}"
+                                      </span>
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                            {/* Inline source suggestions for Artists */}
+                            {sourceReferences.length > 0 && (
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                {sourceReferences
+                                  .filter((s: any) => {
+                                    if (!s.artists) return false;
+                                    const currentArtistsStr = (editForm.artistsList || []).join(', ').toLowerCase();
+                                    return s.artists.toLowerCase() !== currentArtistsStr;
+                                  })
+                                  .map((source: any, idx: number) => (
+                                    <button
+                                      key={`artists-${idx}`}
+                                      type="button"
+                                      onClick={() => {
+                                        const artistsArray = source.artists.split(',').map((a: string) => a.trim()).filter((a: string) => a);
+                                        setEditForm({ ...editForm, artistsList: artistsArray });
+                                      }}
+                                      className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-700 rounded text-xs text-left transition-colors group max-w-full"
+                                      title={`Use artists from ${source.source_code?.toUpperCase()}`}
+                                    >
+                                      {source.source_code === 'ra' ? (
+                                        <img src="/ra-logo.jpg" alt="RA" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                      ) : source.source_code === 'ticketmaster' ? (
+                                        <img src="/ticketmaster-logo.png" alt="TM" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                      ) : (
+                                        <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
+                                      )}
+                                      <span className="truncate max-w-[200px] text-gray-600 dark:text-gray-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
+                                        {source.artists}
+                                      </span>
+                                    </button>
+                                  ))}
+                                {/* Reset to original if changed */}
+                                {(() => {
+                                  if (!editingItem || !editingItem.artists) return null;
+
+                                  // Parse original artists to array
+                                  let originalArtists: string[] = [];
+                                  try {
+                                    if (typeof editingItem.artists === 'string') {
+                                      // Try JSON parse first
+                                      try {
+                                        const parsed = JSON.parse(editingItem.artists);
+                                        originalArtists = Array.isArray(parsed)
+                                          ? parsed.map((a: any) => a.name || a).filter(Boolean)
+                                          : editingItem.artists.split(',').map((a: string) => a.trim()).filter(Boolean);
+                                      } catch {
+                                        // Not JSON, treat as comma-separated
+                                        originalArtists = editingItem.artists.split(',').map((a: string) => a.trim()).filter(Boolean);
                                       }
-                                      setArtistSearch('');
-                                      setShowArtistDropdown(false);
-                                    }}
-                                    className="w-full px-3 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 border-b dark:border-gray-700 last:border-0"
+                                    }
+                                  } catch {
+                                    return null;
+                                  }
+
+                                  // Compare with current
+                                  const currentArtists = editForm.artistsList || [];
+                                  const hasChanged = JSON.stringify(originalArtists.sort()) !== JSON.stringify(currentArtists.sort());
+
+                                  if (!hasChanged) return null;
+
+                                  return (
+                                    <button
+                                      type="button"
+                                      onClick={() => setEditForm({ ...editForm, artistsList: originalArtists })}
+                                      className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded text-xs text-gray-500 transition-colors"
+                                    >
+                                      <RotateCcw className="w-3 h-3" />
+                                      Reset
+                                    </button>
+                                  );
+                                })()}
+                              </div>
+                            )}
+                            {/* Selected artists display */}
+                            {editForm.artistsList && editForm.artistsList.length > 0 && (
+                              <div className="flex flex-wrap gap-2 mt-2">
+                                {editForm.artistsList.map((artistName: string, idx: number) => (
+                                  <span
+                                    key={idx}
+                                    draggable
+                                    onDragStart={(e) => e.dataTransfer.setData('text/plain', idx.toString())}
+                                    onDragOver={(e) => e.preventDefault()}
+                                    onDrop={(e) => handleArtistDrop(e, idx)}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-100 dark:bg-gray-800 text-indigo-700 dark:text-gray-300 rounded-full text-sm border dark:border-gray-600 cursor-move"
                                   >
-                                    {artist.image_url ? (
-                                      <img src={artist.image_url} alt="" className="w-6 h-6 rounded-full object-cover" />
-                                    ) : (
-                                      <Music className="w-4 h-4 text-gray-400" />
-                                    )}
-                                    <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{artist.name}</span>
-                                  </button>
-                                ))}
-                                {/* Add "Create new artist" option */}
-                                {artistSearch.length >= 2 && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const currentArtists = editForm.artistsList || [];
-                                      const trimmedSearch = artistSearch.trim();
-                                      if (trimmedSearch && !currentArtists.includes(trimmedSearch)) {
-                                        const newArtists = [...currentArtists, trimmedSearch];
-                                        setEditForm({ ...editForm, artistsList: newArtists });
-                                      }
-                                      setArtistSearch('');
-                                      setShowArtistDropdown(false);
-                                    }}
-                                    className="w-full px-3 py-2 text-left hover:bg-indigo-50 dark:hover:bg-indigo-900/30 flex items-center gap-2 border-t-2 border-indigo-200 dark:border-indigo-700 bg-indigo-50/50 dark:bg-indigo-900/10"
-                                  >
-                                    <Plus className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                                    <span className="text-sm font-medium text-indigo-700 dark:text-indigo-400">
-                                      Create "{artistSearch}"
+                                    <span
+                                      onClick={() => handleArtistClick(artistName)}
+                                      className="cursor-pointer hover:underline"
+                                    >
+                                      {artistName}
                                     </span>
-                                  </button>
-                                )}
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const newArtists = editForm.artistsList.filter((_: string, i: number) => i !== idx);
+                                        setEditForm({ ...editForm, artistsList: newArtists });
+                                      }}
+                                      className="hover:text-indigo-900"
+                                    >
+                                      <X className="w-3 h-3" />
+                                    </button>
+                                  </span>
+                                ))}
                               </div>
                             )}
                           </div>
-                          {/* Inline source suggestions for Artists */}
-                          {sourceReferences.length > 0 && (
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              {sourceReferences
-                                .filter((s: any) => {
-                                  if (!s.artists) return false;
-                                  const currentArtistsStr = (editForm.artistsList || []).join(', ').toLowerCase();
-                                  return s.artists.toLowerCase() !== currentArtistsStr;
-                                })
-                                .map((source: any, idx: number) => (
-                                  <button
-                                    key={`artists-${idx}`}
-                                    type="button"
-                                    onClick={() => {
-                                      const artistsArray = source.artists.split(',').map((a: string) => a.trim()).filter((a: string) => a);
-                                      setEditForm({ ...editForm, artistsList: artistsArray });
-                                    }}
-                                    className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-700 rounded text-xs text-left transition-colors group max-w-full"
-                                    title={`Use artists from ${source.source_code?.toUpperCase()}`}
-                                  >
-                                    {source.source_code === 'ra' ? (
-                                      <img src="/ra-logo.jpg" alt="RA" className="h-3 w-auto rounded-sm flex-shrink-0" />
-                                    ) : source.source_code === 'ticketmaster' ? (
-                                      <img src="/ticketmaster-logo.png" alt="TM" className="h-3 w-auto rounded-sm flex-shrink-0" />
-                                    ) : (
-                                      <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
-                                    )}
-                                    <span className="truncate max-w-[200px] text-gray-600 dark:text-gray-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
-                                      {source.artists}
-                                    </span>
-                                  </button>
-                                ))}
-                              {/* Reset to original if changed */}
-                              {(() => {
-                                if (!editingItem || !editingItem.artists) return null;
-                                
-                                // Parse original artists to array
-                                let originalArtists: string[] = [];
-                                try {
-                                  if (typeof editingItem.artists === 'string') {
-                                    // Try JSON parse first
-                                    try {
-                                      const parsed = JSON.parse(editingItem.artists);
-                                      originalArtists = Array.isArray(parsed) 
-                                        ? parsed.map((a: any) => a.name || a).filter(Boolean)
-                                        : editingItem.artists.split(',').map((a: string) => a.trim()).filter(Boolean);
-                                    } catch {
-                                      // Not JSON, treat as comma-separated
-                                      originalArtists = editingItem.artists.split(',').map((a: string) => a.trim()).filter(Boolean);
-                                    }
-                                  }
-                                } catch {
-                                  return null;
-                                }
-                                
-                                // Compare with current
-                                const currentArtists = editForm.artistsList || [];
-                                const hasChanged = JSON.stringify(originalArtists.sort()) !== JSON.stringify(currentArtists.sort());
-                                
-                                if (!hasChanged) return null;
-                                
-                                return (
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Description</label>
+                            <textarea
+                              value={editForm.description || ''}
+                              onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                              rows={3}
+                              className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
+                            />
+                            {/* Inline source suggestions for Description */}
+                            {sourceReferences.length > 0 && (
+                              <div className="mt-1 flex flex-wrap gap-2">
+                                {sourceReferences
+                                  .filter((s: any) => s.description && s.description !== editForm.description)
+                                  .map((source: any, idx: number) => (
+                                    <button
+                                      key={`desc-${idx}`}
+                                      type="button"
+                                      onClick={() => setEditForm({ ...editForm, description: source.description })}
+                                      className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-700 rounded text-xs text-left transition-colors group max-w-full"
+                                    >
+                                      {source.source_code === 'ra' ? (
+                                        <img src="/ra-logo.jpg" alt="RA" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                      ) : source.source_code === 'ticketmaster' ? (
+                                        <img src="/ticketmaster-logo.png" alt="TM" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                      ) : (
+                                        <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
+                                      )}
+                                      <span className="truncate max-w-[300px] text-gray-600 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
+                                        {source.description?.substring(0, 50)}...
+                                      </span>
+                                    </button>
+                                  ))}
+                                {editingItem && editingItem.description !== editForm.description && (
                                   <button
                                     type="button"
-                                    onClick={() => setEditForm({ ...editForm, artistsList: originalArtists })}
+                                    onClick={() => setEditForm({ ...editForm, description: editingItem.description })}
                                     className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded text-xs text-gray-500 transition-colors"
                                   >
                                     <RotateCcw className="w-3 h-3" />
                                     Reset
                                   </button>
-                                );
-                              })()}
-                            </div>
-                          )}
-                          {/* Selected artists display */}
-                          {editForm.artistsList && editForm.artistsList.length > 0 && (
-                            <div className="flex flex-wrap gap-2 mt-2">
-                              {editForm.artistsList.map((artistName: string, idx: number) => (
-                                <span
-                                  key={idx}
-                                  draggable
-                                  onDragStart={(e) => e.dataTransfer.setData('text/plain', idx.toString())}
-                                  onDragOver={(e) => e.preventDefault()}
-                                  onDrop={(e) => handleArtistDrop(e, idx)}
-                                  className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-100 dark:bg-gray-800 text-indigo-700 dark:text-gray-300 rounded-full text-sm border dark:border-gray-600 cursor-move"
-                                >
-                                  <span
-                                    onClick={() => handleArtistClick(artistName)}
-                                    className="cursor-pointer hover:underline"
-                                  >
-                                    {artistName}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const newArtists = editForm.artistsList.filter((_: string, i: number) => i !== idx);
-                                      setEditForm({ ...editForm, artistsList: newArtists });
-                                    }}
-                                    className="hover:text-indigo-900"
-                                  >
-                                    <X className="w-3 h-3" />
-                                  </button>
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Description</label>
-                          <textarea
-                            value={editForm.description || ''}
-                            onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
-                            rows={3}
-                            className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
-                          />
-                          {/* Inline source suggestions for Description */}
-                          {sourceReferences.length > 0 && (
-                            <div className="mt-1 flex flex-wrap gap-2">
-                              {sourceReferences
-                                .filter((s: any) => s.description && s.description !== editForm.description)
-                                .map((source: any, idx: number) => (
-                                  <button
-                                    key={`desc-${idx}`}
-                                    type="button"
-                                    onClick={() => setEditForm({ ...editForm, description: source.description })}
-                                    className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-700 rounded text-xs text-left transition-colors group max-w-full"
-                                  >
-                                    {source.source_code === 'ra' ? (
-                                      <img src="/ra-logo.jpg" alt="RA" className="h-3 w-auto rounded-sm flex-shrink-0" />
-                                    ) : source.source_code === 'ticketmaster' ? (
-                                      <img src="/ticketmaster-logo.png" alt="TM" className="h-3 w-auto rounded-sm flex-shrink-0" />
-                                    ) : (
-                                      <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
-                                    )}
-                                    <span className="truncate max-w-[300px] text-gray-600 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
-                                      {source.description?.substring(0, 50)}...
-                                    </span>
-                                  </button>
-                                ))}
-                              {editingItem && editingItem.description !== editForm.description && (
-                                <button
-                                  type="button"
-                                  onClick={() => setEditForm({ ...editForm, description: editingItem.description })}
-                                  className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded text-xs text-gray-500 transition-colors"
-                                >
-                                  <RotateCcw className="w-3 h-3" />
-                                  Reset
-                                </button>
-                              )}
-                            </div>
-                          )}
-                        </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         </div> {/* End Artists Section */}
 
                         {/* Additional Information Section */}
@@ -3472,96 +3472,96 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                             Additional Information
                           </h3>
 
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Event URL</label>
-                          <input
-                            type="url"
-                            value={editForm.content_url || ''}
-                            onChange={(e) => setEditForm({ ...editForm, content_url: e.target.value })}
-                            className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
-                          />
-                          {/* Inline source suggestions for URL */}
-                          {sourceReferences.length > 0 && (
-                            <div className="mt-1 flex flex-wrap gap-2">
-                              {sourceReferences
-                                .filter((s: any) => s.content_url && s.content_url !== editForm.content_url)
-                                .map((source: any, idx: number) => (
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Event URL</label>
+                            <input
+                              type="url"
+                              value={editForm.content_url || ''}
+                              onChange={(e) => setEditForm({ ...editForm, content_url: e.target.value })}
+                              className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
+                            />
+                            {/* Inline source suggestions for URL */}
+                            {sourceReferences.length > 0 && (
+                              <div className="mt-1 flex flex-wrap gap-2">
+                                {sourceReferences
+                                  .filter((s: any) => s.content_url && s.content_url !== editForm.content_url)
+                                  .map((source: any, idx: number) => (
+                                    <button
+                                      key={`url-${idx}`}
+                                      type="button"
+                                      onClick={() => setEditForm({ ...editForm, content_url: source.content_url })}
+                                      className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-700 rounded text-xs text-left transition-colors group max-w-full"
+                                    >
+                                      {source.source_code === 'ra' ? (
+                                        <img src="/ra-logo.jpg" alt="RA" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                      ) : source.source_code === 'ticketmaster' ? (
+                                        <img src="/ticketmaster-logo.png" alt="TM" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                      ) : (
+                                        <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
+                                      )}
+                                      <span className="truncate max-w-[200px] text-gray-600 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
+                                        Link
+                                      </span>
+                                    </button>
+                                  ))}
+                                {editingItem && editingItem.content_url !== editForm.content_url && (
                                   <button
-                                    key={`url-${idx}`}
                                     type="button"
-                                    onClick={() => setEditForm({ ...editForm, content_url: source.content_url })}
-                                    className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-700 rounded text-xs text-left transition-colors group max-w-full"
+                                    onClick={() => setEditForm({ ...editForm, content_url: editingItem.content_url })}
+                                    className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded text-xs text-gray-500 transition-colors"
                                   >
-                                    {source.source_code === 'ra' ? (
-                                      <img src="/ra-logo.jpg" alt="RA" className="h-3 w-auto rounded-sm flex-shrink-0" />
-                                    ) : source.source_code === 'ticketmaster' ? (
-                                      <img src="/ticketmaster-logo.png" alt="TM" className="h-3 w-auto rounded-sm flex-shrink-0" />
-                                    ) : (
-                                      <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
-                                    )}
-                                    <span className="truncate max-w-[200px] text-gray-600 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
-                                      Link
-                                    </span>
+                                    <RotateCcw className="w-3 h-3" />
+                                    Reset
                                   </button>
-                                ))}
-                              {editingItem && editingItem.content_url !== editForm.content_url && (
-                                <button
-                                  type="button"
-                                  onClick={() => setEditForm({ ...editForm, content_url: editingItem.content_url })}
-                                  className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded text-xs text-gray-500 transition-colors"
-                                >
-                                  <RotateCcw className="w-3 h-3" />
-                                  Reset
-                                </button>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Flyer URL</label>
-                          <input
-                            type="url"
-                            value={editForm.flyer_front || ''}
-                            onChange={(e) => setEditForm({ ...editForm, flyer_front: e.target.value })}
-                            className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
-                          />
-                          {/* Inline source suggestions for Flyer */}
-                          {sourceReferences.length > 0 && (
-                            <div className="mt-1 flex flex-wrap gap-2">
-                              {sourceReferences
-                                .filter((s: any) => s.flyer_front && s.flyer_front !== editForm.flyer_front)
-                                .map((source: any, idx: number) => (
+                                )}
+                              </div>
+                            )}
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Flyer URL</label>
+                            <input
+                              type="url"
+                              value={editForm.flyer_front || ''}
+                              onChange={(e) => setEditForm({ ...editForm, flyer_front: e.target.value })}
+                              className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100"
+                            />
+                            {/* Inline source suggestions for Flyer */}
+                            {sourceReferences.length > 0 && (
+                              <div className="mt-1 flex flex-wrap gap-2">
+                                {sourceReferences
+                                  .filter((s: any) => s.flyer_front && s.flyer_front !== editForm.flyer_front)
+                                  .map((source: any, idx: number) => (
+                                    <button
+                                      key={`flyer-${idx}`}
+                                      type="button"
+                                      onClick={() => setEditForm({ ...editForm, flyer_front: source.flyer_front })}
+                                      className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-700 rounded text-xs text-left transition-colors group"
+                                    >
+                                      {source.source_code === 'ra' ? (
+                                        <img src="/ra-logo.jpg" alt="RA" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                      ) : source.source_code === 'ticketmaster' ? (
+                                        <img src="/ticketmaster-logo.png" alt="TM" className="h-3 w-auto rounded-sm flex-shrink-0" />
+                                      ) : (
+                                        <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
+                                      )}
+                                      <span className="text-gray-600 dark:text-gray-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
+                                        Use Image
+                                      </span>
+                                    </button>
+                                  ))}
+                                {editingItem && editingItem.flyer_front !== editForm.flyer_front && (
                                   <button
-                                    key={`flyer-${idx}`}
                                     type="button"
-                                    onClick={() => setEditForm({ ...editForm, flyer_front: source.flyer_front })}
-                                    className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-700 rounded text-xs text-left transition-colors group"
+                                    onClick={() => setEditForm({ ...editForm, flyer_front: editingItem.flyer_front })}
+                                    className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded text-xs text-gray-500 transition-colors"
                                   >
-                                    {source.source_code === 'ra' ? (
-                                      <img src="/ra-logo.jpg" alt="RA" className="h-3 w-auto rounded-sm flex-shrink-0" />
-                                    ) : source.source_code === 'ticketmaster' ? (
-                                      <img src="/ticketmaster-logo.png" alt="TM" className="h-3 w-auto rounded-sm flex-shrink-0" />
-                                    ) : (
-                                      <span className="text-[10px] font-bold text-gray-500 uppercase">{source.source_code?.substring(0, 2)}</span>
-                                    )}
-                                    <span className="text-gray-600 dark:text-gray-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
-                                      Use Image
-                                    </span>
+                                    <RotateCcw className="w-3 h-3" />
+                                    Reset
                                   </button>
-                                ))}
-                              {editingItem && editingItem.flyer_front !== editForm.flyer_front && (
-                                <button
-                                  type="button"
-                                  onClick={() => setEditForm({ ...editForm, flyer_front: editingItem.flyer_front })}
-                                  className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded text-xs text-gray-500 transition-colors"
-                                >
-                                  <RotateCcw className="w-3 h-3" />
-                                  Reset
-                                </button>
-                              )}
-                            </div>
-                          )}
-                        </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         </div> {/* End Additional Information Section */}
                       </>
                     )}
@@ -4039,7 +4039,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
 
                         {(editForm.latitude && editForm.longitude) ? (
                           <div className="relative">
-                            <div 
+                            <div
                               ref={staticMapRef}
                               className="h-48 rounded-lg overflow-hidden border dark:border-gray-700 bg-gray-100 dark:bg-gray-800"
                             />
