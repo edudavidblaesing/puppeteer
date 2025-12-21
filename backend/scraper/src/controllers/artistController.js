@@ -1,7 +1,7 @@
 const { v4: uuidv4 } = require('uuid');
 const { pool } = require('../db');
 const { saveOriginalEntry, linkToUnified } = require('../services/unifiedService');
-const { matchAndLinkArtists, refreshMainArtist } = require('../services/matchingService');
+const { matchAndLinkArtists, refreshMainArtist, autoEnrichArtists } = require('../services/matchingService');
 const { searchArtist, getArtistDetails } = require('../services/musicBrainzService');
 
 // ============================================
@@ -10,29 +10,71 @@ const { searchArtist, getArtistDetails } = require('../services/musicBrainzServi
 
 const listArtists = async (req, res) => {
     try {
-        const { search, limit = 100, offset = 0 } = req.query;
+        const { search, limit = 100, offset = 0, source } = req.query;
 
-        let query = 'SELECT * FROM artists';
+        let query = `
+            SELECT a.*, 
+                (
+                    SELECT json_agg(json_build_object(
+                        'source_code', sa.source_code, 
+                        'id', sa.id,
+                        'name', sa.name,
+                        'bio', sa.bio,
+                        'genres', sa.genres,
+                        'image_url', sa.image_url,
+                        'content_url', sa.content_url,
+                        'artist_type', sa.artist_type
+                    ))
+                    FROM artist_scraped_links asl
+                    JOIN scraped_artists sa ON sa.id = asl.scraped_artist_id
+                    WHERE asl.artist_id = a.id
+                ) as source_references
+            FROM artists a
+            WHERE 1=1
+        `;
         const params = [];
         let paramIndex = 1;
 
         if (search) {
-            query += ` WHERE name ILIKE $${paramIndex}`;
+            query += ` AND a.name ILIKE $${paramIndex}`;
             params.push(`%${search}%`);
             paramIndex++;
         }
 
-        query += ` ORDER BY name ASC LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
+        if (source) {
+            query += ` AND EXISTS (
+                SELECT 1 FROM artist_scraped_links asl
+                JOIN scraped_artists sa ON sa.id = asl.scraped_artist_id
+                WHERE asl.artist_id = a.id AND sa.source_code = $${paramIndex}
+            )`;
+            params.push(source);
+            paramIndex++;
+        }
+
+        query += ` ORDER BY a.name ASC LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
         params.push(parseInt(limit), parseInt(offset));
 
         const result = await pool.query(query, params);
 
         // Get total count
-        let countQuery = 'SELECT COUNT(*) FROM artists';
+        let countQuery = 'SELECT COUNT(*) FROM artists a WHERE 1=1';
         let countParams = [];
+        let countParamIndex = 1;
+
         if (search) {
-            countQuery += ' WHERE name ILIKE $1';
+            countQuery += ` AND a.name ILIKE $${countParamIndex}`;
             countParams.push(`%${search}%`);
+            countParamIndex++;
+        }
+
+        if (source) {
+            countQuery += ` AND EXISTS (
+                SELECT 1 FROM artist_scraped_links asl
+                JOIN scraped_artists sa ON sa.id = asl.scraped_artist_id
+                WHERE asl.artist_id = a.id AND sa.source_code = $${countParamIndex}
+            )`;
+            countParams.push(source);
+            countParamIndex++;
         }
 
         const countResult = await pool.query(countQuery, countParams);
@@ -137,12 +179,24 @@ const createArtist = async (req, res) => {
 
         if (!name) return res.status(400).json({ error: 'Name is required' });
 
+        // 1. Save as Original Source
+        const { scrapedId } = await saveOriginalEntry('artist', {
+            name, country, genres, image_url, content_url, id: `manual_${Date.now()}`
+        });
+
+        // 2. Create Unified Artist
         const artistId = uuidv4();
 
         await pool.query(`
-            INSERT INTO artists (id, name, country, content_url, image_url, artist_type, genres, bio, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        `, [artistId, name, country, content_url, image_url, req.body.artist_type || null, genres, req.body.bio || null]);
+            INSERT INTO artists (id, name, country, content_url, image_url, artist_type, genres, bio, created_at, updated_at, source_code)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, $9)
+        `, [artistId, name, country, content_url, image_url, req.body.artist_type || null, Array.isArray(genres) ? JSON.stringify(genres) : genres, req.body.bio || null, 'manual']);
+
+        // 3. Link
+        await pool.query(`
+            INSERT INTO artist_source_links (unified_artist_id, scraped_artist_id, match_confidence, is_primary, priority)
+            VALUES ($1, $2, 1.0, true, 1)
+        `, [artistId, scrapedId]);
 
         const result = await pool.query('SELECT * FROM artists WHERE id = $1', [artistId]);
         res.json({ success: true, artist: result.rows[0] });
@@ -172,7 +226,7 @@ const updateArtist = async (req, res) => {
             if (allowedFields.includes(key)) {
                 fieldSources[key] = 'og';
                 setClauses.push(`${key} = $${paramIndex++}`);
-                values.push(value);
+                values.push(key === 'genres' && Array.isArray(value) ? JSON.stringify(value) : value);
             }
         }
 
@@ -244,6 +298,15 @@ const matchArtists = async (req, res) => {
         const { dryRun = false, minConfidence = 0.7 } = req.body;
         const result = await matchAndLinkArtists({ dryRun, minConfidence });
         res.json({ success: true, ...result });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+const enrichArtists = async (req, res) => {
+    try {
+        await autoEnrichArtists();
+        res.json({ success: true, message: 'Enrichment started' });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -345,5 +408,8 @@ module.exports = {
     bulkDeleteArtists,
     matchArtists,
     enrichArtist,
+    matchArtists,
+    enrichArtist,
+    enrichArtists,
     searchArtists
 };

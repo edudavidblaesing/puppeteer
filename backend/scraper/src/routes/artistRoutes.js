@@ -11,6 +11,7 @@ router.get('/search', asyncHandler(artistController.searchArtists)); // This mig
 router.get('/missing', asyncHandler(artistController.getMissingArtists));
 
 router.get('/:id', asyncHandler(artistController.getArtist));
+router.post('/enrich', asyncHandler(artistController.enrichArtists));
 router.post('/:id/enrich', asyncHandler(artistController.enrichArtist));
 router.get('/', asyncHandler(artistController.listArtists));
 router.post('/', asyncHandler(artistController.createArtist));

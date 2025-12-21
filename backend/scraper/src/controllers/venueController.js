@@ -392,67 +392,110 @@ const linkEvents = async (req, res) => {
 
 const listVenues = async (req, res) => {
     try {
-        const { search, city, limit = 100, offset = 0, sort = 'name', order = 'asc' } = req.query;
+        const { search, city, limit = 100, offset = 0, sort = 'name', order = 'asc', source } = req.query;
+
+        let venueFilter = '';
+        let eventFilter = '';
+        const queryParams = [];
+        let pIdx = 1;
+
+        if (source) {
+            // Real Venues Filter
+            venueFilter = ` AND EXISTS (
+                SELECT 1 FROM venue_scraped_links vsl 
+                JOIN scraped_venues sv ON sv.id = vsl.scraped_venue_id 
+                WHERE vsl.venue_id = v.id AND sv.source_code = $${pIdx}
+            )`;
+
+            // Ghost Venues Filter
+            // Note: events table has source_code directly
+            eventFilter = ` AND (
+                source_code = $${pIdx} 
+                OR EXISTS (
+                    SELECT 1 FROM event_scraped_links esl
+                    JOIN scraped_events se ON se.id = esl.scraped_event_id
+                    WHERE esl.event_id = events.id AND se.source_code = $${pIdx}
+                )
+            )`;
+
+            queryParams.push(source);
+            pIdx++;
+        }
 
         let query = `
             SELECT DISTINCT ON (LOWER(name), LOWER(city))
                 name, address, city, country, latitude, longitude, id,
-                (SELECT COUNT(*) FROM events e WHERE LOWER(e.venue_name) = LOWER(combined.name) AND LOWER(e.venue_city) = LOWER(combined.city)) as event_count
+                (SELECT COUNT(*) FROM events e WHERE LOWER(e.venue_name) = LOWER(combined.name) AND LOWER(e.venue_city) = LOWER(combined.city)) as event_count,
+                (
+                    SELECT json_agg(json_build_object(
+                        'source_code', sv.source_code, 
+                        'id', sv.id,
+                        'name', sv.name,
+                        'address', sv.address,
+                        'city', sv.city,
+                        'content_url', sv.content_url
+                    ))
+                    FROM venue_scraped_links vsl
+                    JOIN scraped_venues sv ON sv.id = vsl.scraped_venue_id
+                    WHERE vsl.venue_id = combined.id
+                ) as source_references
             FROM (
                 SELECT v.id, v.name, v.address, v.city, v.country, v.latitude, v.longitude, 1 as priority
                 FROM venues v
+                WHERE 1=1 ${venueFilter}
                 UNION ALL
                 SELECT NULL as id, venue_name as name, venue_address as address, venue_city as city, venue_country as country, 
                        NULL as latitude, NULL as longitude, 2 as priority
                 FROM events
-                WHERE venue_name IS NOT NULL AND venue_name != ''
+                WHERE venue_name IS NOT NULL AND venue_name != '' AND venue_id IS NULL ${eventFilter}
             ) combined
             WHERE name IS NOT NULL AND city IS NOT NULL`;
 
-        const params = [];
-        let paramIndex = 1;
+        // We already added 'source' to queryParams if present.
+        // Now add Search and City.
 
         if (search) {
-            query += ` AND (combined.name ILIKE $${paramIndex} OR combined.address ILIKE $${paramIndex})`;
-            params.push(`%${search}%`);
-            paramIndex++;
+            query += ` AND (combined.name ILIKE $${pIdx} OR combined.address ILIKE $${pIdx})`;
+            queryParams.push(`%${search}%`);
+            pIdx++;
         }
 
         if (city) {
-            query += ` AND combined.city ILIKE $${paramIndex}`;
-            params.push(`%${city}%`);
-            paramIndex++;
+            query += ` AND combined.city ILIKE $${pIdx}`;
+            queryParams.push(`%${city}%`);
+            pIdx++;
         }
 
-        // Count query
+        // --- Count Query matches logic ---
+        // Using same filtering inside subquery
         let countQuery = `
             SELECT COUNT(*) FROM (
                 SELECT DISTINCT LOWER(name), LOWER(city)
                 FROM (
-                    SELECT v.name, v.city, v.address FROM venues v
+                    SELECT v.name, v.city, v.address FROM venues v WHERE 1=1 ${venueFilter}
                     UNION ALL
-                    SELECT venue_name as name, venue_city as city, venue_address as address FROM events WHERE venue_name IS NOT NULL AND venue_name != ''
+                    SELECT venue_name as name, venue_city as city, venue_address as address FROM events WHERE venue_name IS NOT NULL AND venue_name != '' AND venue_id IS NULL ${eventFilter}
                 ) combined
                 WHERE name IS NOT NULL AND city IS NOT NULL
         `;
 
+        // Re-append outer filters to count
+        // We reuse queryParams so we can reconstruct the query string with matching indices
+        let outerCountFilter = '';
+        let currentIdx = 1;
+        if (source) currentIdx++;
         if (search) {
-            countQuery += ` AND (combined.name ILIKE $${paramIndex} OR combined.address ILIKE $${paramIndex})`;
-            // Reuse params
+            outerCountFilter += ` AND (combined.name ILIKE $${currentIdx} OR combined.address ILIKE $${currentIdx})`;
+            currentIdx++;
         }
         if (city) {
-            countQuery += ` AND combined.city ILIKE $${paramIndex}`;
+            outerCountFilter += ` AND combined.city ILIKE $${currentIdx}`;
+            currentIdx++;
         }
-        countQuery += `) subq`;
 
-        // We can't reuse params array easily for count because indices might match but logic differs slightly
-        // Simplify: execute full query logic for both or just use approximate count
-        // For correctness, we'll just execute the count query with same params logic (duplicated)
-        // Or better, just execute the data query and count logic separately
+        countQuery += outerCountFilter + `) subq`;
 
-        // Re-building params strictly for clean execution
-        const countParams = [...params]; // Copy params
-
+        const countParams = [...queryParams]; // Copy params before adding limit/offset
         const countResult = await pool.query(countQuery, countParams);
         const total = parseInt(countResult.rows[0].count);
 
@@ -460,10 +503,10 @@ const listVenues = async (req, res) => {
         const sortCol = validSorts.includes(sort) ? sort : 'name';
         const sortOrder = order.toLowerCase() === 'desc' ? 'DESC' : 'ASC';
 
-        query += ` ORDER BY LOWER(name), LOWER(city), priority ASC, ${sortCol} ${sortOrder} LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
-        params.push(parseInt(limit), parseInt(offset));
+        query += ` ORDER BY LOWER(name), LOWER(city), priority ASC, ${sortCol} ${sortOrder} LIMIT $${pIdx++} OFFSET $${pIdx}`;
+        queryParams.push(parseInt(limit), parseInt(offset));
 
-        const result = await pool.query(query, params);
+        const result = await pool.query(query, queryParams);
 
         res.json({
             data: result.rows,
@@ -556,9 +599,9 @@ const getMissingVenues = async (req, res) => {
     }
 };
 
-const createVenue = async (req, res) => {
+async function createVenue(req, res) {
     try {
-        let { name, address, city, country, blurb, content_url, latitude, longitude, capacity } = req.body;
+        let { name, address, city, country, blurb, content_url, latitude, longitude, capacity, venue_type, email, phone } = req.body;
 
         if (!name) {
             return res.status(400).json({ error: 'Name is required' });
@@ -572,43 +615,35 @@ const createVenue = async (req, res) => {
             }
         }
 
-        // Create in main venues table
-        // Also save to 'original' source first if we want strict source tracking
-        // For new system, we prioritize 'venues' table as the main entity directly? 
-        // Or do we still use the 'unified' abstraction?
-        // Based on server.js refactor, we are moving towards direct 'venues' table usage,
-        // but 'unified' logic was present.
-        // Let's implement the Unified Logic here as it was in server.js
-
         // 1. Save as Original Source
         const { scrapedId } = await saveOriginalEntry('venue', {
-            name, address, city, country, content_url, latitude, longitude, capacity
+            name, address, city, country, content_url, latitude, longitude, capacity, venue_type, email, phone
         });
 
         // 2. Link to Unified/Main (Create new Venue)
-        // Note: The logic in server.js 4912 uses linkToUnified which returns a UNIFIED ID.
-        // But our main table is 'venues'.
-        // server.js 7167 (matchAndLinkVenues) writes to 'venues'.
-        // It seems 'unified_venues' is legacy or being replaced by 'venues'.
-        // However, to keep compatibility with the `linkToUnified` function we extracted:
-        // That function writes to `unified_venues`.
-
-        // CRITICAL DECISION: usage of `venues` vs `unified_venues`.
-        // The `linkToUnified` function I extracted writes to `unified_venues`.
-        // But the `matchAndLinkVenues` (7167) writes to `venues`.
-        // In this controller `createVenue` I should write to `venues` to be consistent with `matchAndLinkVenues`.
-
         const venueId = uuidv4();
         await pool.query(`
-            INSERT INTO venues (id, name, address, city, country, latitude, longitude, content_url, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        `, [venueId, name, address, city, country, latitude, longitude, content_url]);
+            INSERT INTO venues (id, name, address, city, country, latitude, longitude, content_url, capacity, venue_type, email, phone, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        `, [venueId, name, address, city, country, latitude, longitude, content_url, capacity, venue_type, email, phone]);
 
         // Link the scraping source
         await pool.query(`
             INSERT INTO venue_scraped_links (venue_id, scraped_venue_id, match_confidence, is_primary)
             VALUES ($1, $2, 1.0, true)
         `, [venueId, scrapedId]);
+
+        // 3. Link existing events that match this venue (Name + City)
+        // using trimmed comparison to catch whitespace mismatches causing duplication
+        if (name && city) {
+            await pool.query(`
+                UPDATE events
+                SET venue_id = $1, updated_at = CURRENT_TIMESTAMP
+                WHERE venue_id IS NULL
+                AND LOWER(TRIM(venue_name)) = LOWER(TRIM($2))
+                AND LOWER(TRIM(venue_city)) = LOWER(TRIM($3))
+            `, [venueId, name, city]);
+        }
 
         const result = await pool.query('SELECT * FROM venues WHERE id = $1', [venueId]);
         res.json({ success: true, venue: result.rows[0] });
@@ -631,7 +666,7 @@ const updateVenue = async (req, res) => {
         }
         const fieldSources = currentRes.rows[0].field_sources || {};
 
-        const allowedFields = ['name', 'address', 'city', 'country', 'content_url', 'latitude', 'longitude'];
+        const allowedFields = ['name', 'address', 'city', 'country', 'content_url', 'latitude', 'longitude', 'venue_type', 'email', 'phone', 'capacity'];
         const setClauses = [];
         const values = [];
         let paramIndex = 1;

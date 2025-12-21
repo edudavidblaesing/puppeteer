@@ -274,11 +274,23 @@ async function processScrapedEvents(events, options = {}) {
             // --- 2. Save Scraped Venue ---
             if (canScrapeVenue && event.venue_raw) {
                 const v = event.venue_raw;
-                const venueRes = await pool.query(`
+                // Normalize description
+                if (!v.description && v.blurb) v.description = v.blurb;
+
+                // Fallback: If name is missing, try to use address
+                if (!v.name && v.address) {
+                    v.name = v.address;
+                    console.warn(`[Scraper] Venue name missing for event ${event.title}. Using address as name: "${v.name}"`);
+                }
+
+                if (!v.name) {
+                    console.warn(`[Scraper] Skipping venue for event ${event.title} (Source: ${event.source_code}, ID: ${event.source_event_id}) - Missing venue name and address`);
+                } else {
+                    const venueRes = await pool.query(`
                     INSERT INTO scraped_venues (
                         source_code, source_venue_id, name, address, city, country,
-                        latitude, longitude, content_url, updated_at
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)
+                        latitude, longitude, content_url, description, updated_at
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP)
                     ON CONFLICT (source_code, source_venue_id) DO UPDATE SET
                         name = EXCLUDED.name,
                         address = EXCLUDED.address,
@@ -287,13 +299,16 @@ async function processScrapedEvents(events, options = {}) {
                         latitude = EXCLUDED.latitude,
                         longitude = EXCLUDED.longitude,
                         content_url = EXCLUDED.content_url,
+                        description = COALESCE(EXCLUDED.description, scraped_venues.description),
                         updated_at = CURRENT_TIMESTAMP
                     RETURNING (xmax = 0) as inserted
                 `, [
-                    event.source_code, v.source_venue_id, v.name, v.address,
-                    v.city, v.country, v.latitude || venueLat, v.longitude || venueLon, v.content_url
-                ]);
-                if (venueRes.rows[0].inserted) stats.venuesCreated++;
+                        event.source_code, v.source_venue_id, v.name, v.address,
+                        v.city, v.country, v.latitude || venueLat, v.longitude || venueLon, v.content_url,
+                        v.description || null
+                    ]);
+                    if (venueRes.rows[0].inserted) stats.venuesCreated++;
+                }
             }
 
             // --- 3. Save Scraped Artists ---

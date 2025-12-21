@@ -1,36 +1,64 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Organizer } from '@/types';
 import { fetchOrganizers, createOrganizer, updateOrganizer, deleteOrganizer } from '@/lib/api';
 
 export function useOrganizers() {
   const [organizers, setOrganizers] = useState<Organizer[]>([]);
-  const [total, setTotal] = useState(0);
+  const [totalItems, setTotalItems] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const loadOrganizers = useCallback(async (params?: { search?: string; limit?: number; offset?: number }) => {
+  // Pagination State
+  const [page, setPage] = useState(1);
+  const [limit] = useState(50);
+
+  // Filters
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [sourceFilter, setSourceFilter] = useState('');
+
+  // Debounce search
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+      setPage(1);
+    }, 500);
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
+
+  const loadOrganizers = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const data = await fetchOrganizers(params);
+      const data = await fetchOrganizers({
+        search: debouncedSearch,
+        limit,
+        offset: (page - 1) * limit,
+        source: sourceFilter
+      });
       setOrganizers(data.data || []);
-      setTotal(data.total || 0);
+      setTotalItems(data.total || 0);
     } catch (err: any) {
       setError(err.message || 'Failed to load organizers');
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [page, limit, debouncedSearch, sourceFilter]);
+
+  // Auto-load
+  useEffect(() => {
+    loadOrganizers();
+  }, [loadOrganizers]);
 
   const addOrganizer = useCallback(async (data: Partial<Organizer>) => {
     try {
       const newOrganizer = await createOrganizer(data);
-      setOrganizers(prev => [newOrganizer, ...prev]);
+      loadOrganizers();
       return newOrganizer;
     } catch (err: any) {
       throw new Error(err.message || 'Failed to create organizer');
     }
-  }, []);
+  }, [loadOrganizers]);
 
   const editOrganizer = useCallback(async (id: string, data: Partial<Organizer>) => {
     try {
@@ -45,30 +73,30 @@ export function useOrganizers() {
   const removeOrganizer = useCallback(async (id: string) => {
     try {
       await deleteOrganizer(id);
-      setOrganizers(prev => prev.filter(o => o.id !== id));
+      loadOrganizers();
     } catch (err: any) {
       throw new Error(err.message || 'Failed to delete organizer');
     }
-  }, []);
-
-  const [searchQuery, setSearchQuery] = useState('');
-
-  const filteredOrganizers = organizers.filter(org =>
-    org.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (org.description || '').toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  }, [loadOrganizers]);
 
   return {
     organizers,
-    filteredOrganizers, // Export filtered list
+    filteredOrganizers: organizers, // Main list is filtered
     searchQuery,
     setSearchQuery,
-    total,
+    sourceFilter,
+    setSourceFilter,
+    total: totalItems,
     isLoading,
     error,
     loadOrganizers,
     addOrganizer,
     editOrganizer,
     removeOrganizer,
+    page,
+    setPage,
+    totalPages: Math.ceil(totalItems / limit),
+    totalItems,
+    itemsPerPage: limit
   };
 }

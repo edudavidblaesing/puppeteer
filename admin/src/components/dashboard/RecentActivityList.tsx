@@ -12,20 +12,15 @@ interface RecentActivityListProps {
 }
 
 export function RecentActivityList({ events, onApprove, onReject }: RecentActivityListProps) {
-  // Filter only pending events for this view
-  const pendingEvents = events.filter(e => e.publish_status === 'pending');
-  const [page, setPage] = useState(1);
-  const itemsPerPage = 10;
-  const totalPages = Math.ceil(pendingEvents.length / itemsPerPage);
-
-  const displayEvents = pendingEvents.slice((page - 1) * itemsPerPage, page * itemsPerPage);
+  // Events are passed already filtered and limited by parent
+  const displayEvents = events;
 
   return (
     <div className="bg-white dark:bg-gray-900 p-6 rounded-[2rem] border border-gray-100 dark:border-gray-800 shadow-sm h-full flex flex-col">
       <div className="flex justify-between items-center mb-6 flex-shrink-0">
         <h3 className="text-lg font-bold text-gray-900 dark:text-white">Pending Approvals</h3>
         <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-gray-500 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded-full">{pendingEvents.length} pending</span>
+          <span className="text-xs font-medium text-gray-500 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded-full">{events.length} shown</span>
         </div>
       </div>
 
@@ -137,31 +132,9 @@ export function RecentActivityList({ events, onApprove, onReject }: RecentActivi
         )}
       </div>
 
-      {totalPages > 1 && (
-        <div className="pt-4 mt-auto border-t border-gray-100 dark:border-gray-800 flex justify-between items-center text-xs text-gray-500">
-          <span>Page {page} of {totalPages}</span>
-          <div className="flex gap-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setPage(p => Math.max(1, p - 1))}
-              disabled={page === 1}
-              className="h-7 text-xs"
-            >
-              Prev
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-              disabled={page === totalPages}
-              className="h-7 text-xs"
-            >
-              Next
-            </Button>
-          </div>
-        </div>
-      )}
+      <div className="mt-auto pt-4 text-center">
+        <Button variant="ghost" size="sm" className="text-xs w-full">View All Pending</Button>
+      </div>
     </div>
   );
 }

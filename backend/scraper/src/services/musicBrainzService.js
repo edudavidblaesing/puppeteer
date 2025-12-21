@@ -61,18 +61,14 @@ const getArtistDetails = async (mbid) => {
         end_date: data['life-span']?.end
     };
 
-    // Extract best content URL and image (Discogs often has images but MB doesn't serve them directly without CoverArtArchive which is for releases)
-    // We'll trust RA/TM for images mostly, or explicit valid URLs.
-    // MB doesn't natively host artist images, but links to them.
-
-    // Construct single object for scraper compatibility
+    // Extract best content URL and image
     const website = normalized.urls.find(u => u.type === 'official homepage')?.url?.resource;
 
     return {
         ...normalized,
         content_url: website || `https://musicbrainz.org/artist/${data.id}`,
         // Flatten genres/tags for simple storage
-        genres_list: [...normalized.genres, ...normalized.tags].slice(0, 10)
+        genres_list: [...normalized.genres, ...normalized.tags].slice(0, 10),
     };
 };
 

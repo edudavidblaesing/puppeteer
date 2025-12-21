@@ -145,7 +145,7 @@ async function scrapeTM(city, options = {}) {
         const endTime = event.dates?.end?.dateTime || (event.dates?.end?.localDate && event.dates?.end?.localTime ? `${event.dates.end.localDate}T${event.dates.end.localTime}` : null);
 
         return {
-            source_code: 'ticketmaster',
+            source_code: 'tm',
             source_event_id: event.id,
             title: event.name,
             date: date,

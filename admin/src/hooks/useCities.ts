@@ -6,32 +6,59 @@ export function useCities() {
   const [cities, setCities] = useState<City[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
+
+  // Pagination State
+  const [page, setPage] = useState(1);
+  const [limit] = useState(50);
+  const [totalItems, setTotalItems] = useState(0);
+
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [sourceFilter, setSourceFilter] = useState('');
+
+  // Debounce search
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+      setPage(1);
+    }, 500);
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
 
   const loadCities = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await fetchAdminCities({ limit: 1000 });
+      const response = await fetchAdminCities({
+        search: debouncedSearch,
+        limit,
+        offset: (page - 1) * limit,
+        source: sourceFilter
+      });
       setCities(response.data || []);
+      setTotalItems(response.total || 0); // Assuming API returns total
     } catch (err: any) {
       setError(err.message || 'Failed to load cities');
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [page, limit, debouncedSearch, sourceFilter]);
+
+  // Auto-load
+  useEffect(() => {
+    loadCities();
+  }, [loadCities]);
 
   const addCity = useCallback(async (data: any) => {
     try {
       const newCity = await createCity(data);
-      setCities(prev => [...prev, newCity]);
+      loadCities();
       return newCity;
     } catch (err: any) {
       throw new Error(err.message || 'Failed to create city');
     }
-  }, []);
+  }, [loadCities]);
 
   const editCity = useCallback(async (id: string | number, data: any) => {
     try {
@@ -48,26 +75,15 @@ export function useCities() {
     try {
       const idStr = id.toString();
       await deleteCity(idStr);
-      setCities(prev => prev.filter(c => c.id?.toString() !== idStr));
+      loadCities();
     } catch (err: any) {
       throw new Error(err.message || 'Failed to delete city');
     }
-  }, []);
-
-  // Derived state
-  const filteredCities = useMemo(() => {
-    return cities.filter(city => {
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase();
-        return city.name.toLowerCase().includes(query);
-      }
-      return true;
-    }).sort((a, b) => a.name.localeCompare(b.name));
-  }, [cities, searchQuery]);
+  }, [loadCities]);
 
   return {
     cities,
-    filteredCities,
+    filteredCities: cities, // Main list is filtered
     isLoading,
     error,
     loadCities,
@@ -75,6 +91,13 @@ export function useCities() {
     editCity,
     removeCity,
     searchQuery,
-    setSearchQuery
+    setSearchQuery,
+    sourceFilter,
+    setSourceFilter,
+    page,
+    setPage,
+    totalPages: Math.ceil(totalItems / limit),
+    totalItems,
+    itemsPerPage: limit
   };
 }

@@ -58,6 +58,7 @@ export interface SourceReference {
   phone?: string;
   email?: string;
   bio?: string;
+  artists?: any;
 }
 
 export interface Event {
@@ -105,6 +106,7 @@ export interface Venue {
   venue_type?: string;
   phone?: string;
   email?: string;
+  description?: string;
   events?: Event[];
   source_references?: SourceReference[];
   is_active?: boolean;
@@ -171,12 +173,26 @@ export interface ApiResponse<T> {
 }
 
 export interface Stats {
-  total_events: string;
-  cities: string;
-  venues: string;
-  earliest_event: string;
-  latest_event: string;
-  events_by_city: { venue_city: string; count: string }[];
+  events: {
+    total: number;
+    approved: number;
+    pending: number;
+    rejected: number;
+    active: number;
+    new_24h: number;
+    new_7d: number;
+    updated_24h: number;
+  };
+  venues: number;
+  artists: number;
+  organizers: number;
+  scraping: {
+    total: number;
+    new_24h: number;
+    last_run: string | null;
+    active_sources: string[];
+    next_scheduled: string;
+  };
 }
 
 export interface SourceConfig {

@@ -10,7 +10,7 @@ import { Modal } from '@/components/ui/Modal';
 import { RelatedEventsList } from '@/components/features/RelatedEventsList';
 import { getBestSourceForField, SOURCE_PRIORITY } from '@/lib/smartMerge';
 import { Artist, Event } from '@/types';
-import { createArtist, updateArtist, searchArtists, updateEvent, fetchEvent } from '@/lib/api';
+import { createArtist, updateArtist, searchArtists, updateEvent, fetchEvent, fetchCountries } from '@/lib/api';
 import { SourceReference } from '@/types';
 import { EventForm } from '@/components/features/EventForm';
 import { useToast } from '@/contexts/ToastContext';
@@ -69,6 +69,11 @@ export function ArtistForm({
   };
   const [genresInput, setGenresInput] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [countries, setCountries] = useState<{ name: string; code: string }[]>([]);
+
+  useEffect(() => {
+    fetchCountries().then(setCountries).catch(console.error);
+  }, []);
 
   // Search / Autocomplete State
   const [suggestions, setSuggestions] = useState<any[]>([]);
@@ -104,7 +109,8 @@ export function ArtistForm({
 
   const handleGenresChange = (val: string) => {
     setGenresInput(val);
-    const genresArray = val.split(',').map(s => s.trim()).filter(Boolean);
+    // Split by comma or slash, trim, and filter boolean
+    const genresArray = val.split(/[,\/]+/).map(s => s.trim()).filter(Boolean);
     setFormData(prev => ({ ...prev, genres: genresArray }));
   };
 
@@ -364,12 +370,19 @@ export function ArtistForm({
             </div>
 
             <div>
-              <Input
-                label="Type (e.g. DJ, Band, Group)"
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Type
+              </label>
+              <select
                 value={formData.artist_type || ''}
                 onChange={(e) => setFormData({ ...formData, artist_type: e.target.value })}
-                placeholder="DJ"
-              />
+                className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white"
+              >
+                <option value="">Select Type...</option>
+                {['Individual', 'DJ', 'Group', 'Band', 'Orchestra', 'Choir', 'Producer', 'Other'].map(t => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
               <SourceFieldOptions
                 sources={initialData?.source_references}
                 field="artist_type"
@@ -430,12 +443,19 @@ export function ArtistForm({
             </div>
 
             <div>
-              <Input
-                label="Country"
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Country
+              </label>
+              <select
                 value={formData.country || ''}
                 onChange={(e) => setFormData({ ...formData, country: e.target.value })}
-                placeholder="e.g. DE, US"
-              />
+                className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white"
+              >
+                <option value="">Select Country...</option>
+                {countries.map(c => (
+                  <option key={c.code} value={c.code}>{c.name} ({c.code})</option>
+                ))}
+              </select>
               <SourceFieldOptions
                 sources={initialData?.source_references}
                 field="country"

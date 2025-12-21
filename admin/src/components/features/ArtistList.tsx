@@ -1,6 +1,7 @@
 import React from 'react';
 import clsx from 'clsx';
 import { Music, Globe, Link2, Image as ImageIcon } from 'lucide-react';
+import { SourceIcon } from '@/components/ui/SourceIcon';
 import { Artist } from '@/types';
 
 interface ArtistListProps {
@@ -70,9 +71,9 @@ export function ArtistList({
 
                 <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
                   {artist.content_url && (
-                    <a 
-                      href={artist.content_url} 
-                      target="_blank" 
+                    <a
+                      href={artist.content_url}
+                      target="_blank"
                       rel="noopener noreferrer"
                       className="flex items-center gap-1 hover:text-indigo-600 dark:hover:text-indigo-400"
                       onClick={(e) => e.stopPropagation()}
@@ -81,6 +82,14 @@ export function ArtistList({
                       <span className="truncate max-w-[200px]">{artist.content_url}</span>
                     </a>
                   )}
+                </div>
+              </div>
+
+              <div className="text-right flex-shrink-0 self-start flex flex-col items-end gap-1">
+                <div className="flex items-center gap-1 mt-1 justify-end">
+                  {Array.from(new Set(artist.source_references?.map(s => s.source_code) || [])).map(source => (
+                    <SourceIcon key={source} sourceCode={source} className="w-4 h-4" />
+                  ))}
                 </div>
               </div>
             </div>

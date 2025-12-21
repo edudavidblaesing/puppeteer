@@ -14,12 +14,16 @@ const LOGO_MAP: Record<string, string> = {
     mb: '/logos/mb.png',
     fb: '/logos/fb.png',
     ra: '/logos/ra.jpg',
+    sp: '/logos/sp.png',
+    wiki: '/logos/wiki.png', // Assuming logo exists or will be added, otherwise falls back to text is fine but name is needed
     // legacy fallbacks
     ticketmaster: '/logos/tm.png',
     eventbrite: '/logos/eb.png',
     dice: '/logos/di.png',
     musicbrainz: '/logos/mb.png',
     facebook: '/logos/fb.png',
+    spotify: '/logos/sp.png',
+    wikipedia: '/logos/wiki.png',
 };
 
 const SOURCE_NAMES: Record<string, string> = {
@@ -29,6 +33,8 @@ const SOURCE_NAMES: Record<string, string> = {
     mb: 'MusicBrainz',
     fb: 'Facebook',
     ra: 'Resident Advisor',
+    sp: 'Spotify',
+    wiki: 'Wikipedia',
     og: 'Original/Manual'
 };
 
@@ -36,7 +42,7 @@ export function SourceIcon({ sourceCode, className = "w-4 h-4", showTooltip = tr
     const code = sourceCode?.toLowerCase();
     const title = SOURCE_NAMES[code] || code?.toUpperCase();
 
-    if (code === 'og' || code === 'original') {
+    if (code === 'og' || code === 'original' || code === 'manual') {
         return (
             <div className={`flex items-center justify-center bg-gray-100 dark:bg-gray-800 rounded-sm ${className}`} title={showTooltip ? title : undefined}>
                 <Database className="w-[80%] h-[80%] text-gray-500" />

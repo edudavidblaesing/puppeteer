@@ -1,19 +1,23 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { Plus, Search } from 'lucide-react';
 import { Layout } from '@/components/Layout';
 import { EventList } from '@/components/features/EventList';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { EventsProvider, useEventsContext } from '@/contexts/EventsContext';
+import { PaginationControls } from '@/components/ui/PaginationControls';
 import clsx from 'clsx';
 import { useToast } from '@/contexts/ToastContext';
 
-function EventsLayoutContent({ children }: { children: React.ReactNode }) {
+import { Suspense } from 'react';
+
+function EventsLayoutDetails({ children }: { children: React.ReactNode }) {
     const router = useRouter();
     const pathname = usePathname();
+    const searchParams = useSearchParams();
     // Determine if we are on a detail page
     const isDetailPage = pathname !== '/events' && pathname !== '/events/';
 
@@ -23,19 +27,24 @@ function EventsLayoutContent({ children }: { children: React.ReactNode }) {
         loadEvents,
         setSearchQuery,
         setStatusFilter,
-        setShowPastEvents,
         searchQuery,
-        cityFilter,
         statusFilter,
-        showPastEvents,
-        setCityFilter
+        updatesFilter,
+        setUpdatesFilter,
+        timeFilter,
+        setTimeFilter,
+        sourceFilter,
+        setSourceFilter,
+        page,
+        setPage,
+        totalPages,
+        totalItems,
+        itemsPerPage
     } = useEventsContext();
 
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-    const [dateFilter, setDateFilter] = useState('');
-    const [timeStatusFilter, setTimeStatusFilter] = useState('all');
-    const [updateStatusFilter, setUpdateStatusFilter] = useState<'all' | 'new' | 'updated'>('all');
     const [isMobile, setIsMobile] = useState(false);
+    const [sources, setSources] = useState<any[]>([]);
 
     // Check for mobile view
     useEffect(() => {
@@ -45,80 +54,30 @@ function EventsLayoutContent({ children }: { children: React.ReactNode }) {
         return () => window.removeEventListener('resize', checkMobile);
     }, []);
 
-    // Initial load
+    // Sync URL params
+    useEffect(() => {
+        if (searchParams.get('hasUpdates') === 'true') {
+            setUpdatesFilter('updated');
+        }
+    }, [searchParams, setUpdatesFilter]);
+
+    // Initial load and fetch sources
     useEffect(() => {
         loadEvents();
+
+        // Fetch sources for dropdown
+        fetch('/api/sources').then(res => {
+            if (res.ok) return res.json();
+            // Fallback if proxy not set or direct call needed
+            // Actually we usually import fetchSources from api
+            return import('@/lib/api').then(mod => mod.fetchSources());
+        }).then(data => {
+            // Handle both array or object with data property
+            const list = Array.isArray(data) ? data : (data.data || []);
+            setSources(list);
+        }).catch(err => console.error('Failed to fetch sources', err));
+
     }, [loadEvents]);
-
-    // Sync Past Events
-    useEffect(() => {
-        if (timeStatusFilter === 'upcoming' || timeStatusFilter === 'live') {
-            setShowPastEvents(timeStatusFilter !== 'upcoming');
-        } else {
-            setShowPastEvents(true);
-        }
-    }, [timeStatusFilter, setShowPastEvents]);
-
-    // Filter Logic (Client-side)
-    const displayEvents = filteredEvents.filter(e => {
-        let matches = true;
-
-        // Date Filter
-        if (dateFilter) {
-            if (e.date) {
-                if (!e.date.includes(dateFilter)) matches = false;
-            } else {
-                matches = false;
-            }
-        }
-
-        // Time Status
-        if (matches && timeStatusFilter !== 'all') {
-            const now = new Date();
-            let start: Date;
-            if (e.start_time && e.start_time.includes('T')) {
-                start = new Date(e.start_time);
-            } else {
-                start = new Date(e.date + ' ' + (e.start_time || '00:00'));
-            }
-            // Simple approximation for end time if missing
-            let end: Date;
-            if (e.end_time && e.end_time.includes('T')) {
-                end = new Date(e.end_time);
-            } else {
-                end = e.end_time
-                    ? new Date(e.date + ' ' + e.end_time)
-                    : new Date(start.getTime() + 4 * 60 * 60 * 1000);
-            }
-
-            if (timeStatusFilter === 'live') {
-                if (!(now >= start && now <= end)) matches = false;
-            } else if (timeStatusFilter === 'upcoming') {
-                if (!(start > now)) matches = false;
-            } else if (timeStatusFilter === 'past') {
-                if (!(end < now)) matches = false;
-            }
-        }
-
-        // Update Status
-        if (matches && updateStatusFilter !== 'all') {
-            if (updateStatusFilter === 'new') {
-                const created = new Date(e.created_at).getTime();
-                const limit = Date.now() - 24 * 60 * 60 * 1000;
-                if (created < limit) matches = false;
-            } else if (updateStatusFilter === 'updated') {
-                if (!e.updated_at) {
-                    matches = false;
-                } else {
-                    const updated = new Date(e.updated_at).getTime();
-                    const created = new Date(e.created_at).getTime();
-                    const limit = Date.now() - 24 * 60 * 60 * 1000;
-                    if (updated <= limit || Math.abs(updated - created) < 60000) matches = false;
-                }
-            }
-        }
-        return matches;
-    });
 
     const handleCreate = () => {
         router.push('/events/new');
@@ -144,12 +103,9 @@ function EventsLayoutContent({ children }: { children: React.ReactNode }) {
         <Layout>
             <div className="flex h-full">
                 {/* Left Panel - List */}
-                {/* On Mobile: Hide this panel if we are on a Detail Page */}
                 <div className={clsx(
                     "flex-1 flex flex-col min-w-0 bg-gray-50 dark:bg-gray-950 border-r border-gray-200 dark:border-gray-800 transition-all duration-300",
                     (!isMobile || !isDetailPage) ? "block" : "hidden",
-                    // On Desktop: "w-1/2 max-w-3xl" if detail is open? 
-                    // If child is present (detail page), we want split view on desktop.
                     isDetailPage && !isMobile ? "w-1/2 max-w-3xl" : "w-full"
                 )}>
                     {/* Toolbar */}
@@ -173,6 +129,28 @@ function EventsLayoutContent({ children }: { children: React.ReactNode }) {
                             </div>
 
                             <select
+                                value={timeFilter}
+                                onChange={(e) => setTimeFilter(e.target.value as any)}
+                                className="h-10 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white"
+                            >
+                                <option value="upcoming">Next / Upcoming</option>
+                                <option value="past">Past Events</option>
+                                <option value="all">Anytime (All)</option>
+                            </select>
+
+                            <select
+                                value={sourceFilter}
+                                onChange={(e) => setSourceFilter(e.target.value)}
+                                className="h-10 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white max-w-[150px]"
+                            >
+                                <option value="">All Sources</option>
+                                <option value="manual">Manual</option>
+                                {sources.filter(s => s.code !== 'manual' && s.code !== 'original').map(s => (
+                                    <option key={s.id} value={s.code}>{s.name || s.code}</option>
+                                ))}
+                            </select>
+
+                            <select
                                 value={statusFilter}
                                 onChange={(e) => setStatusFilter(e.target.value as any)}
                                 className="h-10 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white"
@@ -183,29 +161,9 @@ function EventsLayoutContent({ children }: { children: React.ReactNode }) {
                                 <option value="rejected">Rejected</option>
                             </select>
 
-                            <div className="shrink-0">
-                                <input
-                                    type="date"
-                                    value={dateFilter}
-                                    onChange={(e) => setDateFilter(e.target.value)}
-                                    className="h-10 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white w-auto"
-                                />
-                            </div>
-
                             <select
-                                value={timeStatusFilter}
-                                onChange={(e) => setTimeStatusFilter(e.target.value)}
-                                className="h-10 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white"
-                            >
-                                <option value="all">Any Time</option>
-                                <option value="upcoming">Upcoming</option>
-                                <option value="live">Live Now</option>
-                                <option value="past">Past</option>
-                            </select>
-
-                            <select
-                                value={updateStatusFilter}
-                                onChange={(e) => setUpdateStatusFilter(e.target.value as any)}
+                                value={updatesFilter}
+                                onChange={(e) => setUpdatesFilter(e.target.value as any)}
                                 className="h-10 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white"
                             >
                                 <option value="all">Show All</option>
@@ -215,23 +173,36 @@ function EventsLayoutContent({ children }: { children: React.ReactNode }) {
                         </div>
                     </div>
 
-                    <div className="flex-1 overflow-y-auto p-4">
-                        <EventList
-                            events={displayEvents}
-                            isLoading={isLoading}
-                            selectedIds={selectedIds}
-                            onSelect={handleSelect}
-                            onSelectAll={handleSelectAll}
-                            onEdit={handleEdit}
-                            onVenueClick={(id) => router.push(`/venues?venueId=${id}`)}
-                            onArtistClick={(name) => router.push(`/artists?search=${encodeURIComponent(name)}`)}
-                        />
+                    <div className="flex-1 flex flex-col overflow-hidden">
+                        <div className="flex-1 overflow-y-auto p-4">
+                            <EventList
+                                events={filteredEvents}
+                                isLoading={isLoading}
+                                selectedIds={selectedIds}
+                                onSelect={handleSelect}
+                                onSelectAll={handleSelectAll}
+                                onEdit={handleEdit}
+                                onVenueClick={(id) => router.push(`/venues/${id}`)}
+                                onArtistClick={(name) => router.push(`/artists?search=${encodeURIComponent(name)}`)}
+                            />
+                        </div>
+
+                        {/* Pagination Controls */}
+                        {!isLoading && (
+                            <div className="p-4 border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 z-10 flex-shrink-0">
+                                <PaginationControls
+                                    currentPage={page}
+                                    totalPages={totalPages}
+                                    onPageChange={setPage}
+                                    totalItems={totalItems}
+                                    itemsPerPage={itemsPerPage}
+                                />
+                            </div>
+                        )}
                     </div>
                 </div>
 
                 {/* Right Panel - Children (Form) */}
-                {/* On Mobile: Show Only if Detail Page */}
-                {/* On Desktop: Show if Detail Page */}
                 <div className={clsx(
                     "bg-white dark:bg-gray-900 border-l border-gray-200 dark:border-gray-800 shadow-xl z-10 transition-all",
                     isDetailPage ? (isMobile ? "fixed inset-0 z-50 overflow-auto" : "flex-1 min-w-0") : "hidden"
@@ -241,6 +212,14 @@ function EventsLayoutContent({ children }: { children: React.ReactNode }) {
 
             </div>
         </Layout>
+    );
+}
+
+function EventsLayoutContent({ children }: { children: React.ReactNode }) {
+    return (
+        <Suspense fallback={<div>Loading...</div>}>
+            <EventsLayoutDetails>{children}</EventsLayoutDetails>
+        </Suspense>
     );
 }
 

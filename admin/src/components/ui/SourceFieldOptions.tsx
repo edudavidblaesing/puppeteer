@@ -10,9 +10,10 @@ interface SourceFieldOptionsProps {
   onSelect: (value: any) => void;
   currentValue?: any;
   label?: string;
+  formatDisplay?: (val: any) => string;
 }
 
-export function SourceFieldOptions({ sources, field, onSelect, currentValue, label }: SourceFieldOptionsProps) {
+export function SourceFieldOptions({ sources, field, onSelect, currentValue, label, formatDisplay }: SourceFieldOptionsProps) {
   if (!sources || sources.length === 0) return null;
 
   // We only check for undefined to allow null/empty string
@@ -28,13 +29,32 @@ export function SourceFieldOptions({ sources, field, onSelect, currentValue, lab
       <div className="flex flex-wrap gap-2">
         {validSources.map((source) => {
           const val = source[field];
-          const displayVal = formatSourceValue(val);
+          let displayVal = formatDisplay ? formatDisplay(val) : formatSourceValue(val);
 
           // Compare stringified values or handle nulls
           const currentStr = currentValue === null || currentValue === undefined ? '' : String(currentValue);
           const valStr = val === null || val === undefined ? '' : String(val);
-          // Note: Simple comparison might fail for arrays if order differs, but acceptable for now.
-          const isSelected = currentStr === valStr;
+
+          let isSelected = currentStr === valStr;
+
+          // Special handling for time strings (HH:mm:ss vs HH:mm)
+          if (!isSelected && field && (field as string).includes('time')) {
+            const time1 = currentStr.length > 5 ? currentStr.substring(0, 5) : currentStr;
+            const time2 = valStr.length > 5 ? valStr.substring(0, 5) : valStr;
+            isSelected = time1 === time2 && time1 !== '';
+          }
+
+          // Special handling for date strings (ISO vs YYYY-MM-DD)
+          if (field === 'date') {
+            const date1 = currentStr.split('T')[0];
+            const date2 = valStr.split('T')[0];
+            isSelected = date1 === date2 && date1 !== '';
+
+            // Update display value to be cleaner
+            if (typeof val === 'string' && val.includes('T')) {
+              displayVal = val.split('T')[0];
+            }
+          }
 
           const isBest = bestSource && source.source_code === bestSource.source_code;
 

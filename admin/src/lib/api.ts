@@ -17,6 +17,10 @@ export async function fetchEvents(params?: {
   from?: string;
   to?: string;
   showPast?: boolean;
+  timeFilter?: 'upcoming' | 'past' | 'all';
+  source?: string;
+  createdAfter?: string;
+  updatedAfter?: string;
 }) {
   const searchParams = new URLSearchParams();
   if (params?.city) searchParams.set('city', params.city);
@@ -27,6 +31,10 @@ export async function fetchEvents(params?: {
   if (params?.from) searchParams.set('from', params.from);
   if (params?.to) searchParams.set('to', params.to);
   if (params?.showPast) searchParams.set('showPast', 'true');
+  if (params?.timeFilter) searchParams.set('timeFilter', params.timeFilter);
+  if (params?.source) searchParams.set('source', params.source);
+  if (params?.createdAfter) searchParams.set('createdAfter', params.createdAfter);
+  if (params?.updatedAfter) searchParams.set('updatedAfter', params.updatedAfter);
 
   const response = await fetch(`${API_URL}/db/events?${searchParams}`, { headers });
   if (!response.ok) throw new Error('Failed to fetch events');
@@ -140,6 +148,7 @@ export async function fetchVenues(params?: {
   offset?: number;
   sort?: string;
   order?: string;
+  source?: string;
 }) {
   const searchParams = new URLSearchParams();
   if (params?.city) searchParams.set('city', params.city);
@@ -148,6 +157,7 @@ export async function fetchVenues(params?: {
   if (params?.offset) searchParams.set('offset', params.offset.toString());
   if (params?.sort) searchParams.set('sort', params.sort);
   if (params?.order) searchParams.set('order', params.order);
+  if (params?.source) searchParams.set('source', params.source);
 
   const response = await fetch(`${API_URL}/db/venues?${searchParams}`, { headers });
   if (!response.ok) throw new Error('Failed to fetch venues');
@@ -210,7 +220,7 @@ export async function fetchCitiesDropdown(country?: string) {
 export async function searchVenues(query: string, city?: string) {
   if (!query || query.length < 2) return [];
 
-  const searchParams = new URLSearchParams({ q: query });
+  const searchParams = new URLSearchParams({ search: query });
   if (city) searchParams.set('city', city);
 
   const response = await fetch(`${API_URL}/db/venues/search?${searchParams}`, { headers });
@@ -283,12 +293,13 @@ export async function checkHealth() {
 
 // ============== Admin Artists API ==============
 
-export async function fetchArtists(params?: { search?: string; country?: string; limit?: number; offset?: number }) {
+export async function fetchArtists(params?: { search?: string; country?: string; limit?: number; offset?: number; source?: string }) {
   const searchParams = new URLSearchParams();
   if (params?.search) searchParams.set('search', params.search);
   if (params?.country) searchParams.set('country', params.country);
   if (params?.limit) searchParams.set('limit', params.limit.toString());
   if (params?.offset) searchParams.set('offset', params.offset.toString());
+  if (params?.source) searchParams.set('source', params.source);
 
   const response = await fetch(`${API_URL}/db/artists?${searchParams}`, { headers });
   if (!response.ok) throw new Error('Failed to fetch artists');
@@ -341,11 +352,12 @@ export async function deleteArtist(id: string) {
 
 // ============== Admin Cities API ==============
 
-export async function fetchAdminCities(params?: { search?: string; limit?: number; offset?: number }) {
+export async function fetchAdminCities(params?: { search?: string; limit?: number; offset?: number; source?: string }) {
   const searchParams = new URLSearchParams();
   if (params?.search) searchParams.set('search', params.search);
   if (params?.limit) searchParams.set('limit', params.limit.toString());
   if (params?.offset) searchParams.set('offset', params.offset.toString());
+  if (params?.source) searchParams.set('source', params.source);
 
   const response = await fetch(`${API_URL}/db/cities?${searchParams}`, { headers });
   if (!response.ok) throw new Error('Failed to fetch cities');
@@ -398,12 +410,13 @@ export async function deleteCity(id: string) {
 
 // ============== Admin Venues API ==============
 
-export async function fetchAdminVenues(params?: { search?: string; city?: string; limit?: number; offset?: number }) {
+export async function fetchAdminVenues(params?: { search?: string; city?: string; limit?: number; offset?: number; source?: string }) {
   const searchParams = new URLSearchParams();
   if (params?.search) searchParams.set('search', params.search);
   if (params?.city) searchParams.set('city', params.city);
   if (params?.limit) searchParams.set('limit', params.limit.toString());
   if (params?.offset) searchParams.set('offset', params.offset.toString());
+  if (params?.source) searchParams.set('source', params.source);
 
   const response = await fetch(`${API_URL}/db/venues?${searchParams}`, { headers });
   if (!response.ok) throw new Error('Failed to fetch venues');
@@ -813,11 +826,12 @@ export async function matchVenues(params?: { dryRun?: boolean; minConfidence?: n
 }
 
 // Organizers API
-export async function fetchOrganizers(params?: { search?: string; limit?: number; offset?: number }) {
+export async function fetchOrganizers(params?: { search?: string; limit?: number; offset?: number; source?: string }) {
   const searchParams = new URLSearchParams();
   if (params?.search) searchParams.set('search', params.search);
   if (params?.limit) searchParams.set('limit', params.limit.toString());
   if (params?.offset) searchParams.set('offset', params.offset.toString());
+  if (params?.source) searchParams.set('source', params.source);
 
   const response = await fetch(`${API_URL}/db/organizers?${searchParams}`, { headers });
   if (!response.ok) throw new Error('Failed to fetch organizers');

@@ -104,18 +104,25 @@ export function EventForm({
         // Wait, MultiSelect in EventForm uses simple array of strings or objects?
         // Looking at renderArtists: it map selectedArtists (EventArtist[])
         setSelectedArtists(initialData.artists_list.map((a: any) => ({
-          id: parseInt(a.id) || a.id,
+          id: a.id,
           name: a.name,
           role: a.role || 'performer',
           billing_order: a.billing_order || 0
         })));
       }
       if (initialData.venue_name && !initialData.venue_id) {
-        // Maybe pre-fill search if no ID but has name? 
-        // For now, keep as is.
+        // Pre-fill search if no ID but has name
+        setVenueSearchQuery(initialData.venue_name);
       }
     }
   }, [initialData]);
+
+  // Sync venue name to search query if ID is cleared (e.g. via Reset)
+  useEffect(() => {
+    if (!formData.venue_id && formData.venue_name && formData.venue_name !== venueSearchQuery) {
+      setVenueSearchQuery(formData.venue_name);
+    }
+  }, [formData.venue_id, formData.venue_name]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -149,18 +156,15 @@ export function EventForm({
 
   // --- Venue Handlers ---
 
-  const handleVenueSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    setVenueSearchQuery(value);
-
+  // Triggers search when query changes (user types OR reset updates it)
+  useEffect(() => {
     if (venueSearchTimeoutRef.current) clearTimeout(venueSearchTimeoutRef.current);
 
-    if (value.length > 1) {
+    if (venueSearchQuery.length > 1) {
       venueSearchTimeoutRef.current = setTimeout(async () => {
         setIsVenueSearching(true);
         try {
-          // Pass city if we have it in form data to refine search
-          const results = await searchVenues(value, formData.venue_city || undefined);
+          const results = await searchVenues(venueSearchQuery, formData.venue_city || undefined);
           setVenueSuggestions(results);
           setShowVenueSuggestions(true);
         } catch (err) {
@@ -173,6 +177,14 @@ export function EventForm({
       setVenueSuggestions([]);
       setShowVenueSuggestions(false);
     }
+
+    return () => {
+      if (venueSearchTimeoutRef.current) clearTimeout(venueSearchTimeoutRef.current);
+    };
+  }, [venueSearchQuery, formData.venue_city]);
+
+  const handleVenueSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setVenueSearchQuery(e.target.value);
   };
 
   const selectVenue = (venue: Venue) => {
@@ -290,7 +302,8 @@ export function EventForm({
         // Update name in selected list if edited
         setSelectedArtists(prev => prev.map(a => a.id === result.id ? { id: result.id, name: result.name } : a));
       } else {
-        result = await createArtist(data as any);
+        const response = await createArtist(data as any);
+        result = response.artist;
         selectArtist(result);
       }
       setShowArtistModal(false);
@@ -307,13 +320,23 @@ export function EventForm({
     setShowArtistSuggestions(false);
   };
 
-  const handleEditArtist = async (id: string) => {
+  const handleEditArtist = async (artist: { id: string; name: string }) => {
+    // If it's a temp ID or source ID that hasn't been created yet
+    if (!artist.id || artist.id.toString().startsWith('temp-') || artist.id.toString().startsWith('source-')) {
+      setEditingArtistData({ name: artist.name } as any);
+      setShowArtistModal(true);
+      return;
+    }
+
     try {
-      const artist = await fetchArtist(id);
-      setEditingArtistData(artist);
+      const data = await fetchArtist(artist.id);
+      setEditingArtistData(data);
       setShowArtistModal(true);
     } catch (e) {
       console.error("Failed to fetch artist details", e);
+      // Fallback to opening with name if fetch fails
+      setEditingArtistData({ name: artist.name } as any);
+      setShowArtistModal(true);
     }
   };
 
@@ -342,15 +365,47 @@ export function EventForm({
 
       if (val !== undefined && val !== null) {
         if (field === 'start_time' || field === 'end_time') {
-          if (typeof val === 'string' && val.includes('T')) {
+          let timeVal = '';
+          let dateVal = '';
+
+          if (val instanceof Date) {
+            const iso = val.toISOString();
+            dateVal = iso.split('T')[0];
+            timeVal = iso.split('T')[1].substring(0, 5);
+          } else if (typeof val === 'string' && val.includes('T')) {
             const [d, t] = val.split('T');
-            // @ts-ignore
-            newFormData[field] = t.substring(0, 5);
-            if (field === 'end_time') setEndDate(d);
+            dateVal = d;
+            timeVal = t.substring(0, 5);
           } else {
-            // @ts-ignore
-            newFormData[field] = String(val).substring(0, 5);
+            timeVal = String(val).substring(0, 5);
           }
+
+          // @ts-ignore
+          newFormData[field] = timeVal;
+          // Only update endDate if we have a date part
+          if (field === 'end_time' && dateVal) setEndDate(dateVal);
+        } else if (field === 'artists') {
+          // Special handling for artists: reset selectedArtists list
+          let artistList: any[] = [];
+          if (Array.isArray(val)) {
+            artistList = val;
+          } else if (typeof val === 'string') {
+            try { artistList = JSON.parse(val); } catch { }
+          }
+
+          if (Array.isArray(artistList)) {
+            setSelectedArtists(artistList.map((a: any) => ({
+              id: a.id || a.source_artist_id || 'source-' + Math.random(),
+              name: a.name
+            })));
+            hasChanges = true; // Mark as changed so other fields update if needed
+          }
+        } else if (field === 'venue_name') {
+          // If resetting venue name, we should unlink the Venue ID to ensure it matches source string
+          // @ts-ignore
+          newFormData['venue_id'] = null;
+          // @ts-ignore
+          newFormData[field] = val;
         } else {
           // @ts-ignore
           newFormData[field] = val;
@@ -374,12 +429,18 @@ export function EventForm({
 
   // Helper for single field source selection
   const handleSourceSelect = (field: keyof Event, value: any) => {
-    if ((field === 'start_time' || field === 'end_time') && typeof value === 'string' && value.includes('T')) {
-      const [d, t] = value.split('T');
-      setFormData(prev => ({ ...prev, [field]: t.substring(0, 5) }));
-      if (field === 'end_time') setEndDate(d);
-      // Optional: if start_time source has different date than current form date, should we update form date?
-      // Probably safer to just update time unless user explicitly changes date
+    if ((field === 'start_time' || field === 'end_time')) {
+      let timeVal = value;
+      if (typeof value === 'string') {
+        if (value.includes('T')) {
+          const [d, t] = value.split('T');
+          timeVal = t.substring(0, 5);
+          if (field === 'end_time') setEndDate(d);
+        } else {
+          timeVal = value.substring(0, 5);
+        }
+      }
+      setFormData(prev => ({ ...prev, [field]: timeVal }));
     } else {
       setFormData(prev => ({ ...prev, [field]: value }));
     }
@@ -429,6 +490,32 @@ export function EventForm({
               <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
                 {initialData ? 'Edit Event' : 'New Event'}
               </h2>
+
+              {/* Global Reset Section - Moved to Header */}
+              {uniqueSources.length > 0 && (
+                <div className="flex items-center gap-2 ml-4 pl-4 border-l border-gray-200 dark:border-gray-700">
+                  <span className="text-xs text-gray-500">Reset from:</span>
+                  <button
+                    type="button"
+                    onClick={() => handleResetToSource('best')}
+                    className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-700 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 font-bold uppercase transition-colors"
+                    title="Reset to best matched data"
+                  >
+                    <Star className="w-3 h-3 fill-current" /> Best
+                  </button>
+                  {uniqueSources.map(source => (
+                    <button
+                      key={source}
+                      type="button"
+                      onClick={() => handleResetToSource(source)}
+                      className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-gray-600 dark:text-gray-300 uppercase"
+                      title={`Reset to ${source}`}
+                    >
+                      <SourceIcon sourceCode={source} className="w-3 h-3" />
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="flex items-center gap-2">
               {initialData && onDelete && (
@@ -458,30 +545,6 @@ export function EventForm({
         {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
 
-          {uniqueSources.length > 0 && (
-            <div className="flex items-center gap-2 pb-4 border-b border-gray-100 dark:border-gray-800">
-              <span className="text-xs text-gray-500">Reset whole event from:</span>
-              <button
-                type="button"
-                onClick={() => handleResetToSource('best')}
-                className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-700 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 font-bold uppercase transition-colors"
-                title="Reset to best matched data"
-              >
-                <Star className="w-3 h-3 fill-current" /> Best
-              </button>
-              {uniqueSources.map(source => (
-                <button
-                  key={source}
-                  type="button"
-                  onClick={() => handleResetToSource(source)}
-                  className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-gray-600 dark:text-gray-300 uppercase"
-                  title={`Reset to ${source}`}
-                >
-                  <SourceIcon sourceCode={source} className="w-3 h-3" />
-                </button>
-              ))}
-            </div>
-          )}
 
           {/* Status Bar */}
           <div className="flex items-center justify-between bg-gray-50 dark:bg-gray-800/50 p-3 rounded-lg border border-gray-200 dark:border-gray-700">
@@ -625,11 +688,12 @@ export function EventForm({
 
           {/* Artists Selection */}
           <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-gray-800">
-// Check SourceFieldOptions first
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 flex items-center gap-2">
-                <Users className="w-4 h-4" /> Artists
-              </h3>
+              <div className="flex items-center gap-3">
+                <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                  <Users className="w-4 h-4" /> Artists
+                </h3>
+              </div>
               <ResetSectionButton
                 sources={uniqueSources}
                 onReset={(source) => resetFields(source, ['artists'])}
@@ -650,7 +714,7 @@ export function EventForm({
 
                   return (
                     <span key={artist.id} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-sm font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
-                      <span onClick={() => handleEditArtist(artist.id)} className="cursor-pointer hover:underline mr-1">
+                      <span onClick={() => handleEditArtist(artist)} className="cursor-pointer hover:underline mr-1">
                         {displayName}
                       </span>
                       <button
@@ -672,6 +736,22 @@ export function EventForm({
                 placeholder="Search and add artists..."
                 leftIcon={<Search className="w-4 h-4" />}
               />
+              {initialData?.source_references && (
+                <SourceFieldOptions
+                  sources={initialData?.source_references}
+                  field="artists"
+                  currentValue={selectedArtists}
+                  onSelect={(val) => {
+                    if (Array.isArray(val)) {
+                      setSelectedArtists(val.map((a: any) => ({
+                        id: a.id || a.source_artist_id || 'temp-' + Math.random(),
+                        name: a.name
+                      })));
+                    }
+                  }}
+                  formatDisplay={(val) => Array.isArray(val) ? val.map((a: any) => a.name).join(', ') : ''}
+                />
+              )}
 
               {isArtistSearching && (
                 <div className="absolute right-3 top-[calc(100%-38px)] animate-spin h-4 w-4 border-2 border-purple-500 rounded-full border-t-transparent"></div>
@@ -700,6 +780,9 @@ export function EventForm({
             </div>
           </div>
 
+
+
+
           {/* Venue Selection */}
           <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-gray-800">
             <div className="flex items-center justify-between">
@@ -713,20 +796,28 @@ export function EventForm({
             </div>
 
             <div className="flex gap-4 items-start">
-              {/* Left Column: Map */}
-              <div className="w-32 h-32 flex-shrink-0 bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 relative mt-1">
-                {formData.latitude && formData.longitude ? (
-                  <EventMap
-                    events={[formData as Event]}
-                    center={[formData.latitude, formData.longitude]}
-                    zoom={15}
-                    minimal
-                  />
-                ) : (
-                  <div className="flex items-center justify-center h-full text-gray-400">
-                    <MapPin className="w-8 h-8 opacity-20" />
-                  </div>
-                )}
+              {/* Left Column: Map Preview */}
+              <div className="w-1/3 space-y-2">
+                <div className="w-full aspect-video bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 relative pointer-events-none">
+                  {(formData.venue_id || (formData.latitude && formData.longitude)) ? (
+                    <EventMap
+                      events={[formData as Event]}
+                      center={formData.latitude && formData.longitude ? [formData.latitude, formData.longitude] : undefined}
+                      zoom={13}
+                      minimal
+                    />
+                  ) : (
+                    <div className="flex items-center justify-center h-full text-gray-400">
+                      <MapPin className="w-8 h-8 opacity-20" />
+                    </div>
+                  )}
+                </div>
+                <SourceFieldOptions
+                  sources={initialData?.source_references}
+                  field="venue_name"
+                  currentValue={formData.venue_name}
+                  onSelect={(val) => setFormData({ ...formData, venue_name: val, venue_id: null })}
+                />
               </div>
 
               {/* Right Column: Inputs */}
@@ -757,6 +848,7 @@ export function EventForm({
                       onChange={handleVenueSearchChange}
                       onFocus={() => { if (venueSuggestions.length > 0) setShowVenueSuggestions(true); }}
                       placeholder="Search for a venue..."
+                      autoComplete="off"
                       leftIcon={<Search className="w-4 h-4" />}
                     />
                     {isVenueSearching && (
@@ -783,110 +875,12 @@ export function EventForm({
                         </div>
                       </div>
                     )}
-
-                    {/* Or Manual Details Fallback */}
-                    {formData.venue_name && !formData.venue_id && (
-                      <div className="mt-2 text-xs text-orange-500 flex items-center gap-1">
-                        <AlertTriangle className="w-3 h-3" /> Using manual venue details. Link to a venue for better data.
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {!formData.venue_id && (
-                  <div className="pt-2 pl-2 border-l-2 border-gray-100 dark:border-gray-800 ml-1 space-y-3">
-                    <p className="text-xs text-gray-400 uppercase font-semibold">Manual Venue Details (Fallback)</p>
-                    <div>
-                      <Input
-                        label="Venue Name"
-                        value={formData.venue_name || ''}
-                        onChange={(e) => setFormData({ ...formData, venue_name: e.target.value })}
-                      />
-                      <SourceFieldOptions
-                        sources={initialData?.source_references}
-                        field="venue_name"
-                        currentValue={formData.venue_name}
-                        onSelect={(val) => setFormData({ ...formData, venue_name: val })}
-                      />
-                    </div>
-                    <div>
-                      <Input
-                        label="Address"
-                        value={formData.venue_address || ''}
-                        onChange={(e) => setFormData({ ...formData, venue_address: e.target.value })}
-                      />
-                      <SourceFieldOptions
-                        sources={initialData?.source_references}
-                        field="venue_address"
-                        currentValue={formData.venue_address}
-                        onSelect={(val) => setFormData({ ...formData, venue_address: val })}
-                      />
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <Input
-                          label="City"
-                          value={formData.venue_city || ''}
-                          onChange={(e) => setFormData({ ...formData, venue_city: e.target.value })}
-                        />
-                        <SourceFieldOptions
-                          sources={initialData?.source_references}
-                          field="venue_city"
-                          currentValue={formData.venue_city}
-                          onSelect={(val) => setFormData({ ...formData, venue_city: val })}
-                        />
-                      </div>
-                      <div>
-                        <Input
-                          label="Country"
-                          value={formData.venue_country || ''}
-                          onChange={(e) => setFormData({ ...formData, venue_country: e.target.value })}
-                        />
-                        <SourceFieldOptions
-                          sources={initialData?.source_references}
-                          field="venue_country"
-                          currentValue={formData.venue_country}
-                          onSelect={(val) => setFormData({ ...formData, venue_country: val })}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <Input
-                          label="Latitude"
-                          type="number"
-                          step="any"
-                          value={formData.latitude || ''}
-                          onChange={(e) => setFormData({ ...formData, latitude: parseFloat(e.target.value) })}
-                        />
-                        <SourceFieldOptions
-                          sources={initialData?.source_references}
-                          field="latitude"
-                          currentValue={formData.latitude}
-                          onSelect={(val) => setFormData({ ...formData, latitude: val })}
-                        />
-                      </div>
-                      <div>
-                        <Input
-                          label="Longitude"
-                          type="number"
-                          step="any"
-                          value={formData.longitude || ''}
-                          onChange={(e) => setFormData({ ...formData, longitude: parseFloat(e.target.value) })}
-                        />
-                        <SourceFieldOptions
-                          sources={initialData?.source_references}
-                          field="longitude"
-                          currentValue={formData.longitude}
-                          onSelect={(val) => setFormData({ ...formData, longitude: val })}
-                        />
-                      </div>
-                    </div>
                   </div>
                 )}
               </div>
             </div>
+
+
           </div>
 
 
@@ -1003,33 +997,6 @@ export function EventForm({
         </div>
       </form>
 
-      {/* Venue Modal */}
-      <Modal
-        isOpen={showVenueModal}
-        onClose={() => setShowVenueModal(false)}
-        title={editingVenueData ? 'Edit Venue' : 'Create New Venue'}
-        size="lg"
-      >
-        <VenueForm
-          initialData={editingVenueData || { name: venueSearchQuery }}
-          onSubmit={handleCreateVenue}
-          onCancel={() => setShowVenueModal(false)}
-        />
-      </Modal>
-
-      {/* Artist Modal */}
-      <Modal
-        isOpen={showArtistModal}
-        onClose={() => setShowArtistModal(false)}
-        title={editingArtistData ? 'Edit Artist' : 'Create New Artist'}
-        size="lg"
-      >
-        <ArtistForm
-          initialData={editingArtistData || { name: artistSearchQuery }}
-          onSubmit={handleCreateArtist}
-          onCancel={() => setShowArtistModal(false)}
-        />
-      </Modal>
     </div>
   );
 }

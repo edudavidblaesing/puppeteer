@@ -12,6 +12,7 @@ const artistRoutes = require('./routes/artistRoutes');
 const organizerRoutes = require('./routes/organizerRoutes');
 const authRoutes = require('./routes/authRoutes');
 const statsRoutes = require('./routes/statsRoutes');
+const scrapedRoutes = require('./routes/scrapedRoutes');
 
 const { scrapeResidentAdvisor, scrapeTM, getConfiguredCities } = require('./services/scraperService');
 const { processScrapedEvents, logScrapeHistory } = require('./services/scraperProcessor');
@@ -53,7 +54,11 @@ app.use('/db/artists', artistRoutes);
 app.use('/db/organizers', organizerRoutes);
 app.use('/auth', authRoutes);
 app.use('/db/users', require('./routes/userRoutes'));
+app.get('/db/countries', require('./controllers/cityController').getCountries);
 app.use('/db', statsRoutes); // Mount at /db to match /db/stats
+app.use('/scraped', scrapedRoutes);
+app.use('/db/search', require('./routes/searchRoutes'));
+
 
 // Scraping Routes (Manual Triggers)
 // Scraping Routes (Manual Triggers)
@@ -190,6 +195,14 @@ app.post('/scrape/run', async (req, res) => {
 
             console.log(`[Manual Scrape] Completed ${source} for ${city}: ${events.length} events processed.`);
 
+            // Trigger matching to ensure events are linked immediately
+            console.log('[Manual Scrape] Running matching...');
+            await matchAndLinkEvents();
+            await matchAndLinkArtists();
+            await matchAndLinkVenues();
+            await matchAndLinkOrganizers();
+            console.log('[Manual Scrape] Matching completed.');
+
         } catch (e) {
             console.error(`[Manual Scrape] Error: ${e.message}`);
             await logScrapeHistory({
@@ -301,6 +314,53 @@ let isScrapingRunning = false;
 
 app.get('/scrape/status', (req, res) => {
     res.json({ autoScrapeEnabled, isRunning: isScrapingRunning });
+});
+
+app.get('/scrape/stats', async (req, res) => {
+    try {
+        const [
+            mainEvents,
+            pendingEvents,
+            mainVenues,
+            mainArtists,
+            scrapedEvents,
+            scrapedArtists
+        ] = await Promise.all([
+            pool.query('SELECT COUNT(*) FROM events'), // Total approved/published events? No, total events table.
+            pool.query("SELECT COUNT(*) FROM events WHERE publish_status = 'pending'"),
+            pool.query('SELECT COUNT(*) FROM venues'),
+            pool.query('SELECT COUNT(*) FROM artists'),
+            pool.query('SELECT source_code, COUNT(*) FROM scraped_events GROUP BY source_code'),
+            pool.query('SELECT source_code, COUNT(*) FROM scraped_artists GROUP BY source_code') // or just artists where source='sp'
+        ]);
+
+        // Helper to get count from grouped query
+        const getCount = (rows, code) => {
+            const row = rows.find(r => r.source_code === code);
+            return row ? parseInt(row.count) : 0;
+        };
+
+        const raEvents = getCount(scrapedEvents.rows, 'ra');
+        const tmEvents = getCount(scrapedEvents.rows, 'tm') + getCount(scrapedEvents.rows, 'ticketmaster'); // Handle legacy if any
+        const spotifyArtists = getCount(scrapedArtists.rows, 'sp') + getCount(scrapedArtists.rows, 'spotify');
+
+        // Also approved events for the stat card
+        const approvedEvents = await pool.query("SELECT COUNT(*) FROM events WHERE publish_status = 'approved'");
+
+        res.json({
+            total_main_events: parseInt(mainEvents.rows[0].count),
+            total_main_venues: parseInt(mainVenues.rows[0].count),
+            total_main_artists: parseInt(mainArtists.rows[0].count),
+            pending_events: parseInt(pendingEvents.rows[0].count),
+            approved_events: parseInt(approvedEvents.rows[0].count),
+            ra_events: raEvents,
+            ticketmaster_events: tmEvents, // Maintaining key for frontend compat
+            spotify_artists: spotifyArtists
+        });
+    } catch (e) {
+        console.error('Stats error:', e);
+        res.status(500).json({ error: e.message });
+    }
 });
 
 app.post('/scrape/toggle', (req, res) => {

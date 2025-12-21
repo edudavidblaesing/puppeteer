@@ -1,5 +1,6 @@
 import React from 'react';
 import { Building2, MapPin, Globe } from 'lucide-react';
+import { SourceIcon } from '@/components/ui/SourceIcon';
 import { Venue } from '@/types';
 
 interface VenueListProps {
@@ -70,6 +71,14 @@ export function VenueList({
                       <span className="truncate max-w-[200px]">{venue.content_url}</span>
                     </div>
                   )}
+                </div>
+              </div>
+
+              <div className="text-right flex-shrink-0 self-start flex flex-col items-end gap-1">
+                <div className="flex items-center gap-1 mt-1 justify-end">
+                  {Array.from(new Set(venue.source_references?.map(s => s.source_code) || [])).map(source => (
+                    <SourceIcon key={source} sourceCode={source} className="w-4 h-4" />
+                  ))}
                 </div>
               </div>
             </div>

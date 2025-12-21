@@ -6,32 +6,59 @@ export function useArtists() {
   const [artists, setArtists] = useState<Artist[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
+
+  // Pagination State
+  const [page, setPage] = useState(1);
+  const [limit] = useState(50);
+  const [totalItems, setTotalItems] = useState(0);
+
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [sourceFilter, setSourceFilter] = useState('');
+
+  // Debounce search
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+      setPage(1);
+    }, 500);
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
 
   const loadArtists = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await fetchArtists({ limit: 1000 });
+      const response = await fetchArtists({
+        search: debouncedSearch,
+        limit,
+        offset: (page - 1) * limit,
+        source: sourceFilter
+      });
       setArtists(response.data || []);
+      setTotalItems(response.total || 0); // Assuming API returns total
     } catch (err: any) {
       setError(err.message || 'Failed to load artists');
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [page, limit, debouncedSearch, sourceFilter]);
+
+  // Auto-load
+  useEffect(() => {
+    loadArtists();
+  }, [loadArtists]);
 
   const addArtist = useCallback(async (data: any) => {
     try {
       const newArtist = await createArtist(data);
-      setArtists(prev => [...prev, newArtist]);
+      loadArtists();
       return newArtist;
     } catch (err: any) {
       throw new Error(err.message || 'Failed to create artist');
     }
-  }, []);
+  }, [loadArtists]);
 
   const editArtist = useCallback(async (id: string, data: any) => {
     try {
@@ -46,26 +73,15 @@ export function useArtists() {
   const removeArtist = useCallback(async (id: string) => {
     try {
       await deleteArtist(id);
-      setArtists(prev => prev.filter(a => a.id !== id));
+      loadArtists();
     } catch (err: any) {
       throw new Error(err.message || 'Failed to delete artist');
     }
-  }, []);
-
-  // Derived state
-  const filteredArtists = useMemo(() => {
-    return artists.filter(artist => {
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase();
-        return artist.name.toLowerCase().includes(query);
-      }
-      return true;
-    }).sort((a, b) => a.name.localeCompare(b.name));
-  }, [artists, searchQuery]);
+  }, [loadArtists]);
 
   return {
     artists,
-    filteredArtists,
+    filteredArtists: artists, // Main list is now filtered
     isLoading,
     error,
     loadArtists,
@@ -73,6 +89,13 @@ export function useArtists() {
     editArtist,
     removeArtist,
     searchQuery,
-    setSearchQuery
+    setSearchQuery,
+    sourceFilter,
+    setSourceFilter,
+    page,
+    setPage,
+    totalPages: Math.ceil(totalItems / limit),
+    totalItems,
+    itemsPerPage: limit
   };
 }

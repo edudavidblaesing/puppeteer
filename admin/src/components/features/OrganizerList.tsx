@@ -1,5 +1,6 @@
 import React from 'react';
 import { Briefcase, Globe, Link as LinkIcon } from 'lucide-react';
+import { SourceIcon } from '@/components/ui/SourceIcon';
 import { Organizer } from '@/types';
 
 interface OrganizerListProps {
@@ -51,7 +52,7 @@ export function OrganizerList({
               </div>
 
               <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2 mb-1">
                   <h3 className="text-base font-medium text-gray-900 dark:text-gray-100 truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
                     {organizer.name}
                   </h3>
@@ -70,6 +71,14 @@ export function OrganizerList({
                       <span className="truncate max-w-[200px]">{organizer.website_url}</span>
                     </div>
                   )}
+                </div>
+              </div>
+
+              <div className="text-right flex-shrink-0 self-start flex flex-col items-end gap-1">
+                <div className="flex items-center gap-1 mt-1 justify-end">
+                  {Array.from(new Set(organizer.source_references?.map(s => s.source_code) || [])).map(source => (
+                    <SourceIcon key={source} sourceCode={source} className="w-4 h-4" />
+                  ))}
                 </div>
               </div>
             </div>

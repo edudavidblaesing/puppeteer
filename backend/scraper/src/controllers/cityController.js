@@ -2,28 +2,59 @@ const { pool } = require('../db');
 
 exports.getCities = async (req, res) => {
     try {
-        const { search, limit = 50, offset = 0 } = req.query;
+        const { search, limit = 50, offset = 0, source } = req.query;
         let query = `
             SELECT c.*, 
             (SELECT COUNT(*) FROM events e WHERE e.venue_city = c.name) as event_count,
             (SELECT COUNT(*) FROM venues v WHERE v.city = c.name) as venue_count
             FROM cities c
+            WHERE 1=1
         `;
         const params = [];
+        let paramIndex = 1;
 
         if (search) {
-            query += ` WHERE LOWER(c.name) LIKE $1 OR LOWER(c.country) LIKE $1`;
+            query += ` AND (LOWER(c.name) LIKE $${paramIndex} OR LOWER(c.country) LIKE $${paramIndex})`;
             params.push(`%${search.toLowerCase()}%`);
+            paramIndex++;
         }
 
-        query += ` ORDER BY c.name LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+        if (source) {
+            query += ` AND EXISTS (
+                SELECT 1 FROM city_source_configs csc 
+                JOIN event_sources es ON es.id = csc.source_id 
+                WHERE csc.city_id = c.id AND es.code = $${paramIndex}
+            )`;
+            params.push(source);
+            paramIndex++;
+        }
+
+        query += ` ORDER BY c.name LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
         params.push(limit, offset);
 
         const result = await pool.query(query, params);
 
         // Get total count
-        const countQuery = `SELECT COUNT(*) FROM cities c ${search ? 'WHERE LOWER(c.name) LIKE $1 OR LOWER(c.country) LIKE $1' : ''}`;
-        const countParams = search ? [`%${search.toLowerCase()}%`] : [];
+        let countQuery = 'SELECT COUNT(*) FROM cities c WHERE 1=1';
+        let countParams = [];
+        let countParamIndex = 1;
+
+        if (search) {
+            countQuery += ` AND (LOWER(c.name) LIKE $${countParamIndex} OR LOWER(c.country) LIKE $${countParamIndex})`;
+            countParams.push(`%${search.toLowerCase()}%`);
+            countParamIndex++;
+        }
+
+        if (source) {
+            countQuery += ` AND EXISTS (
+                SELECT 1 FROM city_source_configs csc 
+                JOIN event_sources es ON es.id = csc.source_id 
+                WHERE csc.city_id = c.id AND es.code = $${countParamIndex}
+            )`;
+            countParams.push(source);
+            countParamIndex++;
+        }
+
         const countResult = await pool.query(countQuery, countParams);
 
         res.json({
@@ -174,6 +205,27 @@ exports.getCitiesDropdown = async (req, res) => {
         query += ' ORDER BY name';
         const result = await pool.query(query, params);
         res.json({ data: result.rows });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+};
+
+// Get distinct countries for dropdown
+exports.getCountries = async (req, res) => {
+    try {
+        // ideally we would use a library or a full table of countries.
+        // For now, let's return distinct countries from cities + a hardcoded list of common ones
+        // or just return a standard list.
+        const result = await pool.query('SELECT DISTINCT country FROM cities WHERE country IS NOT NULL ORDER BY country');
+
+        // If we want a richer list, we can augment this.
+        // Assuming country column stores country CODES or NAMES.
+        // Let's assume they are codes or names.
+
+        // Let's just return what is in the DB for now to unblock.
+        const dbCountries = result.rows.map(r => ({ name: r.country, code: r.country }));
+
+        res.json({ data: dbCountries });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }

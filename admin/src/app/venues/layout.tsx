@@ -1,17 +1,19 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { Plus, Search } from 'lucide-react';
 import { Layout } from '@/components/Layout';
 import { VenueList } from '@/components/features/VenueList';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { fetchSources } from '@/lib/api';
 import { VenuesProvider, useVenuesContext } from '@/contexts/VenuesContext';
+import { PaginationControls } from '@/components/ui/PaginationControls';
 import clsx from 'clsx';
 import { useToast } from '@/contexts/ToastContext';
 
-function VenuesLayoutContent({ children }: { children: React.ReactNode }) {
+function VenuesLayoutDetails({ children }: { children: React.ReactNode }) {
     const router = useRouter();
     const pathname = usePathname();
     const isDetailPage = pathname !== '/venues' && pathname !== '/venues/';
@@ -19,10 +21,24 @@ function VenuesLayoutContent({ children }: { children: React.ReactNode }) {
     const {
         venues,
         isLoading,
-        loadVenues
+        loadVenues,
+        page,
+        setPage,
+        totalPages,
+        totalItems,
+        itemsPerPage,
+        searchQuery,
+        setSearchQuery,
+        sourceFilter,
+        setSourceFilter
     } = useVenuesContext();
 
-    const [searchQuery, setSearchQuery] = useState('');
+    const [sources, setSources] = useState<any[]>([]);
+
+    useEffect(() => {
+        fetchSources().then(setSources).catch(console.error);
+    }, []);
+
     const [isMobile, setIsMobile] = useState(false);
 
     // Check for mobile view
@@ -37,18 +53,6 @@ function VenuesLayoutContent({ children }: { children: React.ReactNode }) {
     useEffect(() => {
         loadVenues();
     }, [loadVenues]);
-
-    // Debounced search
-    useEffect(() => {
-        const timer = setTimeout(() => {
-            if (searchQuery) {
-                loadVenues({ search: searchQuery });
-            } else {
-                loadVenues();
-            }
-        }, 500);
-        return () => clearTimeout(timer);
-    }, [searchQuery, loadVenues]);
 
     const handleCreate = () => {
         router.push('/venues/new');
@@ -85,15 +89,41 @@ function VenuesLayoutContent({ children }: { children: React.ReactNode }) {
                                     leftIcon={<Search className="w-4 h-4" />}
                                 />
                             </div>
+                            <select
+                                value={sourceFilter}
+                                onChange={(e) => setSourceFilter(e.target.value)}
+                                className="h-10 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white max-w-[150px]"
+                            >
+                                <option value="">All Sources</option>
+                                <option value="manual">Manual</option>
+                                {sources.filter(s => s.code !== 'manual' && s.code !== 'original').map(s => (
+                                    <option key={s.id} value={s.code}>{s.name || s.code}</option>
+                                ))}
+                            </select>
                         </div>
                     </div>
 
-                    <div className="flex-1 overflow-y-auto p-4">
-                        <VenueList
-                            venues={venues}
-                            isLoading={isLoading}
-                            onEdit={handleEdit}
-                        />
+                    <div className="flex-1 flex flex-col overflow-hidden">
+                        <div className="flex-1 overflow-y-auto p-4">
+                            <VenueList
+                                venues={venues}
+                                isLoading={isLoading}
+                                onEdit={handleEdit}
+                            />
+                        </div>
+
+                        {/* Pagination Controls */}
+                        {!isLoading && venues.length > 0 && (
+                            <div className="p-4 border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 z-10 flex-shrink-0">
+                                <PaginationControls
+                                    currentPage={page}
+                                    totalPages={totalPages}
+                                    onPageChange={setPage}
+                                    totalItems={totalItems}
+                                    itemsPerPage={itemsPerPage}
+                                />
+                            </div>
+                        )}
                     </div>
                 </div>
 
@@ -107,6 +137,14 @@ function VenuesLayoutContent({ children }: { children: React.ReactNode }) {
 
             </div>
         </Layout>
+    );
+}
+
+function VenuesLayoutContent({ children }: { children: React.ReactNode }) {
+    return (
+        <Suspense fallback={<div>Loading...</div>}>
+            <VenuesLayoutDetails>{children}</VenuesLayoutDetails>
+        </Suspense>
     );
 }
 

@@ -24,7 +24,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
         <p className="font-semibold mb-2 text-gray-300">{label}</p>
         <div className="space-y-1">
           <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+            <div className="w-2 h-2 rounded-full bg-violet-500"></div>
             <span className="text-gray-400">Fetched:</span>
             <span className="font-mono">{data.fetched}</span>
           </div>
@@ -37,6 +37,11 @@ const CustomTooltip = ({ active, payload, label }: any) => {
             <div className="w-2 h-2 rounded-full bg-blue-500"></div>
             <span className="text-gray-400">Updated:</span>
             <span className="font-mono">{data.updated}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-green-500"></div>
+            <span className="text-gray-400">Approved:</span>
+            <span className="font-mono">{data.approved || 0}</span>
           </div>
         </div>
       </div>
@@ -55,7 +60,7 @@ export function ActivityChart({ data }: ActivityChartProps) {
   const displayData = days === 7 ? safeData.slice(-7) : safeData;
 
   return (
-    <div className="bg-white dark:bg-gray-900 p-6 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm h-[400px] flex flex-col">
+    <div className="bg-white dark:bg-gray-900 p-6 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm h-full flex flex-col">
       <div className="flex justify-between items-center mb-6 shrink-0">
         <div>
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Analytics History</h3>
@@ -73,8 +78,8 @@ export function ActivityChart({ data }: ActivityChartProps) {
         </div>
       </div>
 
-      {/* Use a fixed height container for the chart to avoid flexbox calculation issues */}
-      <div className="w-full h-[300px] relative">
+      {/* Flexible height container */}
+      <div className="w-full flex-1 relative min-h-[300px]">
         {displayData.length === 0 ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 z-10">
             <p>No activity recorded yet</p>
@@ -82,7 +87,7 @@ export function ActivityChart({ data }: ActivityChartProps) {
           </div>
         ) : null}
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={displayData} barSize={20} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+          <BarChart data={displayData} barSize={12} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" strokeOpacity={0.3} />
             <XAxis
               dataKey="date"
@@ -98,8 +103,10 @@ export function ActivityChart({ data }: ActivityChartProps) {
             />
             <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.1)' }} />
             <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px' }} />
-            <Bar dataKey="new" name="New Events" stackId="a" fill="#F97316" radius={[0, 0, 4, 4]} />
-            <Bar dataKey="updated" name="Updates Processed" stackId="a" fill="#3B82F6" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="fetched" name="Fetched" fill="#8B5CF6" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="new" name="New" fill="#F97316" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="updated" name="Updated" fill="#3B82F6" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="approved" name="Approved" fill="#10B981" radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>

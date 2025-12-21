@@ -6,39 +6,84 @@ export function useEvents() {
   const [events, setEvents] = useState<Event[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
+
+  // Pagination State
+  const [page, setPage] = useState(1);
+  const [limit] = useState(50);
+  const [totalItems, setTotalItems] = useState(0);
+
+  // Filters
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [cityFilter, setCityFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
-  const [showPastEvents, setShowPastEvents] = useState(false);
+  const [updatesFilter, setUpdatesFilter] = useState<'all' | 'new' | 'updated'>('all');
+  const [timeFilter, setTimeFilter] = useState<'upcoming' | 'past' | 'all'>('upcoming');
+  const [sourceFilter, setSourceFilter] = useState('');
+
+  // Debounced Search state
+  const [debouncedSearch, setDebouncedSearch] = useState(searchQuery);
+
+  // Debounce search query
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+      setPage(1); // Reset to page 1 on search change
+    }, 500);
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
+
+  // Reset page when other filters change
+  useEffect(() => {
+    setPage(1);
+  }, [cityFilter, statusFilter, updatesFilter, timeFilter, sourceFilter]);
 
   const loadEvents = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await fetchEvents({ showPast: showPastEvents });
+      const OneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+      const response = await fetchEvents({
+        limit,
+        offset: (page - 1) * limit,
+        search: debouncedSearch,
+        city: cityFilter || undefined,
+        status: statusFilter !== 'all' ? statusFilter : undefined,
+        timeFilter,
+        source: sourceFilter || undefined,
+        createdAfter: updatesFilter === 'new' ? OneDayAgo : undefined,
+        updatedAfter: updatesFilter === 'updated' ? OneDayAgo : undefined
+      });
+
       setEvents(response.data || []);
+      setTotalItems(response.total || 0);
     } catch (err: any) {
       setError(err.message || 'Failed to load events');
     } finally {
       setIsLoading(false);
     }
-  }, [showPastEvents]);
+  }, [page, limit, debouncedSearch, cityFilter, statusFilter, updatesFilter, timeFilter, sourceFilter]);
+
+  // Auto-load on dependency changes
+  useEffect(() => {
+    loadEvents();
+  }, [loadEvents]);
 
   const addEvent = useCallback(async (data: Partial<Event>) => {
     try {
       const newEvent = await createEvent(data);
-      setEvents(prev => [...prev, newEvent]);
+      loadEvents(); // Reload to respect sort order/pagination
       return newEvent;
     } catch (err: any) {
       throw new Error(err.message || 'Failed to create event');
     }
-  }, []);
+  }, [loadEvents]);
 
   const editEvent = useCallback(async (id: string, data: Partial<Event>) => {
     try {
       const updatedEvent = await updateEvent(id, data);
+      // Optimistic update
       setEvents(prev => prev.map(e => e.id === id ? { ...e, ...updatedEvent } : e));
       return updatedEvent;
     } catch (err: any) {
@@ -49,55 +94,25 @@ export function useEvents() {
   const removeEvent = useCallback(async (id: string) => {
     try {
       await deleteEvent(id);
-      setEvents(prev => prev.filter(e => e.id !== id));
+      loadEvents(); // Reload to refresh list
     } catch (err: any) {
       throw new Error(err.message || 'Failed to delete event');
     }
-  }, []);
+  }, [loadEvents]);
 
   const updateStatus = useCallback(async (ids: string[], status: 'pending' | 'approved' | 'rejected') => {
     try {
       await setPublishStatus(ids, status);
+      // Optimistic update
       setEvents(prev => prev.map(e => ids.includes(e.id) ? { ...e, publish_status: status } : e));
     } catch (err: any) {
       throw new Error(err.message || 'Failed to update status');
     }
   }, []);
 
-  // Derived state
-  const filteredEvents = useMemo(() => {
-    return events.filter(event => {
-      // Search filter
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase();
-        const matchesSearch = 
-          event.title?.toLowerCase().includes(query) ||
-          event.venue_name?.toLowerCase().includes(query) ||
-          event.description?.toLowerCase().includes(query);
-        if (!matchesSearch) return false;
-      }
-
-      // City filter
-      if (cityFilter && event.venue_city !== cityFilter) return false;
-
-      // Status filter
-      if (statusFilter !== 'all' && event.publish_status !== statusFilter) return false;
-
-      // Past events filter
-      if (!showPastEvents && event.date) {
-        const eventDate = new Date(event.date);
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        if (eventDate < today) return false;
-      }
-
-      return true;
-    });
-  }, [events, searchQuery, cityFilter, statusFilter, showPastEvents]);
-
   return {
     events,
-    filteredEvents,
+    filteredEvents: events, // Backwards compatibility: "filtered" is just current page events now
     isLoading,
     error,
     loadEvents,
@@ -111,7 +126,19 @@ export function useEvents() {
     setCityFilter,
     statusFilter,
     setStatusFilter,
-    showPastEvents,
-    setShowPastEvents
+    updatesFilter,
+    setUpdatesFilter,
+    timeFilter,
+    setTimeFilter,
+    sourceFilter,
+    setSourceFilter,
+    // Legacy support mapping
+    showPastEvents: timeFilter === 'past' || timeFilter === 'all',
+    setShowPastEvents: (show: boolean) => setTimeFilter(show ? 'all' : 'upcoming'),
+    page,
+    setPage,
+    totalPages: Math.ceil(totalItems / limit),
+    totalItems,
+    itemsPerPage: limit
   };
 }

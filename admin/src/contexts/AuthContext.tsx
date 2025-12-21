@@ -84,7 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const data = await response.json();
     localStorage.setItem('admin_token', data.token);
     setUser(data.user);
-    router.push('/events');
+    router.push('/');
   };
 
   const logout = async () => {

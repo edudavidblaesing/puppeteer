@@ -54,7 +54,8 @@ export function VenueForm({
     content_url: '',
     venue_type: '',
     phone: '',
-    email: ''
+    email: '',
+    description: ''
   });
 
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
@@ -226,7 +227,7 @@ export function VenueForm({
   };
 
   const handleResetToSource = (sourceCode: string) => {
-    resetFields(sourceCode, ['name', 'address', 'city', 'country', 'latitude', 'longitude', 'content_url', 'venue_type', 'phone', 'email']);
+    resetFields(sourceCode, ['name', 'address', 'city', 'country', 'latitude', 'longitude', 'content_url', 'venue_type', 'phone', 'email', 'description']);
   };
 
   return (
@@ -298,7 +299,7 @@ export function VenueForm({
               </h3>
               <ResetSectionButton
                 sources={uniqueSources}
-                onReset={(source) => resetFields(source, ['name', 'venue_type'])}
+                onReset={(source) => resetFields(source, ['name', 'venue_type', 'description'])}
               />
             </div>
 
@@ -364,6 +365,24 @@ export function VenueForm({
                 field="venue_type"
                 currentValue={formData.venue_type}
                 onSelect={(val) => setFormData({ ...formData, venue_type: val })}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Description
+              </label>
+              <textarea
+                value={formData.description || ''}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                rows={4}
+                className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white"
+                placeholder="Venue description..."
+              />
+              <SourceFieldOptions
+                sources={initialData?.source_references}
+                field="description"
+                currentValue={formData.description}
+                onSelect={(val) => setFormData({ ...formData, description: val })}
               />
             </div>
           </div>

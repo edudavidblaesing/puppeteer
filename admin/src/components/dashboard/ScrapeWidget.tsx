@@ -6,25 +6,33 @@ import { Button } from '@/components/ui/Button';
 import { syncEventsPipeline, fetchConfiguredCities, fetchSources, getScrapeStatus, fetchStats } from '@/lib/api';
 import Link from 'next/link';
 
-export function ScrapeWidget() {
+interface ScrapeWidgetProps {
+  stats?: {
+    total: number;
+    new_24h: number;
+    last_run: string | null;
+    active_sources: string[];
+    next_scheduled: string;
+  };
+}
+
+export function ScrapeWidget({ stats }: ScrapeWidgetProps) {
   const [isScraping, setIsScraping] = useState(false);
-  const [lastScrape, setLastScrape] = useState<Date | null>(null);
-  const [nextScrape, setNextScrape] = useState<Date | null>(null);
   const [configuredCities, setConfiguredCities] = useState<any[]>([]);
   const [globalSources, setGlobalSources] = useState<any[]>([]);
 
+  // Derived state from props
+  const lastScrape = stats?.last_run ? new Date(stats.last_run) : null;
+  const nextScrape = stats?.next_scheduled ? new Date(stats.next_scheduled) : null;
+
   useEffect(() => {
-    // Initial data fetch
+    // Initial data fetch (Config & Sources only)
     Promise.all([
       fetchConfiguredCities(),
-      fetchSources(),
-      fetchStats()
-    ]).then(([citiesData, sourcesData, statsData]) => {
+      fetchSources()
+    ]).then(([citiesData, sourcesData]) => {
       setConfiguredCities(citiesData);
       setGlobalSources(sourcesData);
-      if (statsData.nextScheduledScrape) {
-        setNextScrape(new Date(statsData.nextScheduledScrape));
-      }
     }).catch(console.error);
 
     // Polling for scrape status
@@ -86,7 +94,7 @@ export function ScrapeWidget() {
         enrichAfter: true,
         dedupeAfter: true
       });
-      setLastScrape(new Date());
+      // setLastScrape(new Date()); // Handled by props update from parent polling/refresh
     } catch (error) {
       console.error(error);
       alert('Failed to trigger scraper');
@@ -134,17 +142,26 @@ export function ScrapeWidget() {
               <span className="block text-[10px] text-orange-200 uppercase font-bold tracking-wider mb-1">Active Sources</span>
               <div className="text-xs font-medium text-white leading-relaxed truncate">
                 {(() => {
-                  const globallyActiveCodes = new Set(
-                    globalSources.filter(s => s.is_active).map(s => s.code)
-                  );
+                  // list active scrapers from city config
+                  const globallyActive = globalSources.filter(s => s.is_active);
+                  const globallyActiveCodes = new Set(globallyActive.map(s => s.code));
 
-                  const sources = Array.from(new Set(
+                  const cityActiveSources = new Set(
                     configuredCities.flatMap(c =>
                       Object.entries(c.sources || {})
                         .filter(([src, active]) => active && globallyActiveCodes.has(src))
                         .map(([src]) => src)
                     )
-                  ));
+                  );
+
+                  // Add active enrichment sources (sp, mb)
+                  globallyActive.forEach(s => {
+                    if (['sp', 'mb', 'musicbrainz'].includes(s.code)) {
+                      cityActiveSources.add(s.code);
+                    }
+                  });
+
+                  const sources = Array.from(cityActiveSources);
                   return sources.length > 0 ? sources.join(', ') : <span className="text-white/50 italic">None active</span>;
                 })()}
               </div>

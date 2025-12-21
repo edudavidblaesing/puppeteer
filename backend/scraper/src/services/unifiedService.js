@@ -10,6 +10,7 @@ const SOURCE_PRIORITY = {
     'di': 8,
     // Add missing?
     'mb': 5, // MusicBrainz high prio for artists
+    'wiki': 8,
     'fb': 9
 };
 
@@ -324,7 +325,7 @@ async function refreshUnifiedArtist(unifiedId) {
             CASE sa.source_code 
                 WHEN 'og' THEN 1 
                 WHEN 'manual' THEN 1
-                WHEN 'musicbrainz' THEN 2
+                WHEN 'mb' THEN 2
                 ELSE 10 
             END ASC
     `, [unifiedId]);

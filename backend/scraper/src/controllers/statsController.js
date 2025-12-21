@@ -2,32 +2,81 @@ const { pool } = require('../db');
 
 exports.getStats = async (req, res) => {
     try {
-        const [events, venues, artists, organizers] = await Promise.all([
-            pool.query('SELECT COUNT(*) FROM events'),
+        // 1. Event Status Counts
+        const statusCounts = await pool.query(`
+            SELECT 
+                COUNT(*) as total,
+                COUNT(*) FILTER (WHERE publish_status = 'approved') as approved,
+                COUNT(*) FILTER (WHERE publish_status = 'pending') as pending,
+                COUNT(*) FILTER (WHERE publish_status = 'rejected') as rejected,
+                COUNT(*) FILTER (WHERE publish_status = 'approved' AND date >= CURRENT_DATE) as active
+            FROM events
+        `);
+
+        // 2. Recent Activity (New & Updated)
+        const activityStats = await pool.query(`
+            SELECT 
+                COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '24 hours') as new_24h,
+                COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days') as new_7d,
+                COUNT(*) FILTER (WHERE updated_at >= NOW() - INTERVAL '24 hours') as updated_24h
+            FROM events
+        `);
+
+        // 3. Entity Counts
+        const [venues, artists, organizers] = await Promise.all([
             pool.query('SELECT COUNT(*) FROM venues'),
             pool.query('SELECT COUNT(*) FROM artists'),
             pool.query('SELECT COUNT(*) FROM organizers')
         ]);
 
-        // Also get some scraping stats
-        const scrapedEvents = await pool.query('SELECT COUNT(*) FROM scraped_events');
+        // 4. Scraping Stats
+        // Get last successful scrape time from history or scraped_events
+        const lastScrapeRes = await pool.query(`
+            SELECT MAX(created_at) as last_run 
+            FROM scrape_history 
+            WHERE error IS NULL
+        `);
+
+        // Fallback to scraped_events if history is empty
+        let lastRun = lastScrapeRes.rows[0].last_run;
+        if (!lastRun) {
+            const lastUpdateRes = await pool.query('SELECT MAX(updated_at) as last_run FROM scraped_events');
+            lastRun = lastUpdateRes.rows[0].last_run;
+        }
+
+        const scrapedStats = await pool.query(`
+            SELECT COUNT(*) as total,
+                   COUNT(*) FILTER (WHERE scraped_at >= NOW() - INTERVAL '24 hours') as new_24h
+            FROM scraped_events
+        `);
 
         res.json({
-            events: parseInt(events.rows[0].count),
+            events: {
+                total: parseInt(statusCounts.rows[0].total),
+                approved: parseInt(statusCounts.rows[0].approved),
+                pending: parseInt(statusCounts.rows[0].pending),
+                rejected: parseInt(statusCounts.rows[0].rejected),
+                active: parseInt(statusCounts.rows[0].active),
+                new_24h: parseInt(activityStats.rows[0].new_24h),
+                new_7d: parseInt(activityStats.rows[0].new_7d),
+                updated_24h: parseInt(activityStats.rows[0].updated_24h)
+            },
             venues: parseInt(venues.rows[0].count),
             artists: parseInt(artists.rows[0].count),
             organizers: parseInt(organizers.rows[0].count),
-            scraped_events: parseInt(scrapedEvents.rows[0].count),
-            active_scrapers: 2, // Hardcoded active sources (RA, TM) for now or fetch dynamic count
-            nextScheduledScrape: (() => {
-                const now = new Date();
-                const next = new Date();
-                next.setHours(2, 0, 0, 0);
-                if (now >= next) {
-                    next.setDate(next.getDate() + 1);
-                }
-                return next.toISOString();
-            })()
+            scraping: {
+                total: parseInt(scrapedStats.rows[0].total),
+                new_24h: parseInt(scrapedStats.rows[0].new_24h),
+                last_run: lastRun || null,
+                active_sources: ['ra', 'tm', 'sp'], // TODO: dynamic
+                next_scheduled: (() => {
+                    const now = new Date();
+                    const next = new Date();
+                    next.setHours(2, 0, 0, 0); // 2 AM
+                    if (now >= next) next.setDate(next.getDate() + 1);
+                    return next.toISOString();
+                })()
+            }
         });
     } catch (error) {
         console.error('Error fetching stats:', error);

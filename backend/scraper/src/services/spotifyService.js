@@ -1,5 +1,7 @@
 // using global fetch (Node 18+)
 
+const { stringSimilarity } = require('../utils/stringUtils');
+
 let accessToken = null;
 let tokenExpiresAt = 0;
 
@@ -51,7 +53,8 @@ const searchArtist = async (name) => {
     try {
         const token = await getAccessToken();
         const query = encodeURIComponent(name);
-        const url = `https://api.spotify.com/v1/search?q=${query}&type=artist&limit=1`;
+        // Increase limit to find best match among top results
+        const url = `https://api.spotify.com/v1/search?q=${query}&type=artist&limit=5`;
 
         const response = await fetch(url, {
             headers: { 'Authorization': `Bearer ${token}` }
@@ -63,7 +66,28 @@ const searchArtist = async (name) => {
 
         const data = await response.json();
         if (data.artists && data.artists.items.length > 0) {
-            return data.artists.items[0];
+            const items = data.artists.items;
+
+            // Find best match by name
+            let bestMatch = null;
+            let bestScore = 0;
+
+            for (const item of items) {
+                const score = stringSimilarity(name, item.name);
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestMatch = item;
+                }
+            }
+
+            // If we have a decent match, return it
+            if (bestMatch && bestScore > 0.6) {
+                return bestMatch;
+            }
+
+            // Fallback to first if strict match fails but we have results
+            // (Though strict matching service will filter it anyway)
+            return items[0];
         }
         return null;
     } catch (error) {
@@ -89,7 +113,7 @@ const getArtistDetails = async (spotifyId) => {
 
         // Normalize
         return {
-            source_code: 'spotify',
+            source_code: 'sp',
             source_artist_id: data.id,
             name: data.name,
             genres: data.genres || [],
@@ -105,5 +129,6 @@ const getArtistDetails = async (spotifyId) => {
 
 module.exports = {
     searchArtist,
-    getArtistDetails
+    getArtistDetails,
+    getAccessToken // Exported for debugging
 };

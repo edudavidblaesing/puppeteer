@@ -68,7 +68,11 @@ export function OrganizerForm({
 
   useEffect(() => {
     if (initialData) {
-      setFormData(initialData);
+      setFormData({
+        ...initialData,
+        // @ts-ignore - website might come from backend
+        website_url: initialData.website || initialData.website_url || ''
+      });
     }
   }, [initialData]);
 
@@ -122,7 +126,7 @@ export function OrganizerForm({
   };
 
   const handleResetToSource = (sourceCode: string) => {
-    resetFields(sourceCode, ['name', 'description', 'website_url', 'image_url']);
+    resetFields(sourceCode, ['name', 'description', 'website_url', 'image_url', 'provider']);
   };
 
   return (
@@ -193,7 +197,7 @@ export function OrganizerForm({
               </h3>
               <ResetSectionButton
                 sources={uniqueSources}
-                onReset={(source) => resetFields(source, ['name', 'description'])}
+                onReset={(source) => resetFields(source, ['name', 'description', 'provider'])}
               />
             </div>
 
@@ -229,6 +233,21 @@ export function OrganizerForm({
                 field="description"
                 currentValue={formData.description}
                 onSelect={(val) => setFormData({ ...formData, description: val })}
+              />
+            </div>
+
+            <div>
+              <Input
+                label="Provider (Source)"
+                value={formData.provider || ''}
+                onChange={(e) => setFormData({ ...formData, provider: e.target.value })}
+                placeholder="e.g. ticketmaster"
+              />
+              <SourceFieldOptions
+                sources={initialData?.source_references}
+                field="provider"
+                currentValue={formData.provider}
+                onSelect={(val) => setFormData({ ...formData, provider: val })}
               />
             </div>
           </div>

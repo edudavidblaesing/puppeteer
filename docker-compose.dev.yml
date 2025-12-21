@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  admin:
+    build:
+      context: ./admin
+      target: deps # Use a stage that has dependencies but hasn't built/copied source yet, or just override everything
+    command: npm run dev
+    environment:
+      - NODE_ENV=development
+      - WATCHPACK_POLLING=true
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./admin/src:/app/src
+      - ./admin/public:/app/public
+      - ./admin/next.config.js:/app/next.config.js
+      - ./admin/tsconfig.json:/app/tsconfig.json
+      - ./admin/postcss.config.js:/app/postcss.config.js
+      - ./admin/tailwind.config.js:/app/tailwind.config.js
+      # Keep node_modules from the container
+      - /app/node_modules
+      - /app/.next

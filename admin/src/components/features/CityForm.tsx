@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Save, Trash2, X, MapPin, Globe, Database, AlertCircle, ChevronDown } from 'lucide-react';
+import { Save, Trash2, X, MapPin, Globe, Database, AlertCircle, ChevronDown, Star } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { City, SourceConfig } from '@/types';
 import { fetchSources, fetchCity } from '@/lib/api';
 import { SourceIcon } from '@/components/ui/SourceIcon';
+import { ResetSectionButton } from '@/components/ui/ResetSectionButton';
+import { getBestSourceForField } from '@/lib/smartMerge';
 
 interface CityFormProps {
   initialData?: City;
@@ -12,6 +14,7 @@ interface CityFormProps {
   onDelete?: (id: string) => Promise<void>;
   onCancel: () => void;
   isLoading?: boolean;
+  isModal?: boolean;
 }
 
 // Preset cities configuration data
@@ -96,7 +99,7 @@ const PRESET_CITIES = [
   }
 ];
 
-export function CityForm({ initialData, onSubmit, onDelete, onCancel, isLoading = false }: CityFormProps) {
+export function CityForm({ initialData, onSubmit, onDelete, onCancel, isLoading = false, isModal = false }: CityFormProps) {
   const [formData, setFormData] = useState<Partial<City>>({
     name: '',
     country: '',
@@ -230,33 +233,71 @@ export function CityForm({ initialData, onSubmit, onDelete, onCancel, isLoading 
     return formData.source_configs?.find(c => c.source_id === sourceId);
   };
 
+  const uniqueSources = Array.from(new Set((initialData?.source_references || []).map(s => s.source_code)));
+
+  const resetFields = (sourceCode: string, fields: (keyof City)[]) => {
+    const newFormData = { ...formData };
+    let hasChanges = false;
+    const sources = initialData?.source_references || [];
+
+    fields.forEach(field => {
+      let val: any = undefined;
+
+      if (sourceCode === 'best') {
+        const bestSource = getBestSourceForField(sources, field as string);
+        if (bestSource) {
+          val = (bestSource as any)[field];
+        }
+      } else {
+        const source = sources.find(s => s.source_code === sourceCode);
+        if (source && (source as any)[field] !== undefined) {
+          val = (source as any)[field];
+        }
+      }
+
+      if (val !== undefined && val !== null) {
+        // @ts-ignore
+        newFormData[field] = val;
+        hasChanges = true;
+      }
+    });
+
+    if (hasChanges) setFormData(newFormData);
+  };
+
+  const handleResetToSource = (sourceCode: string) => {
+    resetFields(sourceCode, ['name', 'country', 'timezone', 'latitude', 'longitude']);
+  };
+
   return (
     <div className="h-full flex flex-col bg-white dark:bg-gray-900">
       {/* Header */}
-      <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between bg-gray-50 dark:bg-gray-900/50">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-          {initialData ? 'Edit City' : 'New City'}
-        </h2>
-        <div className="flex items-center gap-2">
-          {initialData && onDelete && (
+      {!isModal && (
+        <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between bg-gray-50 dark:bg-gray-900/50">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+            {initialData ? 'Edit City' : 'New City'}
+          </h2>
+          <div className="flex items-center gap-2">
+            {initialData && onDelete && (
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={handleDelete}
+                disabled={isLoading}
+                leftIcon={<Trash2 className="w-4 h-4" />}
+              >
+                Delete
+              </Button>
+            )}
             <Button
-              variant="danger"
+              variant="ghost"
               size="sm"
-              onClick={handleDelete}
-              disabled={isLoading}
-              leftIcon={<Trash2 className="w-4 h-4" />}
-            >
-              Delete
-            </Button>
-          )}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onCancel}
-            leftIcon={<X className="w-4 h-4" />}
-          />
+              onClick={onCancel}
+              leftIcon={<X className="w-4 h-4" />}
+            />
+          </div>
         </div>
-      </div>
+      )}
 
       {isFetchingDetails ? (
         <div className="p-8 text-center text-gray-500">Loading details...</div>
@@ -265,12 +306,41 @@ export function CityForm({ initialData, onSubmit, onDelete, onCancel, isLoading 
         <div className="flex-1 overflow-y-auto p-6">
           <form id="city-form" onSubmit={handleSubmit} className="space-y-6 max-w-2xl mx-auto">
 
+            {uniqueSources.length > 0 && (
+              <div className="flex items-center gap-2 pb-4 border-b border-gray-100 dark:border-gray-800">
+                <span className="text-xs text-gray-500">Reset whole city from:</span>
+                <button
+                  type="button"
+                  onClick={() => handleResetToSource('best')}
+                  className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-700 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 font-bold uppercase transition-colors"
+                  title="Reset to best matched data"
+                >
+                  <Star className="w-3 h-3 fill-current" /> Best
+                </button>
+                {uniqueSources.map(source => (
+                  <button
+                    key={source}
+                    type="button"
+                    onClick={() => handleResetToSource(source)}
+                    className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-gray-600 dark:text-gray-300 uppercase"
+                    title={`Reset to ${source}`}
+                  >
+                    <SourceIcon sourceCode={source} className="w-3 h-3" />
+                  </button>
+                ))}
+              </div>
+            )}
+
             <div className="space-y-4">
               {/* Preset Selection & Basic Info */}
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 flex items-center gap-2">
                   <Globe className="w-4 h-4" /> Location Details
                 </h3>
+                <ResetSectionButton
+                  sources={uniqueSources}
+                  onReset={(source) => resetFields(source, ['name', 'country', 'timezone'])}
+                />
               </div>
 
               {/* Preset Dropdown */}
@@ -333,6 +403,10 @@ export function CityForm({ initialData, onSubmit, onDelete, onCancel, isLoading 
                 <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 flex items-center gap-2">
                   <MapPin className="w-4 h-4" /> Coordinates
                 </h3>
+                <ResetSectionButton
+                  sources={uniqueSources}
+                  onReset={(source) => resetFields(source, ['latitude', 'longitude'])}
+                />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>

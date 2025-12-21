@@ -7,7 +7,7 @@ const { geocodeAddress } = require('../services/geocoder');
 
 async function listEvents(req, res) {
     try {
-        const { city, search, limit = 100, offset = 0, from, to, status, showPast } = req.query;
+        const { city, search, limit = 100, offset = 0, from, to, status, showPast, timeFilter = 'upcoming', source, createdAfter, updatedAfter } = req.query;
 
         let query = `
             SELECT e.*, 
@@ -18,6 +18,19 @@ async function listEvents(req, res) {
                            'id', se.id,
                            'source_code', se.source_code,
                            'title', se.title,
+                           'date', se.date,
+                           'start_time', se.start_time,
+                           'end_time', se.end_time,
+                           'venue_name', se.venue_name,
+                           'venue_city', se.venue_city,
+                           'description', se.description,
+                           'content_url', se.content_url,
+                           'flyer_front', se.flyer_front,
+                           'event_type', se.event_type,
+                           'venue_address', se.venue_address,
+                           'venue_country', se.venue_country,
+                           'price_info', se.price_info,
+                           'artists', se.artists_json,
                            'confidence', esl.match_confidence
                        ))
                        FROM event_scraped_links esl
@@ -75,6 +88,19 @@ async function listEvents(req, res) {
             paramIndex++;
         }
 
+        if (source) {
+            query += ` AND (
+                 e.source_code = $${paramIndex}
+                 OR EXISTS (
+                     SELECT 1 FROM event_scraped_links esl 
+                     JOIN scraped_events se ON se.id = esl.scraped_event_id
+                     WHERE esl.event_id = e.id AND se.source_code = $${paramIndex}
+                 )
+             )`;
+            params.push(source);
+            paramIndex++;
+        }
+
         if (from) {
             query += ` AND e.date >= $${paramIndex}`;
             params.push(from);
@@ -87,74 +113,113 @@ async function listEvents(req, res) {
             paramIndex++;
         }
 
-        if (showPast !== 'true') {
-            // "Show Past" means show OLD/Expired events. 
-            // If false (default), we only show events from ~recently (last 3 days) to future.
-            query += ` AND e.date >= CURRENT_DATE - INTERVAL '3 days'`;
+        if (createdAfter) {
+            query += ` AND e.created_at >= $${paramIndex}`;
+            params.push(createdAfter);
+            paramIndex++;
         }
 
-        // Improved Sorting Logic
-        // We use a constructed timestamp for more precision than just 'date'
-        query += ` ORDER BY 
-            CASE 
-                -- 0: Ongoing/Live (Today & Time correct)
-                WHEN e.date::date = CURRENT_DATE 
-                     AND (e.start_time IS NULL OR CURRENT_TIME >= e.start_time::time)
-                     AND (e.end_time IS NULL OR CURRENT_TIME <= e.end_time::time) THEN 0
-                -- 1: Future
-                WHEN e.date::date > CURRENT_DATE THEN 1
-                -- 2: Today but ended / Recent
-                WHEN e.date::date >= CURRENT_DATE - INTERVAL '3 days' THEN 2
-                -- 3: Old
-                ELSE 3
-            END,
-            CASE e.publish_status
-                WHEN 'approved' THEN 0
-                WHEN 'pending' THEN 1
-                WHEN 'rejected' THEN 2
-                ELSE 3
-            END,
-            -- For Future/Live: Soonest first
-            CASE 
-                WHEN e.date::date >= CURRENT_DATE THEN COALESCE(e.start_time, e.date)
-            END ASC,
-            -- For Past: Most recent first
-            CASE 
-                WHEN e.date::date < CURRENT_DATE THEN COALESCE(e.start_time, e.date)
-            END DESC
-            LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+        if (updatedAfter) {
+            query += ` AND e.updated_at >= $${paramIndex}`;
+            params.push(updatedAfter);
+            paramIndex++;
+        }
+
+        // Time Filter Logic (Replacing showPast)
+        // Default (upcoming): >= Today
+        // Past: < Today
+        // All: No filter
+
+        // Use provided timeFilter OR fallback to legacy showPast logic if timeFilter defaults but showPast is explicitly 'true'
+        let effectiveFilter = timeFilter;
+        if (showPast === 'true' && effectiveFilter === 'upcoming') {
+            effectiveFilter = 'all'; // Legacy support: showPast=true -> all/past included
+        }
+
+        if (effectiveFilter === 'upcoming') {
+            query += ` AND e.date >= CURRENT_DATE`;
+        } else if (effectiveFilter === 'past') {
+            query += ` AND e.date < CURRENT_DATE`;
+        }
+        // else 'all' -> no date filter
+
+        // Sorting
+        if (effectiveFilter === 'past') {
+            // Past: Newest (closest to today) first? or Oldest first?
+            // Usually "History" shows recent past first.
+            query += ` ORDER BY e.date DESC, e.start_time DESC, e.title ASC`;
+        } else {
+            // Upcoming or All: Soonest first (Today -> Later)
+            query += ` ORDER BY e.date ASC, e.start_time ASC, e.title ASC`;
+        }
+
+        query += ` LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
         params.push(parseInt(limit), parseInt(offset));
 
         const result = await pool.query(query, params);
 
         // Get total count
-        let countQuery = 'SELECT COUNT(*) FROM events WHERE 1=1';
+        let countQuery = 'SELECT COUNT(*) FROM events e WHERE 1=1';
         const countParams = [];
         let countParamIndex = 1;
 
         if (search) {
-            countQuery += ` AND (title ILIKE $${countParamIndex} OR venue_name ILIKE $${countParamIndex} OR artists ILIKE $${countParamIndex})`;
+            countQuery += ` AND (e.title ILIKE $${countParamIndex} OR e.venue_name ILIKE $${countParamIndex} OR e.artists ILIKE $${countParamIndex})`;
             countParams.push(`%${search}%`);
             countParamIndex++;
         }
         if (city) {
-            countQuery += ` AND LOWER(venue_city) = LOWER($${countParamIndex})`;
+            countQuery += ` AND LOWER(e.venue_city) = LOWER($${countParamIndex})`;
             countParams.push(city);
             countParamIndex++;
         }
         if (status && status !== 'all') {
-            countQuery += ` AND publish_status = $${countParamIndex}`;
+            countQuery += ` AND e.publish_status = $${countParamIndex}`;
             countParams.push(status);
             countParamIndex++;
         }
+
+        if (source) {
+            countQuery += ` AND (
+                 e.source_code = $${countParamIndex}
+                 OR EXISTS (
+                     SELECT 1 FROM event_scraped_links esl 
+                     JOIN scraped_events se ON se.id = esl.scraped_event_id
+                     WHERE esl.event_id = e.id AND se.source_code = $${countParamIndex}
+                 )
+             )`;
+            countParams.push(source);
+            countParamIndex++;
+        }
+
         if (from) {
-            countQuery += ` AND date >= $${countParamIndex}`;
+            countQuery += ` AND e.date >= $${countParamIndex}`;
             countParams.push(from);
             countParamIndex++;
         }
         if (to) {
-            countQuery += ` AND date <= $${countParamIndex}`;
+            countQuery += ` AND e.date <= $${countParamIndex}`;
             countParams.push(to);
+            countParamIndex++;
+        }
+
+        if (createdAfter) {
+            countQuery += ` AND e.created_at >= $${countParamIndex}`;
+            countParams.push(createdAfter);
+            countParamIndex++;
+        }
+
+        if (updatedAfter) {
+            countQuery += ` AND e.updated_at >= $${countParamIndex}`;
+            countParams.push(updatedAfter);
+            countParamIndex++;
+        }
+
+        // Apply same time filter logic to count
+        if (effectiveFilter === 'upcoming') {
+            countQuery += ` AND e.date >= CURRENT_DATE`;
+        } else if (effectiveFilter === 'past') {
+            countQuery += ` AND e.date < CURRENT_DATE`;
         }
 
         const countResult = await pool.query(countQuery, countParams);
@@ -219,8 +284,8 @@ async function getEvent(req, res) {
                 SELECT se.id, se.source_code, se.source_event_id, se.title, se.date, 
                        se.start_time, se.end_time, se.content_url, se.flyer_front, 
                        se.venue_name, se.venue_address, se.venue_city, se.venue_country, 
-                       se.description, se.price_info, se.ticket_url, se.event_type,
-                       se.latitude, se.longitude, se.updated_at,
+                       se.description, se.price_info, se.event_type, se.artists_json as artists,
+                       se.venue_latitude as latitude, se.venue_longitude as longitude, se.updated_at,
                        esl.match_confidence as confidence, esl.last_synced_at
                 FROM event_scraped_links esl
                 JOIN scraped_events se ON se.id = esl.scraped_event_id
@@ -242,8 +307,8 @@ async function getEvent(req, res) {
                     SELECT se.id, se.source_code, se.source_event_id, se.title, se.date, 
                            se.start_time, se.end_time, se.content_url, se.flyer_front, 
                            se.venue_name, se.venue_address, se.venue_city, se.venue_country, 
-                           se.description, se.price_info, se.ticket_url,
-                           se.latitude, se.longitude, se.updated_at,
+                           se.description, se.price_info,
+                           se.venue_latitude as latitude, se.venue_longitude as longitude, se.updated_at,
                            esl.match_confidence as confidence, esl.last_synced_at
                     FROM unified_events ue
                     JOIN event_source_links esl ON esl.unified_event_id = ue.id
@@ -365,56 +430,135 @@ async function getMapEvents(req, res) {
 // WRITE OPERATIONS
 // -----------------------------------------------------------------------------
 
-async function createEvent(req, res) {
-    try {
-        const { title, date, start_time, venue_name, venue_city, venue_country, venue_address, artists, description, content_url, flyer_front, is_published, event_type } = req.body;
+// Helper to sync artists
+async function syncEventArtists(client, eventId, artistsList) {
+    if (!artistsList || !Array.isArray(artistsList)) return;
 
-        if (!title) {
-            return res.status(400).json({ error: 'Title is required' });
-        }
+    // 1. Clear existing relations
+    await client.query('DELETE FROM event_artists WHERE event_id = $1', [eventId]);
 
-        const id = `manual_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    // 2. Insert new relations
+    let order = 0;
+    const addedIds = new Set();
+    const artistNames = [];
 
-        let venueId = null;
-        if (venue_name) {
-            const venueResult = await pool.query(
-                `SELECT id FROM venues WHERE LOWER(name) = LOWER($1) AND LOWER(city) = LOWER($2) LIMIT 1`,
-                [venue_name, venue_city || '']
-            );
-            if (venueResult.rows.length > 0) {
-                venueId = venueResult.rows[0].id;
+    for (const artist of artistsList) {
+        let artistId = artist.id;
+        const artistName = artist.name;
+
+        if (!artistName) continue;
+        artistNames.push(artistName);
+
+        // Handle temp/source IDs (e.g. 'source-123' or 'temp-0.456')
+        // We assume valid IDs are Integers or UUIDs. If it's a string starting with temp/source, resolve it.
+        // Or if it's just not a standard ID format.
+        if (typeof artistId === 'string' && (artistId.startsWith('temp-') || artistId.startsWith('source-') || artistId.startsWith('manual_'))) {
+            // Try to find by name first
+            const existing = await client.query('SELECT id FROM artists WHERE LOWER(name) = LOWER($1)', [artistName]);
+            if (existing.rows.length > 0) {
+                artistId = existing.rows[0].id;
+            } else {
+                // Create new artist
+                const newArtist = await client.query(
+                    'INSERT INTO artists (name, created_at) VALUES ($1, NOW()) RETURNING id',
+                    [artistName]
+                );
+                artistId = newArtist.rows[0].id;
             }
         }
 
-        const result = await pool.query(`
+        if (addedIds.has(artistId)) continue;
+        addedIds.add(artistId);
+
+        try {
+            await client.query(
+                `INSERT INTO event_artists (event_id, artist_id, role, billing_order)
+                 VALUES ($1, $2, $3, $4)`,
+                [eventId, artistId, 'performer', order++]
+            );
+        } catch (e) {
+            console.error(`Failed to link artist ${artistId} to event ${eventId}:`, e.message);
+        }
+    }
+
+    // Update denormalized 'artists' column on the event itself for backward compatibility/display
+    if (artistNames.length > 0) {
+        const artistsStr = artistNames.join(', ');
+        await client.query('UPDATE events SET artists = $1 WHERE id = $2', [artistsStr, eventId]);
+    }
+}
+
+async function createEvent(req, res) {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const { title, date, start_time, venue_id, venue_name, venue_city, venue_country, venue_address, artists, artists_list, description, content_url, flyer_front, is_published, event_type } = req.body;
+
+        if (!title) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'Title is required' });
+        }
+
+        const { scrapedId } = await saveOriginalEntry('event', {
+            title, date, start_time, venue_name, venue_address, venue_city, venue_country,
+            description, content_url, flyer_front, price_info: null, id: `manual_${Date.now()}`
+        });
+
+        // Use scrapedId as the ID or generate new one?
+        // The schema uses UUIDs for main events. 
+        // We will generate a UUID for the main event and link it.
+        const eventId = uuidv4();
+
+        const result = await client.query(`
             INSERT INTO events (
                 id, title, date, start_time, venue_id, venue_name, venue_address, 
                 venue_city, venue_country, artists, description, content_url, 
-                flyer_front, is_published, event_type, created_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, CURRENT_TIMESTAMP)
+                flyer_front, is_published, event_type, created_at, source_code, field_sources
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, CURRENT_TIMESTAMP, $16, $17)
             RETURNING *
         `, [
-            id, title, date || null, start_time || null, venueId,
+            eventId, title, date || null, start_time || null, venue_id || null,
             venue_name || null, venue_address || null, venue_city || null, venue_country || null,
             artists || null, description || null, content_url || null, flyer_front || null,
-            is_published || false, event_type || 'event'
+            is_published || false, event_type || 'event',
+            'manual', // source_code
+            JSON.stringify({}) // default field_sources
         ]);
 
+        // Link scraped entry
+        await client.query(`
+            INSERT INTO event_source_links (unified_event_id, scraped_event_id, match_confidence, is_primary, priority)
+            VALUES ($1, $2, 1.0, true, 1)
+        `, [eventId, scrapedId]);
+
+        const id = eventId; // consistent naming for syncEventArtists
+
+        if (artists_list && Array.isArray(artists_list)) {
+            await syncEventArtists(client, id, artists_list);
+        }
+
+        await client.query('COMMIT');
         res.json(result.rows[0]);
     } catch (error) {
+        await client.query('ROLLBACK');
         console.error('Create event error:', error);
         res.status(500).json({ error: error.message });
+    } finally {
+        client.release();
     }
 }
 
 async function updateEvent(req, res) {
+    const client = await pool.connect();
     try {
+        await client.query('BEGIN');
         const { id } = req.params;
         const updates = req.body;
 
         // Fetch current field_sources to update them
-        const currentRes = await pool.query('SELECT field_sources FROM events WHERE id = $1', [id]);
+        const currentRes = await client.query('SELECT field_sources FROM events WHERE id = $1', [id]);
         if (currentRes.rows.length === 0) {
+            await client.query('ROLLBACK');
             return res.status(404).json({ error: 'Event not found' });
         }
         const fieldSources = currentRes.rows[0].field_sources || {};
@@ -423,7 +567,7 @@ async function updateEvent(req, res) {
             'title', 'date', 'start_time', 'end_time', 'content_url',
             'flyer_front', 'description', 'venue_id', 'venue_name',
             'venue_address', 'venue_city', 'venue_country', 'artists',
-            'is_published', 'latitude', 'longitude', 'event_type'
+            'is_published', 'latitude', 'longitude', 'event_type', 'publish_status'
         ];
 
         const setClauses = [];
@@ -432,7 +576,6 @@ async function updateEvent(req, res) {
 
         for (const [key, value] of Object.entries(updates)) {
             if (allowedFields.includes(key)) {
-                // validation logic remains same, but we add to fieldSources
                 fieldSources[key] = 'og';
 
                 if ((key === 'start_time' || key === 'end_time') && value && typeof value === 'string') {
@@ -452,45 +595,65 @@ async function updateEvent(req, res) {
                 } else {
                     setClauses.push(`${key} = $${paramIndex++}`);
                     values.push(value);
+
+                    // Sync is_published if publish_status is updated
+                    if (key === 'publish_status') {
+                        setClauses.push(`is_published = $${paramIndex++}`);
+                        values.push(value === 'approved');
+                    }
                 }
             }
         }
 
-        if (setClauses.length === 0) {
-            return res.status(400).json({ error: 'No valid fields to update' });
+        // Handle artists_list explicitly
+        if (updates.artists_list && Array.isArray(updates.artists_list)) {
+            await syncEventArtists(client, id, updates.artists_list);
         }
 
-        // Add field_sources to update
-        setClauses.push(`field_sources = $${paramIndex++}::jsonb`);
-        values.push(JSON.stringify(fieldSources));
+        if (setClauses.length > 0) {
+            // Add field_sources to update
+            setClauses.push(`field_sources = $${paramIndex++}::jsonb`);
+            values.push(JSON.stringify(fieldSources));
 
-        setClauses.push('updated_at = CURRENT_TIMESTAMP');
-        values.push(id);
+            setClauses.push('updated_at = CURRENT_TIMESTAMP');
+            values.push(id);
 
-        const query = `
-            UPDATE events 
-            SET ${setClauses.join(', ')}
-            WHERE id = $${paramIndex}
-            RETURNING *
-        `;
+            const query = `
+                UPDATE events 
+                SET ${setClauses.join(', ')}
+                WHERE id = $${paramIndex}
+                RETURNING *
+            `;
 
-        const result = await pool.query(query, values);
+            const result = await client.query(query, values);
 
-        // Update last_synced_at for linked sources since we manually updated the event
-        await pool.query(`
+            if (result.rows.length === 0) {
+                await client.query('ROLLBACK');
+                return res.status(404).json({ error: 'Event not found' });
+            }
+        } else {
+            // If only artists_list was updated, we still need to commit and maybe fetch the event
+        }
+
+        // Update last_synced_at for linked sources
+        await client.query(`
             UPDATE event_scraped_links
             SET last_synced_at = CURRENT_TIMESTAMP
             WHERE event_id = $1
         `, [id]);
 
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Event not found' });
-        }
+        await client.query('COMMIT');
 
-        res.json({ success: true, event: result.rows[0] });
+        // Fetch final result to return complete object
+        const finalResult = await pool.query('SELECT * FROM events WHERE id = $1', [id]);
+        res.json({ success: true, event: finalResult.rows[0] });
+
     } catch (error) {
+        await client.query('ROLLBACK');
         console.error('Database error updating event:', error);
         res.status(500).json({ error: error.message });
+    } finally {
+        client.release();
     }
 }
 
