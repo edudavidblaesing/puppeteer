@@ -12,6 +12,15 @@ const listOrganizers = async (req, res) => {
 
         let query = `
             SELECT o.*, 
+                (SELECT COUNT(*) FROM event_organizers eo WHERE eo.organizer_id = o.id) as event_count,
+                (SELECT COUNT(DISTINCT e.venue_id) FROM event_organizers eo JOIN events e ON e.id = eo.event_id WHERE eo.organizer_id = o.id) as venue_count,
+                (
+                    SELECT so.source_code
+                    FROM organizer_scraped_links osl
+                    JOIN scraped_organizers so ON so.id = osl.scraped_organizer_id
+                    WHERE osl.organizer_id = o.id
+                    LIMIT 1
+                ) as provider,
                 (
                     SELECT json_agg(json_build_object(
                         'source_code', so.source_code, 

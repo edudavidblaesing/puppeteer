@@ -6,7 +6,18 @@ exports.getCities = async (req, res) => {
         let query = `
             SELECT c.*, 
             (SELECT COUNT(*) FROM events e WHERE e.venue_city = c.name) as event_count,
-            (SELECT COUNT(*) FROM venues v WHERE v.city = c.name) as venue_count
+            (SELECT COUNT(*) FROM venues v WHERE v.city = c.name) as venue_count,
+            (
+                SELECT COALESCE(json_agg(json_build_object(
+                    'source_code', es.code, 
+                    'source_name', es.name,
+                    'external_id', csc.external_id,
+                    'is_active', csc.is_active
+                )), '[]')
+                FROM city_source_configs csc
+                JOIN event_sources es ON es.id = csc.source_id
+                WHERE csc.city_id = c.id
+            ) as source_references
             FROM cities c
             WHERE 1=1
         `;

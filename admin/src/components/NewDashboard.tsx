@@ -29,6 +29,7 @@ export function NewDashboard() {
   const router = useRouter();
   const [stats, setStats] = useState<Stats | null>(null);
   const [pendingEvents, setPendingEvents] = useState<Event[]>([]);
+  const [pipelineEvents, setPipelineEvents] = useState<Event[]>([]);
   const [mapEvents, setMapEvents] = useState<Event[]>([]);
   const [cities, setCities] = useState<City[]>([]);
   const [history, setHistory] = useState<any[]>([]);
@@ -43,17 +44,19 @@ export function NewDashboard() {
     async function loadDashboardData() {
       try {
         setIsLoading(true);
-        const [statsData, citiesData, historyData, pendingData, mapData] = await Promise.all([
+        const [statsData, citiesData, historyData, pendingData, pipelineData, mapData] = await Promise.all([
           fetchStats(),
           fetchCities(),
           fetchScrapeHistory({ days: 30, groupBy: 'day' }),
           fetchEvents({ limit: 5, status: 'pending' }), // Optimized fetch for widget
+          fetchEvents({ limit: 5, status: 'approved', published: false }), // Pipeline
           fetchEvents({ limit: 2000, showPast: false }) // Map: hide past events
         ]);
 
         setStats(statsData);
         setCities(citiesData);
         setPendingEvents(pendingData.data);
+        setPipelineEvents(pipelineData.data);
         setMapEvents(mapData.data);
 
         // Transform history data for chart
@@ -63,6 +66,12 @@ export function NewDashboard() {
             fetched: parseInt(day.events_fetched || 0),
             new: parseInt(day.events_inserted || 0),
             updated: parseInt(day.events_updated || 0),
+            venues_new: parseInt(day.venues_created || 0),
+            venues_updated: parseInt(day.venues_updated || 0),
+            artists_new: parseInt(day.artists_created || 0),
+            artists_updated: parseInt(day.artists_updated || 0),
+            organizers_new: parseInt(day.organizers_created || 0),
+            organizers_updated: parseInt(day.organizers_updated || 0),
           })).reverse();
           setHistory(chartData);
         }
@@ -86,12 +95,17 @@ export function NewDashboard() {
     }
   };
 
-  const handleApprove = async (id: string, e: React.MouseEvent) => {
+  const handleApprove = async (id: string, e: React.MouseEvent | React.KeyboardEvent) => {
     e.stopPropagation();
     try {
       await setPublishStatus([id], 'approved');
       // Optimistic update
+      // Optimistic update
+      const approvedEvent = pendingEvents.find(ev => ev.id === id);
       setPendingEvents(prev => prev.filter(ev => ev.id !== id));
+      if (approvedEvent) {
+        setPipelineEvents(prev => [{ ...approvedEvent, publish_status: 'approved' }, ...prev]);
+      }
       // Refresh stats and refill list
       const newStats = await fetchStats();
       setStats(newStats);
@@ -101,7 +115,7 @@ export function NewDashboard() {
     }
   };
 
-  const handleReject = async (id: string, e: React.MouseEvent) => {
+  const handleReject = async (id: string, e: React.MouseEvent | React.KeyboardEvent) => {
     e.stopPropagation();
     try {
       await setPublishStatus([id], 'rejected');
@@ -204,6 +218,7 @@ export function NewDashboard() {
           <div className="col-span-12 lg:col-span-4 h-full">
             <RecentActivityList
               events={pendingEvents}
+              pipelineEvents={pipelineEvents}
               onApprove={handleApprove}
               onReject={handleReject}
             />

@@ -334,7 +334,19 @@ async function linkOrganizersToEvent(eventId, organizers) {
             organizerId = existingOrganizer.rows[0].id;
         } else {
             organizerId = uuidv4();
-            await pool.query('INSERT INTO organizers (id, name, created_at, updated_at) VALUES ($1, $2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)', [organizerId, name]);
+            try {
+                await pool.query('INSERT INTO organizers (id, name, created_at, updated_at) VALUES ($1, $2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)', [organizerId, name]);
+            } catch (err) {
+                // Handle race condition or unique constraint violation
+                if (err.code === '23505') { // unique_violation
+                    const existing = await pool.query('SELECT id FROM organizers WHERE LOWER(name) = LOWER($1)', [name]);
+                    if (existing.rows.length > 0) {
+                        organizerId = existing.rows[0].id;
+                    }
+                } else {
+                    throw err;
+                }
+            }
         }
 
         await pool.query(`

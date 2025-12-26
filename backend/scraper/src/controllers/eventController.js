@@ -1,12 +1,36 @@
+const { v4: uuidv4 } = require('uuid');
 const { pool } = require('../db');
 const { geocodeAddress } = require('../services/geocoder');
+const { saveOriginalEntry, linkToUnified } = require('../services/unifiedService');
+const { EVENT_STATES, canTransition, validateEventForPublish, transitionEvent } = require('../models/eventStateMachine');
 
 // -----------------------------------------------------------------------------
 // READ OPERATIONS
 // -----------------------------------------------------------------------------
 
+
+async function autoRejectPastEvents() {
+    try {
+        const result = await pool.query(`
+            UPDATE events 
+            SET status = 'REJECTED' 
+            WHERE status IN ('MANUAL_DRAFT', 'SCRAPED_DRAFT', 'APPROVED_PENDING_DETAILS')
+              AND date < CURRENT_DATE 
+              AND status != 'REJECTED'
+        `);
+        if (result.rowCount > 0) {
+            console.log(`Auto-rejected ${result.rowCount} past events.`);
+        }
+    } catch (err) {
+        console.error('Failed to auto-reject past events:', err);
+    }
+}
+
 async function listEvents(req, res) {
     try {
+        // Trigger auto-rejection of past drafts lazily
+        await autoRejectPastEvents();
+
         const { city, search, limit = 100, offset = 0, from, to, status, showPast, timeFilter = 'upcoming', source, createdAfter, updatedAfter } = req.query;
 
         let query = `
@@ -31,6 +55,7 @@ async function listEvents(req, res) {
                            'venue_country', se.venue_country,
                            'price_info', se.price_info,
                            'artists', se.artists_json,
+                           'status', se.status,
                            'confidence', esl.match_confidence
                        ))
                        FROM event_scraped_links esl
@@ -60,7 +85,7 @@ async function listEvents(req, res) {
                        WHERE ea.event_id = e.id),
                        '[]'
                    ) as artists_list
-            FROM events e
+             FROM events e
             LEFT JOIN venues v ON e.venue_id = v.id
             WHERE 1=1`;
         const params = [];
@@ -98,6 +123,12 @@ async function listEvents(req, res) {
                  )
              )`;
             params.push(source);
+            paramIndex++;
+        }
+
+        if (req.query.published !== undefined) {
+            query += ` AND e.is_published = $${paramIndex}`;
+            params.push(req.query.published === 'true');
             paramIndex++;
         }
 
@@ -189,6 +220,12 @@ async function listEvents(req, res) {
                  )
              )`;
             countParams.push(source);
+            countParamIndex++;
+        }
+
+        if (req.query.published !== undefined) {
+            countQuery += ` AND e.is_published = $${countParamIndex}`;
+            countParams.push(req.query.published === 'true');
             countParamIndex++;
         }
 
@@ -499,39 +536,34 @@ async function createEvent(req, res) {
             return res.status(400).json({ error: 'Title is required' });
         }
 
-        const { scrapedId } = await saveOriginalEntry('event', {
+        const eventData = {
             title, date, start_time, venue_name, venue_address, venue_city, venue_country,
             description, content_url, flyer_front, price_info: null, id: `manual_${Date.now()}`
-        });
+        };
+        const { scrapedId } = await saveOriginalEntry('event', eventData);
 
-        // Use scrapedId as the ID or generate new one?
-        // The schema uses UUIDs for main events. 
-        // We will generate a UUID for the main event and link it.
-        const eventId = uuidv4();
+        const unifiedId = await linkToUnified('event', scrapedId, { ...eventData, source_code: 'og' });
+
+        const finalStartTime = (date && start_time && /^\d{1,2}:\d{2}/.test(start_time) ? `${date} ${start_time}` : start_time) || null;
 
         const result = await client.query(`
             INSERT INTO events (
                 id, title, date, start_time, venue_id, venue_name, venue_address, 
                 venue_city, venue_country, artists, description, content_url, 
-                flyer_front, is_published, event_type, created_at, source_code, field_sources
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, CURRENT_TIMESTAMP, $16, $17)
+                flyer_front, is_published, event_type, created_at, source_code, field_sources, status
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, CURRENT_TIMESTAMP, $16, $17, $18)
             RETURNING *
         `, [
-            eventId, title, date || null, start_time || null, venue_id || null,
+            unifiedId, title, date || null, finalStartTime, venue_id || null,
             venue_name || null, venue_address || null, venue_city || null, venue_country || null,
             artists || null, description || null, content_url || null, flyer_front || null,
             is_published || false, event_type || 'event',
             'manual', // source_code
-            JSON.stringify({}) // default field_sources
+            JSON.stringify({}), // default field_sources
+            EVENT_STATES.MANUAL_DRAFT // default status
         ]);
 
-        // Link scraped entry
-        await client.query(`
-            INSERT INTO event_source_links (unified_event_id, scraped_event_id, match_confidence, is_primary, priority)
-            VALUES ($1, $2, 1.0, true, 1)
-        `, [eventId, scrapedId]);
-
-        const id = eventId; // consistent naming for syncEventArtists
+        const id = unifiedId; // consistent naming for syncEventArtists
 
         if (artists_list && Array.isArray(artists_list)) {
             await syncEventArtists(client, id, artists_list);
@@ -556,54 +588,85 @@ async function updateEvent(req, res) {
         const updates = req.body;
 
         // Fetch current field_sources to update them
-        const currentRes = await client.query('SELECT field_sources FROM events WHERE id = $1', [id]);
+        const currentRes = await client.query('SELECT * FROM events WHERE id = $1', [id]);
         if (currentRes.rows.length === 0) {
             await client.query('ROLLBACK');
             return res.status(404).json({ error: 'Event not found' });
         }
-        const fieldSources = currentRes.rows[0].field_sources || {};
+        const currentEvent = currentRes.rows[0];
+        const fieldSources = currentEvent.field_sources || {};
 
         const allowedFields = [
             'title', 'date', 'start_time', 'end_time', 'content_url',
             'flyer_front', 'description', 'venue_id', 'venue_name',
             'venue_address', 'venue_city', 'venue_country', 'artists',
-            'is_published', 'latitude', 'longitude', 'event_type', 'publish_status'
+            'is_published', 'latitude', 'longitude', 'event_type', 'publish_status', 'status'
         ];
 
         const setClauses = [];
         const values = [];
         let paramIndex = 1;
 
+        // State Machine Logic & Status Handling
+        if (updates.status && updates.status !== currentEvent.status) {
+            // 1. Strict transition check
+            if (!canTransition(currentEvent.status, updates.status)) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({
+                    error: `Invalid state transition from ${currentEvent.status} to ${updates.status}`
+                });
+            }
+
+            // 2. Validate if moving to PUBLISH states
+            if (updates.status === EVENT_STATES.READY_TO_PUBLISH || updates.status === EVENT_STATES.PUBLISHED) {
+                const eventToValidate = { ...currentEvent, ...updates };
+                const validation = validateEventForPublish(eventToValidate);
+                if (!validation.isValid) {
+                    await client.query('ROLLBACK');
+                    return res.status(400).json({
+                        error: `Cannot change status to ${updates.status}. Missing required fields: ${validation.missingFields.join(', ')}`
+                    });
+                }
+            }
+
+            // 3. Perform Transition Logging
+            await transitionEvent(client, id, currentEvent.status, updates.status, req.user?.id || 'admin'); // TODO: get actor
+
+            // Remove status from generic updates so it doesn't get updated twice or override
+            delete updates.status;
+        }
+
         for (const [key, value] of Object.entries(updates)) {
-            if (allowedFields.includes(key)) {
+            if (allowedFields.includes(key) && key !== 'status') { // Skip status if somehow still there
                 fieldSources[key] = 'og';
 
                 if ((key === 'start_time' || key === 'end_time') && value && typeof value === 'string') {
                     if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(value)) {
-                        const dateValue = updates.date || null;
+                        const dateValue = updates.date || currentEvent.date || null; // Use updated date or current
+                        // Date handling logic ... existing logic slightly complex, simplified for snippet
+                        // Actually, reusing existing logic structure:
                         if (dateValue) {
-                            setClauses.push(`${key} = $${paramIndex++}::TIMESTAMP`);
-                            values.push(`${dateValue} ${value}`);
+                            setClauses.push(`${key} = $${paramIndex++}:: TIMESTAMP`);
+                            values.push(`${dateValue} ${value} `);
                         } else {
-                            setClauses.push(`${key} = (SELECT date::date || ' ' || $${paramIndex++})::TIMESTAMP`);
+                            // If no date, try to use existing? Logic in original was: 
+                            // updates.date || null. If null, it used (SELECT date::date ...).
+                            // Let's stick to original logic flow, just wrapped in loop.
+                            setClauses.push(`${key} = (SELECT date:: date || ' ' || $${paramIndex++}):: TIMESTAMP`);
                             values.push(value);
                         }
                     } else {
-                        setClauses.push(`${key} = $${paramIndex++}::TIMESTAMP`);
+                        setClauses.push(`${key} = $${paramIndex++}:: TIMESTAMP`);
                         values.push(value);
                     }
                 } else {
-                    setClauses.push(`${key} = $${paramIndex++}`);
+                    setClauses.push(`${key} = $${paramIndex++} `);
                     values.push(value);
-
-                    // Sync is_published if publish_status is updated
-                    if (key === 'publish_status') {
-                        setClauses.push(`is_published = $${paramIndex++}`);
-                        values.push(value === 'approved');
-                    }
                 }
             }
         }
+
+
 
         // Handle artists_list explicitly
         if (updates.artists_list && Array.isArray(updates.artists_list)) {
@@ -612,7 +675,7 @@ async function updateEvent(req, res) {
 
         if (setClauses.length > 0) {
             // Add field_sources to update
-            setClauses.push(`field_sources = $${paramIndex++}::jsonb`);
+            setClauses.push(`field_sources = $${paramIndex++}:: jsonb`);
             values.push(JSON.stringify(fieldSources));
 
             setClauses.push('updated_at = CURRENT_TIMESTAMP');
@@ -622,8 +685,8 @@ async function updateEvent(req, res) {
                 UPDATE events 
                 SET ${setClauses.join(', ')}
                 WHERE id = $${paramIndex}
-                RETURNING *
-            `;
+    RETURNING *
+        `;
 
             const result = await client.query(query, values);
 
@@ -646,7 +709,7 @@ async function updateEvent(req, res) {
 
         // Fetch final result to return complete object
         const finalResult = await pool.query('SELECT * FROM events WHERE id = $1', [id]);
-        res.json({ success: true, event: finalResult.rows[0] });
+        res.json(finalResult.rows[0]);
 
     } catch (error) {
         await client.query('ROLLBACK');
@@ -687,7 +750,7 @@ async function getChanges(req, res) {
         const eventId = req.params.id;
         const result = await pool.query(`
             SELECT se.id, se.source_code, se.source_event_id, se.title,
-                   se.has_changes, se.changes, se.updated_at, esl.match_confidence
+        se.has_changes, se.changes, se.updated_at, esl.match_confidence
             FROM event_scraped_links esl
             JOIN scraped_events se ON se.id = esl.scraped_event_id
             WHERE esl.event_id = $1 AND se.has_changes = true
@@ -733,7 +796,7 @@ async function applyChanges(req, res) {
         for (const field of fieldsToUpdate) {
             const eventField = fieldMap[field] || field;
             if (scraped[field] !== undefined) {
-                updates.push(`${eventField} = $${paramIndex}`);
+                updates.push(`${eventField} = $${paramIndex} `);
                 if (field === 'artists_json') {
                     values.push(JSON.stringify(scraped.artists_json));
                 } else {
@@ -785,18 +848,59 @@ async function dismissChanges(req, res) {
 }
 
 async function publishStatus(req, res) {
+    const client = await pool.connect();
     try {
+        await client.query('BEGIN');
         const { ids, status } = req.body;
-        if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids required' });
+        if (!Array.isArray(ids) || ids.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'ids required' });
+        }
 
-        await pool.query(`
-            UPDATE events SET publish_status = $1, is_published = $2, updated_at = CURRENT_TIMESTAMP 
-            WHERE id = ANY($3::text[])
-        `, [status, status === 'approved', ids]);
+        const results = { success: [], failed: [] };
 
-        res.json({ success: true, status, ids });
+        for (const id of ids) {
+            const currentRes = await client.query('SELECT * FROM events WHERE id = $1', [id]);
+            if (currentRes.rows.length === 0) {
+                results.failed.push({ id, error: 'Event not found' });
+                continue;
+            }
+            const currentEvent = currentRes.rows[0];
+
+            if (currentEvent.status === status) {
+                results.success.push(id);
+                continue;
+            }
+
+            // Check transition (using helper if strict checks needed, or simple update)
+            if (!canTransition(currentEvent.status, status)) {
+                results.failed.push({ id, error: `Invalid transition from ${currentEvent.status} to ${status}` });
+                continue;
+            }
+
+            if (status === EVENT_STATES.READY_TO_PUBLISH || status === EVENT_STATES.PUBLISHED) {
+                const validation = validateEventForPublish(currentEvent);
+                if (!validation.isValid) {
+                    results.failed.push({ id, error: `Missing fields: ${validation.missingFields.join(', ')}` });
+                    continue;
+                }
+            }
+
+            try {
+                await transitionEvent(client, id, currentEvent.status, status, req.user?.id || 'admin');
+                results.success.push(id);
+            } catch (err) {
+                results.failed.push({ id, error: err.message });
+            }
+        }
+
+        await client.query('COMMIT');
+        res.json({ success: true, results });
     } catch (error) {
+        await client.query('ROLLBACK');
         res.status(500).json({ error: error.message });
+    } finally {
+        client.release();
     }
 }
 
@@ -812,29 +916,29 @@ async function syncEvents(req, res) {
         for (const event of events) {
             try {
                 const result = await pool.query(`
-                    INSERT INTO events (
-                        id, title, date, start_time, end_time, content_url,
-                        flyer_front, description, venue_id, venue_name,
-                        venue_address, venue_city, venue_country, artists, listing_date
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-                    ON CONFLICT (id) DO UPDATE SET
-                        title = CASE WHEN events.publish_status = 'approved' THEN events.title ELSE EXCLUDED.title END,
-                        date = CASE WHEN events.publish_status = 'approved' THEN events.date ELSE EXCLUDED.date END,
-                        start_time = CASE WHEN events.publish_status = 'approved' THEN events.start_time ELSE EXCLUDED.start_time END,
-                        end_time = CASE WHEN events.publish_status = 'approved' THEN events.end_time ELSE EXCLUDED.end_time END,
-                        content_url = CASE WHEN events.publish_status = 'approved' THEN events.content_url ELSE EXCLUDED.content_url END,
+                    INSERT INTO events(
+            id, title, date, start_time, end_time, content_url,
+            flyer_front, description, venue_id, venue_name,
+            venue_address, venue_city, venue_country, artists, listing_date
+        ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                    ON CONFLICT(id) DO UPDATE SET
+    title = CASE WHEN events.publish_status = 'approved' THEN events.title ELSE EXCLUDED.title END,
+        date = CASE WHEN events.publish_status = 'approved' THEN events.date ELSE EXCLUDED.date END,
+            start_time = CASE WHEN events.publish_status = 'approved' THEN events.start_time ELSE EXCLUDED.start_time END,
+                end_time = CASE WHEN events.publish_status = 'approved' THEN events.end_time ELSE EXCLUDED.end_time END,
+                    content_url = CASE WHEN events.publish_status = 'approved' THEN events.content_url ELSE EXCLUDED.content_url END,
                         flyer_front = CASE WHEN events.publish_status = 'approved' THEN events.flyer_front ELSE EXCLUDED.flyer_front END,
-                        description = CASE WHEN events.publish_status = 'approved' THEN events.description ELSE EXCLUDED.description END,
-                        venue_id = CASE WHEN events.publish_status = 'approved' THEN events.venue_id ELSE EXCLUDED.venue_id END,
-                        venue_name = CASE WHEN events.publish_status = 'approved' THEN events.venue_name ELSE EXCLUDED.venue_name END,
-                        venue_address = CASE WHEN events.publish_status = 'approved' THEN events.venue_address ELSE EXCLUDED.venue_address END,
-                        venue_city = CASE WHEN events.publish_status = 'approved' THEN events.venue_city ELSE EXCLUDED.venue_city END,
-                        venue_country = CASE WHEN events.publish_status = 'approved' THEN events.venue_country ELSE EXCLUDED.venue_country END,
-                        artists = CASE WHEN events.publish_status = 'approved' THEN events.artists ELSE EXCLUDED.artists END,
-                        listing_date = EXCLUDED.listing_date,
-                        updated_at = CASE WHEN events.publish_status = 'approved' THEN events.updated_at ELSE CURRENT_TIMESTAMP END
-                    RETURNING (xmax = 0) AS inserted
-                `, [
+                            description = CASE WHEN events.publish_status = 'approved' THEN events.description ELSE EXCLUDED.description END,
+                                venue_id = CASE WHEN events.publish_status = 'approved' THEN events.venue_id ELSE EXCLUDED.venue_id END,
+                                    venue_name = CASE WHEN events.publish_status = 'approved' THEN events.venue_name ELSE EXCLUDED.venue_name END,
+                                        venue_address = CASE WHEN events.publish_status = 'approved' THEN events.venue_address ELSE EXCLUDED.venue_address END,
+                                            venue_city = CASE WHEN events.publish_status = 'approved' THEN events.venue_city ELSE EXCLUDED.venue_city END,
+                                                venue_country = CASE WHEN events.publish_status = 'approved' THEN events.venue_country ELSE EXCLUDED.venue_country END,
+                                                    artists = CASE WHEN events.publish_status = 'approved' THEN events.artists ELSE EXCLUDED.artists END,
+                                                        listing_date = EXCLUDED.listing_date,
+                                                        updated_at = CASE WHEN events.publish_status = 'approved' THEN events.updated_at ELSE CURRENT_TIMESTAMP END
+    RETURNING(xmax = 0) AS inserted
+        `, [
                     event.id, event.title, event.date || null,
                     event.startTime || event.start_time || null, event.endTime || event.end_time || null,
                     event.contentUrl || event.content_url || null, event.flyerFront || event.flyer_front || null,
@@ -864,7 +968,7 @@ async function syncVenueCoords(req, res) {
             WHERE LOWER(e.venue_name) = LOWER(v.name)
             AND LOWER(e.venue_city) = LOWER(v.city)
             AND v.latitude IS NOT NULL AND v.longitude IS NOT NULL
-            AND (e.latitude IS NULL OR e.longitude IS NULL)
+    AND(e.latitude IS NULL OR e.longitude IS NULL)
         `);
         res.json({ success: true, updated: result.rowCount });
     } catch (error) {

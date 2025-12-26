@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
-import { Event, EventType } from '@/types';
+import { Event, EventType, EventStatus } from '@/types';
 import { fetchEvents, createEvent, updateEvent, deleteEvent, setPublishStatus } from '@/lib/api';
 
 export function useEvents() {
@@ -16,7 +16,7 @@ export function useEvents() {
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [cityFilter, setCityFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected' | EventStatus>('all');
   const [updatesFilter, setUpdatesFilter] = useState<'all' | 'new' | 'updated'>('all');
   const [timeFilter, setTimeFilter] = useState<'upcoming' | 'past' | 'all'>('upcoming');
   const [sourceFilter, setSourceFilter] = useState('');
@@ -100,11 +100,11 @@ export function useEvents() {
     }
   }, [loadEvents]);
 
-  const updateStatus = useCallback(async (ids: string[], status: 'pending' | 'approved' | 'rejected') => {
+  const updateStatus = useCallback(async (ids: string[], status: 'pending' | 'approved' | 'rejected' | EventStatus) => {
     try {
       await setPublishStatus(ids, status);
       // Optimistic update
-      setEvents(prev => prev.map(e => ids.includes(e.id) ? { ...e, publish_status: status } : e));
+      setEvents(prev => prev.map(e => ids.includes(e.id) ? { ...e, status: status as EventStatus, publish_status: status === 'PUBLISHED' ? 'approved' : status === 'REJECTED' ? 'rejected' : 'pending' } : e));
     } catch (err: any) {
       throw new Error(err.message || 'Failed to update status');
     }

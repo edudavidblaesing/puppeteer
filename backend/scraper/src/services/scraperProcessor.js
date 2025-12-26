@@ -1,6 +1,7 @@
 const { pool } = require('../db');
 const { cleanVenueAddress } = require('../utils/stringUtils');
 const { geocodeAddress } = require('./geocoder');
+const { EVENT_STATES } = require('../models/eventStateMachine');
 
 // Helper: Check for existing coordinates in DB
 async function checkExistingCoordinates(event) {
@@ -65,39 +66,74 @@ function datesEqual(d1, d2) {
     return s1 === s2;
 }
 
+// Helper: Normalize strings (empty string == null)
+function normalizeString(str) {
+    if (!str) return null;
+    return str.trim();
+}
+
+// Helper: Normalize time (HH:MM)
+function normalizeTime(t) {
+    if (!t) return null;
+    // Extract HH:MM
+    const match = t.match(/(\d{2}:\d{2})/);
+    return match ? match[1] : t;
+}
+
+// Helper: Compare artists array ignoring order
+function artistsEqual(arr1, arr2) {
+    if (!arr1 && !arr2) return true;
+    if (!arr1 || !arr2) return false;
+    if (arr1.length !== arr2.length) return false;
+
+    // Sort by name for comparison
+    const sorted1 = [...arr1].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    const sorted2 = [...arr2].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+    // Compare each element (minimal check on name and headliner status if exists)
+    return sorted1.every((a, i) => {
+        const b = sorted2[i];
+        return a.name === b.name && deepEqual(a.genres, b.genres);
+    });
+}
+
 // Helper: Check if event has meaningful changes
 function hasEventChanged(existing, incoming) {
-    if (existing.title !== incoming.title) return true;
+    if (normalizeString(existing.title) !== normalizeString(incoming.title)) return true;
     if (!datesEqual(existing.date, incoming.date)) return true;
-    if (existing.start_time !== incoming.start_time) return true;
-    if (existing.end_time !== incoming.end_time) return true;
-    if (existing.venue_name !== incoming.venue_name) return true;
-    if (existing.venue_city !== incoming.venue_city) return true;
+    if (normalizeTime(existing.start_time) !== normalizeTime(incoming.start_time)) return true;
+    if (normalizeTime(existing.end_time) !== normalizeTime(incoming.end_time)) return true;
+    if (normalizeString(existing.venue_name) !== normalizeString(incoming.venue_name)) return true;
+    if (normalizeString(existing.venue_city) !== normalizeString(incoming.venue_city)) return true;
 
     // Compare parsed JSON fields
     // existing.artists_json is likely an object from PG driver
     // incoming.artists_json is an object
-    if (!deepEqual(existing.artists_json, incoming.artists_json)) return true;
+    // Use specialized comparison for artists
+    if (!artistsEqual(existing.artists_json, incoming.artists_json)) return true;
+
+    // Price info might be subtle, deepEqual is usually safe if structure is consistent
     if (!deepEqual(existing.price_info, incoming.price_info)) return true;
 
     // Check URLs
-    if (existing.content_url !== incoming.content_url) return true;
-    if (existing.flyer_front !== incoming.flyer_front) return true;
+    if (normalizeString(existing.content_url) !== normalizeString(incoming.content_url)) return true;
+    if (normalizeString(existing.flyer_front) !== normalizeString(incoming.flyer_front)) return true;
 
-    // Check Lat/Lon if provided in incoming (sometimes geocoding fills this late, but here we check scraped data)
-    // If incoming has explicit lat/lon different from existing
-    if (incoming.venue_latitude && existing.venue_latitude !== incoming.venue_latitude) return true;
-    if (incoming.venue_longitude && existing.venue_longitude !== incoming.venue_longitude) return true;
+    // Check Lat/Lon ONLY if incoming has it and it differs significantly
+    // (Float comparison issue? Usually these are strings or exact floats)
+    if (incoming.venue_latitude && existing.venue_latitude) {
+        if (Math.abs(parseFloat(existing.venue_latitude) - parseFloat(incoming.venue_latitude)) > 0.0001) return true;
+    }
+    if (incoming.venue_longitude && existing.venue_longitude) {
+        if (Math.abs(parseFloat(existing.venue_longitude) - parseFloat(incoming.venue_longitude)) > 0.0001) return true;
+    }
 
     return false;
 }
 
-// Helper: Check for existing coordinates in DB
-
 // Process and save scraped events
 async function processScrapedEvents(events, options = {}) {
     const { geocodeMissing = true, scopes = ['event', 'venue', 'artist', 'organizer'] } = options;
-    let inserted = 0, updated = 0, geocoded = 0;
 
     // Track stats
     const stats = {
@@ -106,7 +142,11 @@ async function processScrapedEvents(events, options = {}) {
         unmodified: 0,
         geocoded: 0,
         venuesCreated: 0,
-        artistsCreated: 0
+        venuesUpdated: 0,
+        artistsCreated: 0,
+        artistsUpdated: 0,
+        organizersCreated: 0,
+        organizersUpdated: 0
     };
 
     if (!events || events.length === 0) return stats;
@@ -197,6 +237,28 @@ async function processScrapedEvents(events, options = {}) {
             const organizersJsonStr = event.organizers_json ? JSON.stringify(event.organizers_json) : null;
             const priceInfoJsonStr = event.price_info ? JSON.stringify(event.price_info) : null;
 
+            // Determine Status
+            let status = EVENT_STATES.SCRAPED_DRAFT;
+            try {
+                const now = new Date();
+                let endDateTime = null;
+
+                if (event.date) {
+                    const dateStr = event.date instanceof Date ? event.date.toISOString().split('T')[0] : event.date;
+                    let timeStr = event.end_time || event.start_time || '23:59:59';
+                    // Ensure timeStr format HH:MM:SS or HH:MM
+                    if (timeStr.length === 5) timeStr += ':00';
+
+                    endDateTime = new Date(`${dateStr}T${timeStr}`);
+
+                    if (!isNaN(endDateTime.getTime()) && endDateTime < now) {
+                        status = EVENT_STATES.REJECTED;
+                    }
+                }
+            } catch (e) {
+                console.warn(`[Scraper] Failed to calculate status date for ${event.title}:`, e);
+            }
+
             // --- 1. Save Scraped Event ---
             if (canScrapeEvent) {
                 // Check if existing
@@ -228,14 +290,14 @@ async function processScrapedEvents(events, options = {}) {
                             source_code, source_event_id, title, date, start_time, end_time,
                             content_url, flyer_front, description, venue_name, venue_address,
                             venue_city, venue_country, venue_latitude, venue_longitude,
-                            artists_json, organizers_json, price_info, raw_data, updated_at
-                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, CURRENT_TIMESTAMP)
+                            artists_json, organizers_json, price_info, raw_data, status, updated_at
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, CURRENT_TIMESTAMP)
                     `, [
                         event.source_code, event.source_event_id, event.title, event.date,
                         event.start_time, event.end_time, event.content_url, event.flyer_front,
                         event.description, event.venue_name, event.venue_address, event.venue_city,
                         event.venue_country, venueLat, venueLon,
-                        artistsJsonStr, organizersJsonStr, priceInfoJsonStr, event.raw_data
+                        artistsJsonStr, organizersJsonStr, priceInfoJsonStr, event.raw_data, status
                     ]);
                 } else if (shouldUpdate) {
                     // Update Existing
@@ -307,7 +369,11 @@ async function processScrapedEvents(events, options = {}) {
                         v.city, v.country, v.latitude || venueLat, v.longitude || venueLon, v.content_url,
                         v.description || null
                     ]);
-                    if (venueRes.rows[0].inserted) stats.venuesCreated++;
+                    if (venueRes.rows[0].inserted) {
+                        stats.venuesCreated++;
+                    } else {
+                        stats.venuesUpdated++;
+                    }
                 }
             }
 
@@ -333,7 +399,11 @@ async function processScrapedEvents(events, options = {}) {
                         artist.image_url, artist.content_url || null,
                         artist.type || null
                     ]);
-                    if (artistRes.rows[0].inserted) stats.artistsCreated++;
+                    if (artistRes.rows[0].inserted) {
+                        stats.artistsCreated++;
+                    } else {
+                        stats.artistsUpdated++;
+                    }
                 }
             }
 
@@ -343,7 +413,7 @@ async function processScrapedEvents(events, options = {}) {
                     if (!organizer.name) continue;
                     if (!organizer.source_organizer_id) continue;
 
-                    await pool.query(`
+                    const organizerRes = await pool.query(`
                         INSERT INTO scraped_organizers (
                             source_code, source_id, name, description, image_url, url, updated_at
                         ) VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
@@ -353,6 +423,7 @@ async function processScrapedEvents(events, options = {}) {
                             image_url = EXCLUDED.image_url,
                             url = EXCLUDED.url,
                             updated_at = CURRENT_TIMESTAMP
+                        RETURNING (xmax = 0) as inserted
                     `, [
                         event.source_code,
                         organizer.source_organizer_id,
@@ -361,6 +432,12 @@ async function processScrapedEvents(events, options = {}) {
                         organizer.image_url || null,
                         organizer.content_url || null
                     ]);
+
+                    if (organizerRes.rows[0].inserted) {
+                        stats.organizersCreated++;
+                    } else {
+                        stats.organizersUpdated++;
+                    }
                 }
             }
 
@@ -374,6 +451,14 @@ async function processScrapedEvents(events, options = {}) {
 
 async function logScrapeHistory(data) {
     try {
+        const metadata = {
+            ...(data.metadata || {}),
+            venues_updated: data.venues_updated || 0,
+            artists_updated: data.artists_updated || 0,
+            organizers_created: data.organizers_created || 0,
+            organizers_updated: data.organizers_updated || 0
+        };
+
         await pool.query(`
             INSERT INTO scrape_history (city, source_code, events_fetched, events_inserted, events_updated, venues_created, artists_created, duration_ms, error, metadata, scrape_type)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
@@ -387,7 +472,7 @@ async function logScrapeHistory(data) {
             data.artists_created || 0,
             data.duration_ms || null,
             data.error || null,
-            JSON.stringify(data.metadata || {}),
+            JSON.stringify(metadata),
             data.scrape_type || 'manual'
         ]);
     } catch (err) {

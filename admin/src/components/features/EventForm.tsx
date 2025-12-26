@@ -7,7 +7,12 @@ import {
   Search, Plus, Users, Music, AlertTriangle, Star,
   Image as ImageIcon, Link as LinkIcon, Ticket
 } from 'lucide-react';
-import { Event, EVENT_TYPES, EventType, Venue, Artist } from '@/types';
+import { Event, EVENT_TYPES, EventType, Venue, Artist, EventStatus } from '@/types';
+// Define runtime values if EventStatus is just a type alias
+import { EVENT_STATES, EventStatusState, canTransition, ALLOWED_TRANSITIONS } from '@/lib/eventStateMachine';
+
+// Re-export for compatibility if needed, though mostly used locally
+export const EventStatusValues = EVENT_STATES;
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { SourceFieldOptions } from '@/components/ui/SourceFieldOptions';
@@ -45,8 +50,10 @@ export function EventForm({
   const [formData, setFormData] = useState<Partial<Event>>(initialData || {
     title: '',
     event_type: 'event',
-    publish_status: 'pending'
+    status: EventStatusValues.MANUAL_DRAFT,
+    is_published: false
   });
+  const [transitionError, setTransitionError] = useState<string | null>(null);
 
   const [showMap, setShowMap] = useState(false);
 
@@ -150,8 +157,22 @@ export function EventForm({
     await onSubmit(finalData);
   };
 
-  const handleStatusChange = (status: 'pending' | 'approved' | 'rejected') => {
-    setFormData(prev => ({ ...prev, publish_status: status }));
+  const handleStatusChange = (newStatus: EventStatus) => {
+    // Current status fallback to manual draft if undefined
+    // IMPORTANT: Validate against the SAVED state (initialData), not the current form state
+    // so we don't allow skipping steps by selecting intermediate states
+    const currentStatus = (initialData?.status || EventStatusValues.MANUAL_DRAFT) as EventStatusState;
+
+    // Check if transition is allowed
+    if (!canTransition(currentStatus, newStatus as EventStatusState)) {
+      setTransitionError(`Cannot transition from ${currentStatus.replace(/_/g, ' ')} to ${newStatus.replace(/_/g, ' ')}`);
+      // Auto-dismiss after 3 seconds
+      setTimeout(() => setTransitionError(null), 3000);
+      return;
+    }
+
+    setTransitionError(null);
+    setFormData(prev => ({ ...prev, status: newStatus }));
   };
 
   // --- Venue Handlers ---
@@ -546,24 +567,62 @@ export function EventForm({
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
 
 
-          {/* Status Bar */}
+          {/* Status & Visibility Bar */}
           <div className="flex items-center justify-between bg-gray-50 dark:bg-gray-800/50 p-3 rounded-lg border border-gray-200 dark:border-gray-700">
-            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Status</span>
-            <div className="flex bg-white dark:bg-gray-900 rounded-md p-1 border border-gray-200 dark:border-gray-700 shadow-sm">
-              {(['pending', 'approved', 'rejected'] as const).map(status => (
-                <button
-                  key={status}
-                  type="button"
-                  onClick={() => handleStatusChange(status)}
-                  className={`px-3 py-1 text-xs font-medium rounded transition-colors capitalize ${formData.publish_status === status
-                    ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400'
-                    : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
-                    }`}
-                >
-                  {status}
-                </button>
-              ))}
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-4">
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Workflow</span>
+                <div className="flex bg-white dark:bg-gray-900 rounded-md p-1 border border-gray-200 dark:border-gray-700 shadow-sm flex-wrap gap-1">
+                  {[
+                    { value: EventStatusValues.MANUAL_DRAFT, label: 'Draft' },
+                    { value: EventStatusValues.APPROVED_PENDING_DETAILS, label: 'Needs Details' },
+                    { value: EventStatusValues.READY_TO_PUBLISH, label: 'Ready' },
+                    { value: EventStatusValues.PUBLISHED, label: 'Published' },
+                    { value: EventStatusValues.CANCELED, label: 'Canceled' },
+                    { value: EventStatusValues.REJECTED, label: 'Rejected' },
+                  ].map(option => {
+                    // Start from the persistent state for validation
+                    const savedStatus = (initialData?.status || EventStatusValues.MANUAL_DRAFT) as EventStatusState;
+                    const currentFormStatus = (formData.status || EventStatusValues.MANUAL_DRAFT) as EventStatusState;
+
+                    // Allow if:
+                    // 1. It is a valid transition from the SAVED status
+                    // 2. OR it is the saved status itself (reset)
+                    // 3. OR it is the currently selected status (stay)
+                    const isAllowed = canTransition(savedStatus, option.value as EventStatusState) ||
+                      savedStatus === option.value;
+
+                    const isActive = formData.status === option.value;
+
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => handleStatusChange(option.value)}
+                        disabled={!isAllowed}
+                        className={`px-3 py-1 text-xs font-medium rounded transition-colors whitespace-nowrap ${isActive
+                          ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 ring-1 ring-indigo-500'
+                          : isAllowed
+                            ? 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                            : 'text-gray-300 dark:text-gray-700 cursor-not-allowed opacity-50'
+                          }`}
+                        title={!isAllowed ? `Cannot move to ${option.label} from ${savedStatus.replace(/_/g, ' ')}` : ''}
+                      >
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              {transitionError && (
+                <div className="flex items-center gap-2 text-xs text-red-600 bg-red-50 dark:bg-red-900/20 px-2 py-1 rounded">
+                  <AlertTriangle className="w-3 h-3" />
+                  {transitionError}
+                </div>
+              )}
             </div>
+
+            {/* Publicly Visible Toggle Removed */}
           </div>
 
           {/* Basic Info */}

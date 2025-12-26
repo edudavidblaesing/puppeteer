@@ -79,6 +79,12 @@ app.get('/scrape/history', async (req, res) => {
                 SUM(events_fetched) as events_fetched,
                 SUM(events_inserted) as events_inserted,
                 SUM(events_updated) as events_updated,
+                SUM(venues_created) as venues_created,
+                SUM(artists_created) as artists_created,
+                SUM(COALESCE((metadata->>'venues_updated')::int, 0)) as venues_updated,
+                SUM(COALESCE((metadata->>'artists_updated')::int, 0)) as artists_updated,
+                SUM(COALESCE((metadata->>'organizers_created')::int, 0)) as organizers_created,
+                SUM(COALESCE((metadata->>'organizers_updated')::int, 0)) as organizers_updated,
                 COUNT(*) as scrape_count
             FROM scrape_history
             WHERE created_at > NOW() - ($2 || ' days')::INTERVAL
@@ -97,7 +103,7 @@ app.get('/scrape/recent', async (req, res) => {
     try {
         const { limit = 20 } = req.query;
         const result = await pool.query(`
-            SELECT * FROM scrape_history 
+        SELECT * FROM scrape_history 
             ORDER BY created_at DESC 
             LIMIT $1
         `, [parseInt(limit) || 20]);
@@ -129,7 +135,7 @@ app.patch('/db/sources/:id', async (req, res) => {
 
     for (const key of Object.keys(updates)) {
         if (allowed.includes(key)) {
-            fields.push(`${key} = $${idx++}`);
+            fields.push(`${key} = $${idx++} `);
             values.push(key === 'enabled_scopes' ? JSON.stringify(updates[key]) : updates[key]);
         }
     }
@@ -142,7 +148,7 @@ app.patch('/db/sources/:id', async (req, res) => {
 
     try {
         const result = await pool.query(
-            `UPDATE event_sources SET ${fields.join(', ')} WHERE id = $${idx} RETURNING *`,
+            `UPDATE event_sources SET ${fields.join(', ')} WHERE id = $${idx} RETURNING * `,
             values
         );
         res.json(result.rows[0]);
@@ -176,7 +182,7 @@ app.post('/scrape/run', async (req, res) => {
             } else if (source === 'tm') {
                 events = await scrapeTM(city, { limit });
             } else {
-                throw new Error(`Unknown source: ${source}`);
+                throw new Error(`Unknown source: ${source} `);
             }
 
             const stats = await processScrapedEvents(events, { geocodeMissing: true, scopes });
@@ -204,7 +210,7 @@ app.post('/scrape/run', async (req, res) => {
             console.log('[Manual Scrape] Matching completed.');
 
         } catch (e) {
-            console.error(`[Manual Scrape] Error: ${e.message}`);
+            console.error(`[Manual Scrape]Error: ${e.message} `);
             await logScrapeHistory({
                 city,
                 source_code: source,
@@ -282,7 +288,7 @@ app.post('/sync/pipeline', async (req, res) => {
                         });
                     }
                 } catch (e) {
-                    console.error(`[Sync Pipeline] Error scraping ${city}/${source}:`, e);
+                    console.error(`[Sync Pipeline]Error scraping ${city} / ${source}: `, e);
                 }
             }
         }
@@ -404,7 +410,7 @@ async function performAutoScrape() {
                 if (!isActive) continue;
 
                 try {
-                    console.log(`[Auto-Scrape] Scraping ${source} for ${city}...`);
+                    console.log(`[Auto - Scrape] Scraping ${source} for ${city}...`);
                     const startTime = Date.now();
                     let events = [];
 
@@ -432,7 +438,7 @@ async function performAutoScrape() {
                     await new Promise(r => setTimeout(r, 5000));
 
                 } catch (err) {
-                    console.error(`[Auto-Scrape] Error ${source}/${city}:`, err.message);
+                    console.error(`[Auto - Scrape] Error ${source}/${city}:`, err.message);
                     await logScrapeHistory({
                         city,
                         source_code: source,

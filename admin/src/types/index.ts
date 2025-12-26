@@ -1,5 +1,16 @@
 // Publish status: pending (needs review), approved (published), rejected (hidden)
+// Publish status: pending (needs review), approved (published), rejected (hidden)
 export type PublishStatus = 'pending' | 'approved' | 'rejected';
+
+export type EventStatus =
+  | 'MANUAL_DRAFT'
+  | 'SCRAPED_DRAFT'
+  | 'APPROVED_PENDING_DETAILS'
+  | 'READY_TO_PUBLISH'
+  | 'PUBLISHED'
+  | 'REJECTED'
+  | 'ARCHIVED'
+  | 'CANCELED';
 
 // Event timing category for display
 export type EventTiming = 'upcoming' | 'ongoing' | 'recent' | 'expired';
@@ -79,7 +90,8 @@ export interface Event {
   venue_country: string | null;
   artists: string | null;
   listing_date: string | null;
-  publish_status: PublishStatus;
+  publish_status: PublishStatus; // Deprecated, use status
+  status: EventStatus;
   is_published: boolean; // kept for backwards compatibility
   event_type: EventType;
   latitude: number | null;
@@ -133,6 +145,7 @@ export interface Organizer {
   website_url?: string | null;
   image_url?: string | null;
   event_count?: number;
+  venue_count?: number;
   created_at?: string;
   updated_at?: string;
   source_references?: SourceReference[];
@@ -193,6 +206,17 @@ export interface Stats {
     active_sources: string[];
     next_scheduled: string;
   };
+}
+
+export interface EventChecklist {
+  title: boolean;
+  date: boolean;
+  time: boolean;
+  venue: boolean;
+  city: boolean;
+  image: boolean;
+  description: boolean;
+  source: boolean;
 }
 
 export interface SourceConfig {
@@ -317,7 +341,7 @@ export function getEventTiming(event: Event): EventTiming {
   const threeDaysAgo = new Date(today);
   threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
 
-  if (now >= eventStart && now <= eventEnd) {
+  if (now >= eventStart && now <= eventEnd && event.status === 'PUBLISHED') {
     return 'ongoing';
   } else if (eventStart > now) {
     return 'upcoming';

@@ -2,9 +2,9 @@
 
 import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { Plus, Search } from 'lucide-react';
+import { Plus, Search, Trash2, Check } from 'lucide-react';
 import { Layout } from '@/components/Layout';
-import { CityList } from '@/components/features/CityList';
+import { CityTable } from '@/components/features/tables/CityTable';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { fetchSources } from '@/lib/api';
@@ -30,8 +30,39 @@ function CitiesLayoutDetails({ children }: { children: React.ReactNode }) {
         setPage,
         totalPages,
         totalItems,
-        itemsPerPage
+        itemsPerPage,
+        removeCity
     } = useCitiesContext();
+
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+    const handleSelect = (id: string) => {
+        const newSelected = new Set(selectedIds);
+        if (newSelected.has(id)) {
+            newSelected.delete(id);
+        } else {
+            newSelected.add(id);
+        }
+        setSelectedIds(newSelected);
+    };
+
+    const handleSelectAll = () => {
+        if (selectedIds.size === filteredCities.length) {
+            setSelectedIds(new Set());
+        } else {
+            setSelectedIds(new Set(filteredCities.map(c => c.id?.toString() || '')));
+        }
+    };
+
+    const handleBulkDelete = async () => {
+        if (!confirm(`Are you sure you want to delete ${selectedIds.size} cities?`)) return;
+
+        const ids = Array.from(selectedIds);
+        for (const id of ids) {
+            if (id) await removeCity(id);
+        }
+        setSelectedIds(new Set());
+    };
 
     const [sources, setSources] = useState<any[]>([]);
 
@@ -103,10 +134,17 @@ function CitiesLayoutDetails({ children }: { children: React.ReactNode }) {
 
                     <div className="flex-1 flex flex-col overflow-hidden">
                         <div className="flex-1 overflow-y-auto p-4">
-                            <CityList
+                            <CityTable
                                 cities={filteredCities}
-                                isLoading={isLoading}
+                                selectedIds={selectedIds}
+                                onSelect={handleSelect}
+                                onSelectAll={handleSelectAll}
                                 onEdit={handleEdit}
+                                onDelete={async (id) => {
+                                    if (confirm('Delete this city?')) {
+                                        await removeCity(id);
+                                    }
+                                }}
                             />
                         </div>
 
@@ -122,6 +160,34 @@ function CitiesLayoutDetails({ children }: { children: React.ReactNode }) {
                                 />
                             </div>
                         )}
+
+                        {/* Bulk Action Bar */}
+                        <div className={clsx(
+                            "absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 shadow-xl rounded-full px-6 py-3 flex items-center gap-4 transition-all duration-300 z-20",
+                            selectedIds.size > 0 ? "translate-y-0 opacity-100" : "translate-y-20 opacity-0 pointer-events-none"
+                        )}>
+                            <div className="text-sm font-medium text-gray-700 dark:text-gray-300 border-r border-gray-200 dark:border-gray-700 pr-4">
+                                {selectedIds.size} selected
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={handleBulkDelete}
+                                    className="p-2 rounded-full hover:bg-red-100 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 tooltip"
+                                    title="Delete Selected"
+                                >
+                                    <Trash2 className="w-5 h-5" />
+                                </button>
+                                <div className="w-px h-6 bg-gray-200 dark:bg-gray-700 mx-1"></div>
+                                <button
+                                    onClick={() => setSelectedIds(new Set())}
+                                    className="text-xs font-medium text-gray-500 hover:text-gray-900 dark:hover:text-gray-100"
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+
+
                     </div>
                 </div>
 

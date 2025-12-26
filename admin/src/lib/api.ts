@@ -21,6 +21,7 @@ export async function fetchEvents(params?: {
   source?: string;
   createdAfter?: string;
   updatedAfter?: string;
+  published?: boolean;
 }) {
   const searchParams = new URLSearchParams();
   if (params?.city) searchParams.set('city', params.city);
@@ -35,6 +36,7 @@ export async function fetchEvents(params?: {
   if (params?.source) searchParams.set('source', params.source);
   if (params?.createdAfter) searchParams.set('createdAfter', params.createdAfter);
   if (params?.updatedAfter) searchParams.set('updatedAfter', params.updatedAfter);
+  if (params?.published !== undefined) searchParams.set('published', params.published.toString());
 
   const response = await fetch(`${API_URL}/db/events?${searchParams}`, { headers });
   if (!response.ok) throw new Error('Failed to fetch events');
@@ -83,7 +85,7 @@ export async function deleteEvent(id: string) {
   return response.json();
 }
 
-export async function setPublishStatus(ids: string[], status: 'pending' | 'approved' | 'rejected') {
+export async function setPublishStatus(ids: string[], status: 'pending' | 'approved' | 'rejected' | string) {
   const response = await fetch(`${API_URL}/db/events/publish-status`, {
     method: 'POST',
     headers,
