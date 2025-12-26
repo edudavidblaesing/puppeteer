@@ -33,6 +33,11 @@ export default function EventPage() {
         }
     }, [events, id, isListLoading]);
 
+    // Navigation Logic
+    const currentIndex = events.findIndex(e => e.id === id);
+    const prevEventId = currentIndex > 0 ? events[currentIndex - 1].id : undefined;
+    const nextEventId = currentIndex >= 0 && currentIndex < events.length - 1 ? events[currentIndex + 1].id : undefined;
+
     const handleSubmit = async (data: Partial<Event>) => {
         try {
             if (id === 'new') {
@@ -42,10 +47,10 @@ export default function EventPage() {
                 await editEvent(id, data);
                 success('Event updated successfully');
             }
-            router.push('/events');
         } catch (error) {
             console.error(error);
             showError('Failed to save event');
+            throw error; // Re-throw so form knows it failed
         }
     };
 
@@ -69,7 +74,6 @@ export default function EventPage() {
     }
 
     if (id !== 'new' && !localEvent) {
-        // Double check logic: if loading finished and still no event
         return (
             <div className="flex items-center justify-center h-full text-gray-500">
                 Event not found
@@ -83,6 +87,9 @@ export default function EventPage() {
             onSubmit={handleSubmit}
             onDelete={handleDelete}
             onCancel={() => router.push('/events')}
+            prevEventId={prevEventId}
+            nextEventId={nextEventId}
+            onNavigate={(targetId) => router.push(`/events/${targetId}`)}
         />
     );
 }

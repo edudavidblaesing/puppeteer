@@ -16,6 +16,9 @@ interface EventWorkflowTableProps {
     onStatusChange: (id: string, status: EventStatus) => Promise<void>;
 }
 
+import { Keyboard } from 'lucide-react';
+import { useKeyboardNavigation } from '@/hooks/useKeyboardNavigation';
+
 export function EventWorkflowTable({
     events,
     selectedIds,
@@ -29,12 +32,33 @@ export function EventWorkflowTable({
     const handleReject = (id: string) => onStatusChange(id, 'REJECTED');
     const handlePublish = (id: string) => onStatusChange(id, 'PUBLISHED');
 
+    const { focusedId } = useKeyboardNavigation({
+        events,
+        onApprove: (id) => handleApprove(id),
+        onReject: (id) => handleReject(id),
+        onEdit
+    });
+
     if (events.length === 0) {
         return <div className="p-8 text-center text-gray-500">No events found matching current filters.</div>;
     }
 
     return (
         <div className="min-w-full inline-block align-middle">
+            {/* Shortcut Legend */}
+            <div className="mb-2 flex justify-end">
+                <div className="flex items-center gap-2 text-[10px] md:text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded border border-gray-200 dark:border-gray-700">
+                    <Keyboard className="w-3 h-3" />
+                    <span className="font-mono">↑↓</span> <span className="hidden sm:inline">Nav</span>
+                    <span className="text-gray-300 dark:text-gray-600 mx-1">•</span>
+                    <span className="font-mono">A</span> <span className="hidden sm:inline">Approve</span>
+                    <span className="text-gray-300 dark:text-gray-600 mx-1">•</span>
+                    <span className="font-mono">R</span> <span className="hidden sm:inline">Reject</span>
+                    <span className="text-gray-300 dark:text-gray-600 mx-1">•</span>
+                    <span className="font-mono">Enter</span> <span className="hidden sm:inline">Edit</span>
+                </div>
+            </div>
+
             <div className="border rounded-lg overflow-hidden dark:border-gray-800">
                 <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-800">
                     <thead className="bg-gray-50 dark:bg-gray-900">
@@ -56,7 +80,15 @@ export function EventWorkflowTable({
                     </thead>
                     <tbody className="divide-y divide-gray-200 dark:divide-gray-800 bg-white dark:bg-gray-950">
                         {events.map((event) => (
-                            <tr key={event.id} className={clsx("hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors", selectedIds.has(event.id) && "bg-indigo-50 dark:bg-indigo-900/10")}>
+                            <tr
+                                key={event.id}
+                                id={`event-item-${event.id}`}
+                                className={clsx(
+                                    "hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors",
+                                    selectedIds.has(event.id) && "bg-indigo-50 dark:bg-indigo-900/10",
+                                    focusedId === event.id && "ring-2 ring-indigo-500 z-10 bg-indigo-50 dark:bg-indigo-900/20"
+                                )}
+                            >
                                 <td className="px-4 py-3 whitespace-nowrap">
                                     <input
                                         type="checkbox"

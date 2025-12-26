@@ -189,7 +189,7 @@ function EventsLayoutDetails({ children }: { children: React.ReactNode }) {
                                 selectedIds={selectedIds}
                                 onSelect={handleSelect}
                                 onSelectAll={handleSelectAll}
-                                onEdit={(event) => setQuickEditEvent(event)}
+                                onEdit={handleEdit}
                                 onStatusChange={async (id, status) => {
                                     try {
                                         await updateStatus([id], status);

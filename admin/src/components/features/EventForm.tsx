@@ -37,15 +37,21 @@ interface EventFormProps {
   onCancel: () => void;
   isLoading?: boolean;
   isModal?: boolean;
+  prevEventId?: string;
+  nextEventId?: string;
+  onNavigate?: (id: string) => void;
 }
 
 export function EventForm({
   initialData,
-  onSubmit,
+  onSubmit, // NOW this just saves, does NOT redirect
   onDelete,
   onCancel,
   isLoading = false,
-  isModal = false
+  isModal = false,
+  prevEventId,
+  nextEventId,
+  onNavigate
 }: EventFormProps) {
   const [formData, setFormData] = useState<Partial<Event>>(initialData || {
     title: '',
@@ -54,6 +60,11 @@ export function EventForm({
     is_published: false
   });
   const [transitionError, setTransitionError] = useState<string | null>(null);
+
+  // Navigation State
+  const [showUnsavedModal, setShowUnsavedModal] = useState(false);
+  const [pendingNavigationId, setPendingNavigationId] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   const [showMap, setShowMap] = useState(false);
 
@@ -73,65 +84,187 @@ export function EventForm({
   const [isArtistSearching, setIsArtistSearching] = useState(false);
   const artistSearchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [showArtistModal, setShowArtistModal] = useState(false);
-  const [selectedArtists, setSelectedArtists] = useState<{ id: string; name: string }[]>([]);
+  const [selectedArtists, setSelectedArtists] = useState<{ id: string; name: string }[]>(() => {
+    if (initialData?.artists_list && Array.isArray(initialData.artists_list)) {
+      return initialData.artists_list.map((a: any) => ({
+        id: a.id || a.source_artist_id || 'source-' + Math.random(),
+        name: a.name
+      }));
+    }
+    return [];
+  });
   const [editingArtistData, setEditingArtistData] = useState<Artist | undefined>(undefined);
 
-  const [endDate, setEndDate] = useState('');
+  const [endDate, setEndDate] = useState(() => {
+    if (initialData?.end_time && initialData.end_time.includes('T')) {
+      return initialData.end_time.split('T')[0];
+    }
+    return '';
+  });
 
+  // Use refs for latest state in event listeners
+  const formDataRef = useRef(formData);
+  const selectedArtistsRef = useRef<any[]>([]); // We need to sync this too
+
+  // Keep refs updated
   useEffect(() => {
-    if (initialData) {
-      // Create a clean copy of initialData
-      const data = { ...initialData };
+    formDataRef.current = formData;
+  }, [formData]);
+  // We need to manage selectedArtists ref too, let's see where it is defined
+  // It's defined later in original file, we need to move it up or just access state if not using closure
+  // Since we use useEffect for keydown, we can depend on state if we attach/detach carefully.
+  // Actually, attaching keydown to window requires refs or dependency array reuse.
+  // Dependency array is better if performance allows.
 
-      // Set initial endDate
-      if (data.end_time && data.end_time.includes('T')) {
-        setEndDate(data.end_time.split('T')[0]);
-      } else {
-        setEndDate(data.date ? data.date.split('T')[0] : '');
+  const isFormDirty = () => {
+    if (!initialData) return false;
+
+    // Check key fields
+    const currentArtists = selectedArtists.map(a => String(a.id)).sort().join(',');
+    const initialArtists = (initialData.artists_list || []).map((a: any) => String(a.id)).sort().join(',');
+
+    if (currentArtists !== initialArtists) {
+      console.log('Dirty Artist Check:', { current: currentArtists, initial: initialArtists });
+      return true;
+    }
+
+    const fields: (keyof Event)[] = ['title', 'date', 'start_time', 'end_time', 'venue_name', 'status', 'description', 'ticket_url'];
+
+    for (const f of fields) {
+      let val1 = formData[f];
+      let val2 = (initialData as any)[f];
+
+      // Normalize Dates (YYYY-MM-DD)
+      if (f === 'date') {
+        if (typeof val1 === 'string' && val1.includes('T')) val1 = val1.split('T')[0];
+        if (typeof val2 === 'string' && val2.includes('T')) val2 = val2.split('T')[0];
       }
 
-      // Fix time formatting if it's a full ISO string (backend sends timestamps)
-      if (data.start_time && data.start_time.includes('T')) {
-        data.start_time = data.start_time.split('T')[1].substring(0, 5);
-      } else if (data.start_time && data.start_time.length > 5) {
-        data.start_time = data.start_time.substring(0, 5);
+      // Normalize Times (HH:mm)
+      if (f === 'start_time' || f === 'end_time') {
+        if (typeof val1 === 'string' && val1.includes('T')) val1 = val1.split('T')[1].substring(0, 5);
+        else if (typeof val1 === 'string') val1 = val1.substring(0, 5);
+
+        if (typeof val2 === 'string' && val2.includes('T')) val2 = val2.split('T')[1].substring(0, 5);
+        else if (typeof val2 === 'string') val2 = val2.substring(0, 5);
       }
 
-      if (data.end_time && data.end_time.includes('T')) {
-        data.end_time = data.end_time.split('T')[1].substring(0, 5);
-      } else if (data.end_time && data.end_time.length > 5) {
-        data.end_time = data.end_time.substring(0, 5);
-      }
+      // Treat null, undefined, and empty strings as equal
+      const v1Empty = val1 === null || val1 === undefined || val1 === '';
+      const v2Empty = val2 === null || val2 === undefined || val2 === '';
 
-      setFormData(data);
+      if (v1Empty && v2Empty) continue;
 
-      // Load artists list if available
-      if (initialData.artists_list && Array.isArray(initialData.artists_list)) {
-        // Map to format expect by MultiSelect (value/label)
-        // Wait, MultiSelect in EventForm uses simple array of strings or objects?
-        // Looking at renderArtists: it map selectedArtists (EventArtist[])
-        setSelectedArtists(initialData.artists_list.map((a: any) => ({
-          id: a.id,
-          name: a.name,
-          role: a.role || 'performer',
-          billing_order: a.billing_order || 0
-        })));
-      }
-      if (initialData.venue_name && !initialData.venue_id) {
-        // Pre-fill search if no ID but has name
-        setVenueSearchQuery(initialData.venue_name);
+      if (val1 != val2) {
+        console.log(`Dirty Field Check [${f}]:`, { val1, val2 });
+        return true;
       }
     }
-  }, [initialData]);
+    return false;
+  };
 
-  // Sync venue name to search query if ID is cleared (e.g. via Reset)
-  useEffect(() => {
-    if (!formData.venue_id && formData.venue_name && formData.venue_name !== venueSearchQuery) {
-      setVenueSearchQuery(formData.venue_name);
+  const [pendingAction, setPendingAction] = useState<{ type: 'navigate' | 'cancel', payload?: any } | null>(null);
+
+  const attemptNavigation = (targetId: string) => {
+    if (isFormDirty()) {
+      setPendingAction({ type: 'navigate', payload: targetId });
+      setShowUnsavedModal(true);
+    } else {
+      onNavigate?.(targetId);
     }
-  }, [formData.venue_id, formData.venue_name]);
+  };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const attemptCancel = () => {
+    if (isFormDirty()) {
+      setPendingAction({ type: 'cancel' });
+      setShowUnsavedModal(true);
+    } else {
+      onCancel();
+    }
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if input focused
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement).tagName)) return;
+
+      if (e.key === 'ArrowUp') {
+        if (prevEventId) {
+          e.preventDefault();
+          attemptNavigation(prevEventId);
+        }
+      } else if (e.key === 'ArrowDown') {
+        if (nextEventId) {
+          e.preventDefault();
+          attemptNavigation(nextEventId);
+        }
+      } else if (e.key === 'Escape') {
+        if (!showUnsavedModal && !showVenueModal && !showArtistModal) {
+          e.preventDefault();
+          attemptCancel();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [prevEventId, nextEventId, onNavigate, formData, selectedArtists, showUnsavedModal, showVenueModal, showArtistModal]);
+
+  const confirmNavigation = async (save: boolean) => {
+    if (!pendingAction) return;
+
+    if (save) {
+      setIsSaving(true);
+      // We need to construct the event object same as handleSubmit
+      try {
+        // Helper to get final data
+        let finalStartTime = formData.start_time;
+        if (formData.date && formData.start_time && !formData.start_time.includes('T')) {
+          finalStartTime = `${formData.date.split('T')[0]}T${formData.start_time}:00`;
+        }
+
+        let finalEndTime = formData.end_time;
+        const targetEndDate = endDate || (formData.date ? formData.date.split('T')[0] : '');
+        if (targetEndDate && formData.end_time && !formData.end_time.includes('T')) {
+          finalEndTime = `${targetEndDate}T${formData.end_time}:00`;
+        }
+
+        const finalData = {
+          ...formData,
+          start_time: finalStartTime,
+          end_time: finalEndTime,
+          artists_list: selectedArtists
+        };
+
+        await onSubmit(finalData);
+        setShowUnsavedModal(false);
+        // Execute pending action
+        if (pendingAction.type === 'navigate') {
+          onNavigate?.(pendingAction.payload);
+        } else if (pendingAction.type === 'cancel') {
+          onCancel();
+        }
+      } catch (e) {
+        console.error("Save failed during nav", e);
+        // Stay on page
+      } finally {
+        setIsSaving(false);
+        setPendingAction(null);
+      }
+    } else {
+      // Discard
+      setShowUnsavedModal(false);
+      if (pendingAction.type === 'navigate') {
+        onNavigate?.(pendingAction.payload);
+      } else if (pendingAction.type === 'cancel') {
+        onCancel();
+      }
+      setPendingAction(null);
+    }
+  };
+
+  // Original handleSubmit needs to call onSubmit then EXIT (onCancel)
+  const handleMainSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     // Construct full ISO timestamps
@@ -154,8 +287,12 @@ export function EventForm({
       end_time: finalEndTime,
       artists_list: selectedArtists
     };
+
     await onSubmit(finalData);
+    // Explicitly exit after save if it's the main save button
+    onCancel();
   };
+
 
   const handleStatusChange = (newStatus: EventStatus) => {
     // Current status fallback to manual draft if undefined
@@ -503,7 +640,27 @@ export function EventForm({
         </div>
       </Modal>
 
-      <form onSubmit={handleSubmit} className="flex flex-col h-full min-h-0 relative">
+      <Modal
+        isOpen={showUnsavedModal}
+        onClose={() => setShowUnsavedModal(false)}
+        title="Unsaved Changes"
+        size="md"
+      >
+        <div className="space-y-4">
+          <p className="text-gray-600 dark:text-gray-300">
+            You have unsaved changes. Do you want to save them before leaving?
+          </p>
+          <div className="flex justify-end gap-3">
+            <Button variant="ghost" onClick={() => { setShowUnsavedModal(false); setPendingAction(null); }}>Cancel</Button>
+            <Button variant="danger" onClick={() => confirmNavigation(false)}>Discard</Button>
+            <Button variant="primary" onClick={() => confirmNavigation(true)} disabled={isSaving}>
+              {isSaving ? 'Saving...' : 'Save & Continue'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <form onSubmit={handleMainSubmit} className="flex flex-col h-full min-h-0 relative">
         {/* Header */}
         {!isModal && (
           <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between bg-gray-50 dark:bg-gray-900/50">
@@ -554,7 +711,7 @@ export function EventForm({
                 type="button"
                 variant="ghost"
                 size="sm"
-                onClick={onCancel}
+                onClick={attemptCancel}
                 disabled={isLoading}
               >
                 <X className="w-4 h-4" />

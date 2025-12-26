@@ -1,11 +1,11 @@
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
+// import { Inter } from 'next/font/google';
 import './globals.css';
 import { Navigation } from '@/components/Navigation';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { ToastProvider } from '@/contexts/ToastContext';
 
-const inter = Inter({ subsets: ['latin'] });
+// const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
   title: 'Events Admin Dashboard',
@@ -35,7 +35,7 @@ export default function RootLayout({
           href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css"
         />
       </head>
-      <body className={`${inter.className} h-screen overflow-hidden bg-white dark:bg-gray-950`}>
+      <body className={`font-sans h-screen overflow-hidden bg-white dark:bg-gray-950`}>
         <AuthProvider>
           <ToastProvider>
             <div className="h-full flex bg-gray-50 dark:bg-gray-950">
