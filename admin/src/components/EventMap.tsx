@@ -404,12 +404,12 @@ export default function EventMap({
             return `
                 <button 
                   data-event-idx="${idx}" 
-                  class="w-full p-2 ${statusColor} hover:bg-indigo-50 rounded text-xs text-left transition-colors cursor-pointer border hover:border-indigo-200"
+                  class="w-full p-2 ${statusColor} hover:bg-primary-50 rounded text-xs text-left transition-colors cursor-pointer border hover:border-primary-200"
                 >
                   <div class="font-medium line-clamp-1">${event.title}</div>
                   <div class="text-gray-500 flex justify-between">
                     <span>${event.date ? new Date(event.date).toLocaleDateString() : 'No date'}</span>
-                    <span class="text-indigo-600">Edit →</span>
+                    <span class="text-primary-600">Edit →</span>
                   </div>
                 </button>
               `}).join('')}

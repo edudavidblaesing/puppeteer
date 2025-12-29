@@ -4,6 +4,8 @@ import './globals.css';
 import { Navigation } from '@/components/Navigation';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { ToastProvider } from '@/contexts/ToastContext';
+import { CommandPalette } from '@/components/ui/CommandPalette';
+import ReactQueryProvider from '@/contexts/ReactQueryProvider';
 
 // const inter = Inter({ subsets: ['latin'] });
 
@@ -36,18 +38,21 @@ export default function RootLayout({
         />
       </head>
       <body className={`font-sans h-screen overflow-hidden bg-white dark:bg-gray-950`}>
-        <AuthProvider>
-          <ToastProvider>
-            <div className="h-full flex bg-gray-50 dark:bg-gray-950">
-              <div className="flex-shrink-0 h-full">
-                <Navigation />
+        <ReactQueryProvider>
+          <AuthProvider>
+            <ToastProvider>
+              <div className="h-full flex bg-gray-50 dark:bg-gray-950">
+                <div className="flex-shrink-0 h-full">
+                  <Navigation />
+                </div>
+                <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
+                  {children}
+                </main>
+                <CommandPalette />
               </div>
-              <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
-                {children}
-              </main>
-            </div>
-          </ToastProvider>
-        </AuthProvider>
+            </ToastProvider>
+          </AuthProvider>
+        </ReactQueryProvider>
       </body>
     </html>
   );

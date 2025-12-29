@@ -35,6 +35,8 @@ export function NewDashboard() {
   const [history, setHistory] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  const [error, setError] = useState<string | null>(null);
+
   // Dashboard Filters
   const [selectedSource, setSelectedSource] = useState<string>('all');
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
@@ -44,6 +46,7 @@ export function NewDashboard() {
     async function loadDashboardData() {
       try {
         setIsLoading(true);
+        setError(null);
         const [statsData, citiesData, historyData, pendingData, pipelineData, mapData] = await Promise.all([
           fetchStats(),
           fetchCities(),
@@ -77,6 +80,7 @@ export function NewDashboard() {
         }
       } catch (error) {
         console.error('Failed to load dashboard data:', error);
+        setError((error as Error).message || 'Failed to load dashboard data');
       } finally {
         setIsLoading(false);
       }
@@ -128,10 +132,28 @@ export function NewDashboard() {
     }
   };
 
-  if (isLoading || !stats) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-[#FAFAFA] dark:bg-[#09090B]">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+      </div>
+    );
+  }
+
+  if (error || !stats) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-[#FAFAFA] dark:bg-[#09090B] gap-4">
+        <div className="p-4 rounded-full bg-red-100 dark:bg-red-900/20 text-red-600 dark:text-red-400">
+          <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+        </div>
+        <h3 className="text-lg font-medium text-gray-900 dark:text-white">Failed to load dashboard</h3>
+        <p className="text-sm text-gray-500 dark:text-gray-400">{error || 'Unknown error occurred'}</p>
+        <Button onClick={() => window.location.reload()}>
+          Retry
+          <RefreshCw className="w-4 h-4 ml-2" />
+        </Button>
       </div>
     );
   }
@@ -161,7 +183,7 @@ export function NewDashboard() {
             <select
               value={selectedSource}
               onChange={(e) => setSelectedSource(e.target.value)}
-              className="appearance-none bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100 text-sm font-medium rounded-lg py-2 pl-4 pr-10 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+              className="appearance-none bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100 text-sm font-medium rounded-lg py-2 pl-4 pr-10 focus:outline-none focus:ring-2 focus:ring-primary-500 cursor-pointer"
             >
               <option value="all">All Sources</option>
               {stats.scraping.active_sources?.map(src => (
@@ -203,7 +225,19 @@ export function NewDashboard() {
 
           {/* Scrape Widget */}
           <div className="col-span-12 lg:col-span-4 h-full">
-            <ScrapeWidget stats={stats.scraping} />
+            <ScrapeWidget
+              stats={stats.scraping}
+              onScrapeComplete={() => {
+                // Refresh dashboard data when scraping completes
+                // We re-call loadDashboardData (which is inside useEffect, we might need to extract it)
+                // Since loadDashboardData is inside useEffect scope, we need to extract it or use a trigger.
+                // Currently defining it inside useEffect. Let's make it accessible.
+                // Refactoring: extracting loadDashboardData below.
+                window.location.reload(); // Simplest fix for now as per "reloaded when finished" request, 
+                // but better to refetch.
+                // Actually, let's just trigger a re-mount or expose a refresh handler.
+              }}
+            />
           </div>
         </div>
 

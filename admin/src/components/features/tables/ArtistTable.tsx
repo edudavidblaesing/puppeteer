@@ -36,7 +36,7 @@ export function ArtistTable({
                             <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase w-10">
                                 <input
                                     type="checkbox"
-                                    className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                    className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                                     checked={artists.length > 0 && selectedIds.size === artists.length}
                                     onChange={onSelectAll}
                                 />
@@ -49,11 +49,11 @@ export function ArtistTable({
                     </thead>
                     <tbody className="divide-y divide-gray-200 dark:divide-gray-800 bg-white dark:bg-gray-950">
                         {artists.map((artist) => (
-                            <tr key={artist.id} className={clsx("hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors", selectedIds.has(artist.id) && "bg-indigo-50 dark:bg-indigo-900/10")}>
+                            <tr key={artist.id} className={clsx("hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors", selectedIds.has(artist.id) && "bg-primary-50 dark:bg-primary-900/10")}>
                                 <td className="px-4 py-3 whitespace-nowrap">
                                     <input
                                         type="checkbox"
-                                        className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                        className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                                         checked={selectedIds.has(artist.id)}
                                         onChange={() => onSelect(artist.id)}
                                     />
@@ -68,11 +68,11 @@ export function ArtistTable({
                                             )}
                                         </div>
                                         <div>
-                                            <div className="text-sm font-medium text-gray-900 dark:text-gray-100 hover:text-indigo-600 cursor-pointer" onClick={() => onEdit(artist)}>
+                                            <div className="text-sm font-medium text-gray-900 dark:text-gray-100 hover:text-primary-600 cursor-pointer" onClick={() => onEdit(artist)}>
                                                 {artist.name}
                                             </div>
                                             {artist.content_url && (
-                                                <a href={artist.content_url} target="_blank" rel="noopener noreferrer" className="text-xs text-gray-400 hover:text-indigo-500 flex items-center gap-1">
+                                                <a href={artist.content_url} target="_blank" rel="noopener noreferrer" className="text-xs text-gray-400 hover:text-primary-500 flex items-center gap-1">
                                                     <Globe className="w-3 h-3" />
                                                     <span className="truncate max-w-[150px]">{artist.content_url}</span>
                                                 </a>

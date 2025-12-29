@@ -36,7 +36,7 @@ export function OrganizerTable({
                             <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase w-10">
                                 <input
                                     type="checkbox"
-                                    className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                    className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                                     checked={organizers.length > 0 && selectedIds.size === organizers.length}
                                     onChange={onSelectAll}
                                 />
@@ -49,11 +49,11 @@ export function OrganizerTable({
                     </thead>
                     <tbody className="divide-y divide-gray-200 dark:divide-gray-800 bg-white dark:bg-gray-950">
                         {organizers.map((organizer) => (
-                            <tr key={organizer.id} className={clsx("hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors", selectedIds.has(organizer.id) && "bg-indigo-50 dark:bg-indigo-900/10")}>
+                            <tr key={organizer.id} className={clsx("hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors", selectedIds.has(organizer.id) && "bg-primary-50 dark:bg-primary-900/10")}>
                                 <td className="px-4 py-3 whitespace-nowrap">
                                     <input
                                         type="checkbox"
-                                        className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                        className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                                         checked={selectedIds.has(organizer.id)}
                                         onChange={() => onSelect(organizer.id)}
                                     />
@@ -68,11 +68,11 @@ export function OrganizerTable({
                                             )}
                                         </div>
                                         <div>
-                                            <div className="text-sm font-medium text-gray-900 dark:text-gray-100 hover:text-indigo-600 cursor-pointer" onClick={() => onEdit(organizer)}>
+                                            <div className="text-sm font-medium text-gray-900 dark:text-gray-100 hover:text-primary-600 cursor-pointer" onClick={() => onEdit(organizer)}>
                                                 {organizer.name}
                                             </div>
                                             {organizer.website_url && (
-                                                <a href={organizer.website_url} target="_blank" rel="noopener noreferrer" className="text-xs text-gray-400 hover:text-indigo-500 flex items-center gap-1">
+                                                <a href={organizer.website_url} target="_blank" rel="noopener noreferrer" className="text-xs text-gray-400 hover:text-primary-500 flex items-center gap-1">
                                                     <Globe className="w-3 h-3" />
                                                     <span className="truncate max-w-[150px]">{organizer.website_url}</span>
                                                 </a>

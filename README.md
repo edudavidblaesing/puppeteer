@@ -6,8 +6,9 @@ A platform for aggregating and managing social events from multiple sources.
 
 ```
 social-events/
+├── admin/                # Admin Dashboard (Next.js)
 ├── backend/
-│   ├── scraper/          # Event scraper service (Puppeteer + GraphQL)
+│   ├── scraper/          # Event scraper service (Node.js + Puppeteer)
 │   └── api/              # REST API service (future)
 ├── frontend/
 │   ├── web/              # Web application (future)
@@ -44,6 +45,13 @@ docker-compose logs -f event-scraper
 
 # Stop services
 docker-compose down
+
+### Admin Dashboard (Local Dev)
+```bash
+cd admin
+npm install
+npm run dev
+# Open http://localhost:3000
 ```
 
 ## API Endpoints

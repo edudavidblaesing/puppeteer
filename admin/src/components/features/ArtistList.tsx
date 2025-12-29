@@ -18,7 +18,7 @@ export function ArtistList({
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
       </div>
     );
   }
@@ -59,7 +59,7 @@ export function ArtistList({
 
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between mb-1">
-                  <h3 className="text-base font-medium text-gray-900 dark:text-gray-100 truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                  <h3 className="text-base font-medium text-gray-900 dark:text-gray-100 truncate group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
                     {artist.name}
                   </h3>
                   {artist.country && (
@@ -75,7 +75,7 @@ export function ArtistList({
                       href={artist.content_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center gap-1 hover:text-indigo-600 dark:hover:text-indigo-400"
+                      className="flex items-center gap-1 hover:text-primary-600 dark:hover:text-primary-400"
                       onClick={(e) => e.stopPropagation()}
                     >
                       <Link2 className="w-3 h-3" />

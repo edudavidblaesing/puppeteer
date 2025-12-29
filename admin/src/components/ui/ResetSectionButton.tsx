@@ -18,7 +18,7 @@ export function ResetSectionButton({ sources, onReset, className = '' }: ResetSe
         key="best"
         type="button"
         onClick={() => onReset('best')}
-        className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-700 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 font-bold uppercase transition-colors"
+        className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-primary-50 dark:bg-primary-900/30 border border-primary-200 dark:border-primary-700 hover:bg-primary-100 dark:hover:bg-primary-900/50 text-primary-600 dark:text-primary-400 font-bold uppercase transition-colors"
         title="Reset to best matched data"
       >
         <Star className="w-3 h-3 fill-current" /> Best
@@ -28,7 +28,7 @@ export function ResetSectionButton({ sources, onReset, className = '' }: ResetSe
           key={source}
           type="button"
           onClick={() => onReset(source)}
-          className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 font-medium uppercase transition-colors"
+          className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-primary-50 dark:hover:bg-primary-900/30 text-gray-500 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 font-medium uppercase transition-colors"
           title={`Reset to ${source}`}
         >
           <SourceIcon sourceCode={source} className="w-3 h-3" />

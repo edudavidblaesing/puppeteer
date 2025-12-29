@@ -121,7 +121,7 @@ function CitiesLayoutDetails({ children }: { children: React.ReactNode }) {
                             <select
                                 value={sourceFilter}
                                 onChange={(e) => setSourceFilter(e.target.value)}
-                                className="h-10 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white max-w-[150px]"
+                                className="h-10 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 dark:text-white max-w-[150px]"
                             >
                                 <option value="">All Sources</option>
                                 <option value="manual">Manual</option>

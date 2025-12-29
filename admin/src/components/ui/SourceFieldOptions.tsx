@@ -64,7 +64,7 @@ export function SourceFieldOptions({ sources, field, onSelect, currentValue, lab
               type="button"
               onClick={() => onSelect(val)}
               className={`text-xs px-2 py-1 rounded border flex items-center gap-1 transition-colors max-w-full ${isSelected
-                ? 'bg-indigo-50 dark:bg-indigo-900/30 border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 ring-1 ring-indigo-500/20'
+                ? 'bg-primary-50 dark:bg-primary-900/30 border-primary-200 dark:border-primary-800 text-primary-700 dark:text-primary-300 ring-1 ring-primary-500/20'
                 : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
                 } ${isBest ? 'ring-1 ring-amber-400 border-amber-300 dark:border-amber-600' : ''}`}
               title={isBest ? `Best Match from ${source.source_code}` : `Use value from ${source.source_code}`}

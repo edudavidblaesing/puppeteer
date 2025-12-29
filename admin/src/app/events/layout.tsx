@@ -73,12 +73,7 @@ function EventsLayoutDetails({ children }: { children: React.ReactNode }) {
         loadEvents();
 
         // Fetch sources for dropdown
-        fetch('/api/sources').then(res => {
-            if (res.ok) return res.json();
-            // Fallback if proxy not set or direct call needed
-            // Actually we usually import fetchSources from api
-            return import('@/lib/api').then(mod => mod.fetchSources());
-        }).then(data => {
+        import('@/lib/api').then(mod => mod.fetchSources()).then((data: any) => {
             // Handle both array or object with data property
             const list = Array.isArray(data) ? data : (data.data || []);
             setSources(list);
@@ -103,7 +98,7 @@ function EventsLayoutDetails({ children }: { children: React.ReactNode }) {
 
     const handleSelectAll = () => {
         if (selectedIds.size === filteredEvents.length) setSelectedIds(new Set());
-        else setSelectedIds(new Set(filteredEvents.map(e => e.id)));
+        else setSelectedIds(new Set(filteredEvents.map((e: any) => e.id)));
     };
 
     return (
@@ -140,7 +135,7 @@ function EventsLayoutDetails({ children }: { children: React.ReactNode }) {
                             <select
                                 value={timeFilter}
                                 onChange={(e) => setTimeFilter(e.target.value as any)}
-                                className="h-10 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white"
+                                className="h-10 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 dark:text-white"
                             >
                                 <option value="upcoming">Next / Upcoming</option>
                                 <option value="past">Past Events</option>
@@ -150,7 +145,7 @@ function EventsLayoutDetails({ children }: { children: React.ReactNode }) {
                             <select
                                 value={sourceFilter}
                                 onChange={(e) => setSourceFilter(e.target.value)}
-                                className="h-10 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white max-w-[150px]"
+                                className="h-10 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 dark:text-white max-w-[150px]"
                             >
                                 <option value="">All Sources</option>
                                 <option value="manual">Manual</option>
@@ -162,18 +157,23 @@ function EventsLayoutDetails({ children }: { children: React.ReactNode }) {
                             <select
                                 value={statusFilter}
                                 onChange={(e) => setStatusFilter(e.target.value as any)}
-                                className="h-10 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white"
+                                className="h-10 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 dark:text-white"
                             >
                                 <option value="all">All Status</option>
-                                <option value="pending">Pending</option>
-                                <option value="approved">Approved</option>
-                                <option value="rejected">Rejected</option>
+                                <option value="drafts">All Drafts</option>
+                                <option value="MANUAL_DRAFT">Manual Draft</option>
+                                <option value="SCRAPED_DRAFT">Scrape Draft</option>
+                                <option value="APPROVED_PENDING_DETAILS">Needs Details</option>
+                                <option value="READY_TO_PUBLISH">Ready</option>
+                                <option value="PUBLISHED">Published</option>
+                                <option value="CANCELED">Cancelled</option>
+                                <option value="REJECTED">Rejected</option>
                             </select>
 
                             <select
                                 value={updatesFilter}
                                 onChange={(e) => setUpdatesFilter(e.target.value as any)}
-                                className="h-10 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white"
+                                className="h-10 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 dark:text-white"
                             >
                                 <option value="all">Show All</option>
                                 <option value="new">New Events</option>
@@ -248,8 +248,8 @@ function EventsLayoutDetails({ children }: { children: React.ReactNode }) {
                                     onClick={async () => {
                                         // Filter only events that are ready to publish
                                         const readyIds = filteredEvents
-                                            .filter(e => selectedIds.has(e.id) && e.status === 'READY_TO_PUBLISH')
-                                            .map(e => e.id);
+                                            .filter((e: any) => selectedIds.has(e.id) && e.status === 'READY_TO_PUBLISH')
+                                            .map((e: any) => e.id);
 
                                         if (readyIds.length === 0) {
                                             error("None of the selected events are 'Ready to Publish'. Please complete their details first.");

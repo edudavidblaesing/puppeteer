@@ -39,7 +39,7 @@ export function CityTable({
                             <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase w-10">
                                 <input
                                     type="checkbox"
-                                    className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                    className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                                     checked={cities.length > 0 && selectedIds.size === cities.length}
                                     onChange={onSelectAll}
                                 />
@@ -52,11 +52,11 @@ export function CityTable({
                     </thead>
                     <tbody className="divide-y divide-gray-200 dark:divide-gray-800 bg-white dark:bg-gray-950">
                         {cities.map((city) => (
-                            <tr key={city.id} className={clsx("hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors", selectedIds.has(getId(city)) && "bg-indigo-50 dark:bg-indigo-900/10")}>
+                            <tr key={city.id} className={clsx("hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors", selectedIds.has(getId(city)) && "bg-primary-50 dark:bg-primary-900/10")}>
                                 <td className="px-4 py-3 whitespace-nowrap">
                                     <input
                                         type="checkbox"
-                                        className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                        className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                                         checked={selectedIds.has(getId(city))}
                                         onChange={() => onSelect(getId(city))}
                                     />
@@ -67,7 +67,7 @@ export function CityTable({
                                             <MapPin className="w-5 h-5" />
                                         </div>
                                         <div>
-                                            <div className="text-sm font-medium text-gray-900 dark:text-gray-100 hover:text-indigo-600 cursor-pointer" onClick={() => onEdit(city)}>
+                                            <div className="text-sm font-medium text-gray-900 dark:text-gray-100 hover:text-primary-600 cursor-pointer" onClick={() => onEdit(city)}>
                                                 {city.name}
                                             </div>
                                             <div className="text-xs text-gray-500">{city.country}</div>

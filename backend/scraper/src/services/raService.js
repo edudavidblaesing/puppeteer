@@ -52,6 +52,7 @@ async function getEvent(id) {
                 artists {
                     id
                     name
+                    image
                 }
                 promoters {
                     id
@@ -92,8 +93,46 @@ async function getVenue(id) {
     const venue = data.data.venue;
     if (venue) {
         venue.url = venue.contentUrl ? `https://ra.co${venue.contentUrl}` : null;
+        venue.description = venue.blurb || null;
     }
     return venue;
+}
+
+async function getArtist(id) {
+    const query = `
+        query GetArtist($id: ID!) {
+            artist(id: $id) {
+                id
+                name
+                firstName
+                lastName
+                biography { content }
+                contentUrl
+                website
+                facebook
+                twitter
+                instagram
+                soundcloud
+                discogs
+                bandcamp
+                image
+                coverImage
+                country {
+                    name
+                }
+                residentCountry {
+                    name
+                }
+            }
+        }
+    `;
+    try {
+        const data = await fetchGraphQL(query, { id });
+        return data.data.artist;
+    } catch (e) {
+        console.error(`Error fetching artist ${id}:`, e.message);
+        return null;
+    }
 }
 
 async function getListings(filters, pageSize) {
@@ -124,6 +163,7 @@ async function getListings(filters, pageSize) {
                         artists {
                             id
                             name
+                            image
                         }
                         promoters {
                             id
@@ -140,8 +180,31 @@ async function getListings(filters, pageSize) {
     return data.data.eventListings;
 }
 
+async function searchAreas(queryTerm) {
+    const query = `
+        query Search($term: String!) {
+            areas(searchTerm: $term) {
+                id
+                name
+                country {
+                    name
+                }
+            }
+        }
+    `;
+    try {
+        const data = await fetchGraphQL(query, { term: queryTerm });
+        return data.data.areas || [];
+    } catch (e) {
+        console.error('RA Area Search Error:', e);
+        return [];
+    }
+}
+
 module.exports = {
     getEvent,
     getVenue,
-    getListings
+    getArtist,
+    getListings,
+    searchAreas
 };

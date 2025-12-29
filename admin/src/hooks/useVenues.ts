@@ -1,12 +1,10 @@
 import { useState, useCallback, useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { Venue } from '@/types';
 import { fetchAdminVenues, createVenue, updateVenue, deleteVenue } from '@/lib/api';
 
 export function useVenues() {
-  const [venues, setVenues] = useState<Venue[]>([]);
-  const [total, setTotal] = useState(0);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
   // Pagination State
   const [page, setPage] = useState(1);
@@ -26,65 +24,79 @@ export function useVenues() {
     return () => clearTimeout(handler);
   }, [searchQuery]);
 
-  const loadVenues = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const data = await fetchAdminVenues({
+  // Query Key
+  const queryKey = ['venues', { page, limit, search: debouncedSearch, source: sourceFilter }];
+
+  // Fetch Venues with React Query
+  const {
+    data,
+    isLoading,
+    isError,
+    error,
+    refetch
+  } = useQuery({
+    queryKey,
+    queryFn: async () => {
+      return fetchAdminVenues({
         search: debouncedSearch,
         limit,
         offset: (page - 1) * limit,
         source: sourceFilter
       });
-      setVenues(data.data || []);
-      setTotal(data.total || 0);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load venues');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [page, limit, debouncedSearch, sourceFilter]);
+    },
+    placeholderData: keepPreviousData,
+  });
 
-  // Auto-load
-  useEffect(() => {
-    loadVenues();
-  }, [loadVenues]);
+  const venues = data?.data || [];
+  const total = data?.total || 0;
 
-  const addVenue = useCallback(async (data: Partial<Venue>) => {
-    try {
+  // Mutations
+  const createMutation = useMutation({
+    mutationFn: (data: Partial<Venue>) => {
       if (!data.name) throw new Error('Name is required');
-      const newVenue = await createVenue(data as any);
-      loadVenues();
-      return newVenue;
-    } catch (err: any) {
-      throw new Error(err.message || 'Failed to create venue');
+      return createVenue(data as any);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['venues'] });
     }
-  }, [loadVenues]);
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<Venue> }) => updateVenue(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['venues'] });
+    }
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteVenue,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['venues'] });
+    }
+  });
+
+  // Action Wrappers (Maintain Interface)
+  const addVenue = useCallback(async (data: Partial<Venue>) => {
+    return createMutation.mutateAsync(data);
+  }, [createMutation]);
 
   const editVenue = useCallback(async (id: string, data: Partial<Venue>) => {
-    try {
-      const updatedVenue = await updateVenue(id, data);
-      setVenues(prev => prev.map(v => v.id === id ? { ...v, ...updatedVenue } : v));
-      return updatedVenue;
-    } catch (err: any) {
-      throw new Error(err.message || 'Failed to update venue');
-    }
-  }, []);
+    return updateMutation.mutateAsync({ id, data });
+  }, [updateMutation]);
 
   const removeVenue = useCallback(async (id: string) => {
-    try {
-      await deleteVenue(id);
-      loadVenues();
-    } catch (err: any) {
-      throw new Error(err.message || 'Failed to delete venue');
-    }
-  }, [loadVenues]);
+    return deleteMutation.mutateAsync(id);
+  }, [deleteMutation]);
+
+  const loadVenues = useCallback(async () => {
+    await refetch();
+  }, [refetch]);
 
   return {
     venues,
     total,
-    isLoading,
-    error,
+    isLoading: isLoading || createMutation.isPending || updateMutation.isPending || deleteMutation.isPending,
+    error: isError ? (error as Error).message : null,
     loadVenues,
     addVenue,
     editVenue,

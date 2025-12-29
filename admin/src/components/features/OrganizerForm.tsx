@@ -11,11 +11,11 @@ import { RelatedEventsList } from '@/components/features/RelatedEventsList';
 import { getBestSourceForField, SOURCE_PRIORITY } from '@/lib/smartMerge';
 import { RelatedVenuesList } from '@/components/features/RelatedVenuesList';
 import { Save, Trash2, X, Globe, FileText, Image as ImageIcon } from 'lucide-react';
-import { updateEvent, fetchEvent } from '@/lib/api'; // Added updateEvent, fetchEvent
+import { updateEvent, fetchEvent, fetchOrganizers } from '@/lib/api'; // Added fetchOrganizers
 import { Modal } from '@/components/ui/Modal'; // Added Modal
 import { EventForm } from '@/components/features/EventForm'; // Added EventForm
 import { useToast } from '@/contexts/ToastContext';
-
+import { AutoFillSearch } from '@/components/features/AutoFillSearch';
 interface OrganizerFormProps {
   initialData?: Partial<Organizer>;
   onSubmit: (data: Partial<Organizer>) => Promise<void>;
@@ -68,16 +68,49 @@ export function OrganizerForm({
 
   useEffect(() => {
     if (initialData) {
+      const sources = initialData.source_references || [];
+      const getBest = (field: string) => {
+        // @ts-ignore
+        return getBestSourceForField(sources, field)?.[field];
+      };
+
+      const data = initialData as any;
+      const website = data.website || initialData.website_url;
+      const bestWebsite = getBest('content_url'); // fallback to content_url (e.g. RA profile)
+
       setFormData({
         ...initialData,
-        // @ts-ignore - website might come from backend
-        website_url: initialData.website || initialData.website_url || ''
+        // @ts-ignore
+        website_url: website || bestWebsite || '',
+        description: initialData.description || (getBest('description') as string) || '',
+        image_url: initialData.image_url || (getBest('image_url') as string) || '',
+        provider: initialData.provider || (sources.length > 0 ? sources[0].source_code : '')
       });
     }
   }, [initialData]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Duplicate Check for New Organizers
+    if (!initialData?.id && formData.name) {
+      try {
+        const existingResult = await fetchOrganizers({ search: formData.name });
+        const candidates = (existingResult as any).data || [];
+
+        const isDuplicate = candidates.some((o: Organizer) =>
+          o.name.toLowerCase() === formData.name?.toLowerCase()
+        );
+
+        if (isDuplicate) {
+          showError('An organizer with this name already exists.');
+          return;
+        }
+      } catch (err) {
+        console.error('Failed to check duplicates:', err);
+      }
+    }
+
     await onSubmit(formData);
   };
 
@@ -135,9 +168,35 @@ export function OrganizerForm({
       {/* Header */}
       {!isModal && (
         <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between bg-gray-50 dark:bg-gray-900/50">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-            {initialData?.id ? 'Edit Organizer' : 'New Organizer'}
-          </h2>
+          <div className="flex items-center">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+              {initialData?.id ? 'Edit Organizer' : 'New Organizer'}
+            </h2>
+            {uniqueSources.length > 0 && (
+              <div className="flex items-center gap-2 ml-4 pl-4 border-l border-gray-200 dark:border-gray-700">
+                <span className="text-xs text-gray-500">Reset from:</span>
+                <button
+                  type="button"
+                  onClick={() => handleResetToSource('best')}
+                  className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-primary-50 dark:bg-primary-900/30 border border-primary-200 dark:border-primary-700 hover:bg-primary-100 dark:hover:bg-primary-900/50 text-primary-600 dark:text-primary-400 font-bold uppercase transition-colors"
+                  title="Reset to best matched data"
+                >
+                  <Star className="w-3 h-3 fill-current" /> Best
+                </button>
+                {uniqueSources.map(source => (
+                  <button
+                    key={source}
+                    type="button"
+                    onClick={() => handleResetToSource(source)}
+                    className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-primary-50 dark:hover:bg-primary-900/30 text-gray-600 dark:text-gray-300 uppercase"
+                    title={`Reset to ${source}`}
+                  >
+                    <SourceIcon sourceCode={source} className="w-3 h-3" />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <div className="flex items-center gap-2">
             {initialData?.id && onDelete && (
               <Button
@@ -165,30 +224,6 @@ export function OrganizerForm({
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6">
         <form id="organizer-form" onSubmit={handleSubmit} className="space-y-6 max-w-2xl mx-auto">
-          {uniqueSources.length > 0 && (
-            <div className="flex items-center gap-2 pb-4 border-b border-gray-100 dark:border-gray-800">
-              <span className="text-xs text-gray-500">Reset whole organizer from:</span>
-              <button
-                type="button"
-                onClick={() => handleResetToSource('best')}
-                className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-700 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 font-bold uppercase transition-colors"
-                title="Reset to best matched data"
-              >
-                <Star className="w-3 h-3 fill-current" /> Best
-              </button>
-              {uniqueSources.map(source => (
-                <button
-                  key={source}
-                  type="button"
-                  onClick={() => handleResetToSource(source)}
-                  className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-gray-600 dark:text-gray-300 uppercase"
-                  title={`Reset to ${source}`}
-                >
-                  <SourceIcon sourceCode={source} className="w-3 h-3" />
-                </button>
-              ))}
-            </div>
-          )}
 
           <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -202,6 +237,24 @@ export function OrganizerForm({
             </div>
 
             <div>
+              <div className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Name / Auto-fill</div>
+              {!initialData?.id ? (
+                <AutoFillSearch
+                  type="organizer"
+                  onSelect={(result) => {
+                    console.log('[OrganizerForm] Autofill result:', result);
+                    setFormData(prev => ({
+                      ...prev,
+                      name: result.name,
+                      image_url: result.image_url || prev.image_url || '',
+                      // Try to guess website from raw data if available
+                      website_url: result.raw?.url || result.raw?.website || prev.website_url || ''
+                    }));
+                  }}
+                  placeholder="Search organizer to auto-fill..."
+                  className="mb-2"
+                />
+              ) : null}
               <Input
                 label="Name"
                 value={formData.name}
@@ -225,7 +278,7 @@ export function OrganizerForm({
                 value={formData.description || ''}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                 rows={3}
-                className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white"
+                className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 dark:text-white"
                 placeholder="Organizer description..."
               />
               <SourceFieldOptions

@@ -106,7 +106,7 @@ export function ActivityChart({ data }: ActivityChartProps) {
           <select
             value={entityFilter}
             onChange={(e) => setEntityFilter(e.target.value as any)}
-            className="bg-gray-50 dark:bg-gray-800 border-none text-sm rounded-lg px-3 py-1 text-gray-600 dark:text-gray-300 focus:ring-1 focus:ring-indigo-500 outline-none capitalize"
+            className="bg-gray-50 dark:bg-gray-800 border-none text-sm rounded-lg px-3 py-1 text-gray-600 dark:text-gray-300 focus:ring-1 focus:ring-primary-500 outline-none capitalize"
           >
             <option value="all">All Entities</option>
             <option value="events">Events</option>
@@ -118,7 +118,7 @@ export function ActivityChart({ data }: ActivityChartProps) {
           <select
             value={days}
             onChange={(e) => setDays(Number(e.target.value))}
-            className="bg-gray-50 dark:bg-gray-800 border-none text-sm rounded-lg px-3 py-1 text-gray-600 dark:text-gray-300 focus:ring-1 focus:ring-indigo-500 outline-none"
+            className="bg-gray-50 dark:bg-gray-800 border-none text-sm rounded-lg px-3 py-1 text-gray-600 dark:text-gray-300 focus:ring-1 focus:ring-primary-500 outline-none"
           >
             <option value={30}>Last 30 Days</option>
             <option value={7}>Last 7 Days</option>

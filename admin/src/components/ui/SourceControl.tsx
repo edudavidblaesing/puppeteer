@@ -41,7 +41,7 @@ export function SourceControl({
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 flex items-center gap-1 opacity-60 hover:opacity-100 transition-opacity"
+        className="text-xs text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-300 flex items-center gap-1 opacity-60 hover:opacity-100 transition-opacity"
         title={`Reset ${field} from source`}
       >
         <RefreshCw className="w-3 h-3" />
@@ -68,7 +68,7 @@ export function SourceControl({
                   <span className="font-medium text-[10px] uppercase text-gray-500 bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded">{source.source_code}</span>
                   {source.is_primary && <span className="text-[10px] text-blue-600 dark:text-blue-400 font-medium">Primary</span>}
                 </div>
-                <div className="text-gray-900 dark:text-gray-100 break-words mt-1 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                <div className="text-gray-900 dark:text-gray-100 break-words mt-1 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
                   {renderValue ? renderValue(source[field]) : String(source[field])}
                 </div>
               </button>

@@ -53,11 +53,28 @@ export function EventForm({
   nextEventId,
   onNavigate
 }: EventFormProps) {
-  const [formData, setFormData] = useState<Partial<Event>>(initialData || {
-    title: '',
-    event_type: 'event',
-    status: EventStatusValues.MANUAL_DRAFT,
-    is_published: false
+  const [formData, setFormData] = useState<Partial<Event>>(() => {
+    if (!initialData) {
+      return {
+        title: '',
+        event_type: 'event',
+        status: EventStatusValues.MANUAL_DRAFT,
+        is_published: false
+      };
+    }
+
+    // Helper to normalize time to HH:mm
+    const normalizeTime = (val: string | undefined | null) => {
+      if (!val) return '';
+      if (val.includes('T')) return val.split('T')[1].substring(0, 5);
+      return val.substring(0, 5);
+    };
+
+    return {
+      ...initialData,
+      start_time: normalizeTime(initialData.start_time),
+      end_time: normalizeTime(initialData.end_time)
+    };
   });
   const [transitionError, setTransitionError] = useState<string | null>(null);
 
@@ -69,7 +86,7 @@ export function EventForm({
   const [showMap, setShowMap] = useState(false);
 
   // Venue Logic
-  const [venueSearchQuery, setVenueSearchQuery] = useState('');
+  const [venueSearchQuery, setVenueSearchQuery] = useState(initialData?.venue_name || '');
   const [venueSuggestions, setVenueSuggestions] = useState<Venue[]>([]);
   const [showVenueSuggestions, setShowVenueSuggestions] = useState(false);
   const [isVenueSearching, setIsVenueSearching] = useState(false);
@@ -219,14 +236,14 @@ export function EventForm({
       try {
         // Helper to get final data
         let finalStartTime = formData.start_time;
-        if (formData.date && formData.start_time && !formData.start_time.includes('T')) {
-          finalStartTime = `${formData.date.split('T')[0]}T${formData.start_time}:00`;
+        // Ensure we send only HH:mm (or HH:mm:ss), NOT a full ISO string
+        if (finalStartTime && finalStartTime.includes('T')) {
+          finalStartTime = finalStartTime.split('T')[1].substring(0, 5);
         }
 
         let finalEndTime = formData.end_time;
-        const targetEndDate = endDate || (formData.date ? formData.date.split('T')[0] : '');
-        if (targetEndDate && formData.end_time && !formData.end_time.includes('T')) {
-          finalEndTime = `${targetEndDate}T${formData.end_time}:00`;
+        if (finalEndTime && finalEndTime.includes('T')) {
+          finalEndTime = finalEndTime.split('T')[1].substring(0, 5);
         }
 
         const finalData = {
@@ -269,15 +286,14 @@ export function EventForm({
 
     // Construct full ISO timestamps
     let finalStartTime = formData.start_time;
-    if (formData.date && formData.start_time && !formData.start_time.includes('T')) {
-      finalStartTime = `${formData.date.split('T')[0]}T${formData.start_time}:00`;
+    // Ensure we send only HH:mm, NOT a full ISO string
+    if (finalStartTime && finalStartTime.includes('T')) {
+      finalStartTime = finalStartTime.split('T')[1].substring(0, 5);
     }
 
     let finalEndTime = formData.end_time;
-    // Use explicit endDate if available, otherwise fallback to start date
-    const targetEndDate = endDate || (formData.date ? formData.date.split('T')[0] : '');
-    if (targetEndDate && formData.end_time && !formData.end_time.includes('T')) {
-      finalEndTime = `${targetEndDate}T${formData.end_time}:00`;
+    if (finalEndTime && finalEndTime.includes('T')) {
+      finalEndTime = finalEndTime.split('T')[1].substring(0, 5);
     }
 
     // Include the selected artists in the form data
@@ -342,7 +358,13 @@ export function EventForm({
   }, [venueSearchQuery, formData.venue_city]);
 
   const handleVenueSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setVenueSearchQuery(e.target.value);
+    const val = e.target.value;
+    setVenueSearchQuery(val);
+    setFormData(prev => ({
+      ...prev,
+      venue_name: val,
+      venue_id: null
+    }));
   };
 
   const selectVenue = (venue: Venue) => {
@@ -361,13 +383,13 @@ export function EventForm({
   };
 
   const removeVenue = () => {
+    setVenueSearchQuery(formData.venue_name || '');
     setFormData(prev => ({
       ...prev,
       venue_id: null,
-      venue_name: null,
+      // Keep name in formData to match search query, but clear structured data
+      venue_name: formData.venue_name,
       venue_address: null,
-      // Keep city/country as they might be event specific? 
-      // Usually users want to clear everything.
       venue_city: null,
       venue_country: null,
       latitude: null,
@@ -381,7 +403,10 @@ export function EventForm({
       if (editingVenueData?.id) {
         result = await updateVenue(editingVenueData.id, data);
       } else {
-        result = await createVenue(data as any);
+        // @ts-ignore - API returns { success, venue }
+        const response = await createVenue(data as any);
+        // @ts-ignore
+        result = response.venue;
       }
       selectVenue(result);
       setShowVenueModal(false);
@@ -564,6 +589,7 @@ export function EventForm({
           newFormData['venue_id'] = null;
           // @ts-ignore
           newFormData[field] = val;
+          if (typeof val === 'string') setVenueSearchQuery(val);
         } else {
           // @ts-ignore
           newFormData[field] = val;
@@ -676,7 +702,7 @@ export function EventForm({
                   <button
                     type="button"
                     onClick={() => handleResetToSource('best')}
-                    className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-700 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 font-bold uppercase transition-colors"
+                    className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-primary-50 dark:bg-primary-900/30 border border-primary-200 dark:border-primary-700 hover:bg-primary-100 dark:hover:bg-primary-900/50 text-primary-600 dark:text-primary-400 font-bold uppercase transition-colors"
                     title="Reset to best matched data"
                   >
                     <Star className="w-3 h-3 fill-current" /> Best
@@ -686,7 +712,7 @@ export function EventForm({
                       key={source}
                       type="button"
                       onClick={() => handleResetToSource(source)}
-                      className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-gray-600 dark:text-gray-300 uppercase"
+                      className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-primary-50 dark:hover:bg-primary-900/30 text-gray-600 dark:text-gray-300 uppercase"
                       title={`Reset to ${source}`}
                     >
                       <SourceIcon sourceCode={source} className="w-3 h-3" />
@@ -758,7 +784,7 @@ export function EventForm({
                         onClick={() => handleStatusChange(option.value)}
                         disabled={!isAllowed}
                         className={`px-3 py-1 text-xs font-medium rounded transition-colors whitespace-nowrap ${isActive
-                          ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 ring-1 ring-indigo-500'
+                          ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400 ring-1 ring-primary-500'
                           : isAllowed
                             ? 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
                             : 'text-gray-300 dark:text-gray-700 cursor-not-allowed opacity-50'
@@ -819,7 +845,7 @@ export function EventForm({
                 <select
                   value={formData.event_type || 'event'}
                   onChange={(e) => setFormData({ ...formData, event_type: e.target.value as EventType })}
-                  className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white"
+                  className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 dark:text-white"
                 >
                   {EVENT_TYPES.map(type => (
                     <option key={type.value} value={type.value}>
@@ -883,6 +909,33 @@ export function EventForm({
                   value={endDate || ''}
                   onChange={(e) => setEndDate(e.target.value)}
                   placeholder="Same as start date"
+                />
+                <SourceFieldOptions
+                  sources={(initialData?.source_references || []).map(s => {
+                    // Calculate virtual end_date
+                    let calculatedDate = '';
+                    if (s.end_time && s.end_time.includes('T')) {
+                      calculatedDate = s.end_time.split('T')[0];
+                    } else if (s.date && s.end_time && s.start_time) {
+                      try {
+                        const d = new Date(s.date);
+                        const t1 = parseInt(s.start_time.replace(':', ''));
+                        const t2 = parseInt(s.end_time.replace(':', ''));
+                        // If end < start (e.g. 0400 < 2300), assume +1 day
+                        if (t2 < t1) d.setDate(d.getDate() + 1);
+                        calculatedDate = d.toISOString().split('T')[0];
+                      } catch (e) { }
+                    } else if (s.date) {
+                      // Fallback to start date
+                      calculatedDate = String(s.date).split('T')[0];
+                    }
+
+                    return { ...s, end_date: calculatedDate };
+                  })}
+                  // @ts-ignore
+                  field="end_date"
+                  currentValue={endDate}
+                  onSelect={(val) => setEndDate(val)}
                 />
               </div>
               <div>
@@ -986,7 +1039,7 @@ export function EventForm({
                     </div>
                   ))}
                   <div
-                    className="px-4 py-2 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 cursor-pointer text-sm text-indigo-600 dark:text-indigo-400 border-t border-gray-100 dark:border-gray-700 font-medium flex items-center gap-2"
+                    className="px-4 py-2 hover:bg-primary-50 dark:hover:bg-primary-900/20 cursor-pointer text-sm text-primary-600 dark:text-primary-400 border-t border-gray-100 dark:border-gray-700 font-medium flex items-center gap-2"
                     onClick={openCreateArtistForQuery}
                   >
                     <Plus className="w-4 h-4" /> Create "{artistSearchQuery}"
@@ -1032,7 +1085,10 @@ export function EventForm({
                   sources={initialData?.source_references}
                   field="venue_name"
                   currentValue={formData.venue_name}
-                  onSelect={(val) => setFormData({ ...formData, venue_name: val, venue_id: null })}
+                  onSelect={(val) => {
+                    setFormData({ ...formData, venue_name: val, venue_id: null });
+                    setVenueSearchQuery(val);
+                  }}
                 />
               </div>
 
@@ -1068,7 +1124,7 @@ export function EventForm({
                       leftIcon={<Search className="w-4 h-4" />}
                     />
                     {isVenueSearching && (
-                      <div className="absolute right-3 top-[38px] animate-spin h-4 w-4 border-2 border-indigo-500 rounded-full border-t-transparent"></div>
+                      <div className="absolute right-3 top-[38px] animate-spin h-4 w-4 border-2 border-primary-500 rounded-full border-t-transparent"></div>
                     )}
 
                     {showVenueSuggestions && venueSearchQuery.length > 1 && (
@@ -1084,7 +1140,7 @@ export function EventForm({
                           </div>
                         ))}
                         <div
-                          className="px-4 py-2 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 cursor-pointer text-sm text-indigo-600 dark:text-indigo-400 border-t border-gray-100 dark:border-gray-700 font-medium flex items-center gap-2"
+                          className="px-4 py-2 hover:bg-primary-50 dark:hover:bg-primary-900/20 cursor-pointer text-sm text-primary-600 dark:text-primary-400 border-t border-gray-100 dark:border-gray-700 font-medium flex items-center gap-2"
                           onClick={openCreateVenueForQuery}
                         >
                           <Plus className="w-4 h-4" /> Create "{venueSearchQuery}"
@@ -1181,7 +1237,7 @@ export function EventForm({
               value={formData.description || ''}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               rows={6}
-              className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white"
+              className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 dark:text-white"
             />
             <SourceFieldOptions
               sources={initialData?.source_references}

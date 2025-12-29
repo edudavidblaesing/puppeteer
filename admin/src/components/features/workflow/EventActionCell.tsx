@@ -69,7 +69,7 @@ export function EventActionCell({ event, onApprove, onReject, onPublish, onEdit 
                     <Button
                         size="sm"
                         variant="primary"
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                        className="bg-primary-600 hover:bg-primary-700 text-white"
                         onClick={() => handleAction(() => onPublish(event.id))}
                         disabled={loading}
                     >

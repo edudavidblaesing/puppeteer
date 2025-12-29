@@ -96,7 +96,7 @@ export function EventListItem({
       onClick={() => onEdit(item)}
       className={clsx(
         'px-4 py-3 flex items-center gap-3 cursor-pointer transition-colors relative group',
-        isFocused && 'ring-2 ring-indigo-500 z-10 bg-indigo-50 dark:bg-indigo-900/20',
+        isFocused && 'ring-2 ring-primary-500 z-10 bg-primary-50 dark:bg-primary-900/20',
         isRejected && 'bg-gray-50 dark:bg-gray-900/50',
         isPending && 'pending-stripes',
         !isRejected && !isPending && !isFocused && 'bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800',
@@ -108,7 +108,7 @@ export function EventListItem({
         checked={selected}
         onClick={(e) => e.stopPropagation()}
         onChange={(e) => { e.stopPropagation(); onSelect(item.id); }}
-        className="w-4 h-4 rounded text-indigo-600 dark:text-indigo-500 border-gray-300 dark:border-gray-600 focus:ring-indigo-500"
+        className="w-4 h-4 rounded text-primary-600 dark:text-primary-500 border-gray-300 dark:border-gray-600 focus:ring-primary-500"
       />
 
       <div className="w-12 h-12 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center flex-shrink-0 overflow-hidden border border-gray-200 dark:border-gray-700">
@@ -141,7 +141,7 @@ export function EventListItem({
                 if (item.venue_id) onVenueClick(item.venue_id);
               }}
               className={clsx(
-                'flex items-center gap-1 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors',
+                'flex items-center gap-1 hover:text-primary-600 dark:hover:text-primary-400 transition-colors',
                 !item.venue_id && 'cursor-default hover:text-gray-500 dark:hover:text-gray-400'
               )}
               disabled={!item.venue_id}
@@ -169,7 +169,7 @@ export function EventListItem({
                   e.stopPropagation();
                   onArtistClick(artistName);
                 }}
-                className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 hover:text-indigo-700 dark:hover:text-indigo-400 transition-colors border border-gray-200 dark:border-gray-700"
+                className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-primary-100 dark:hover:bg-primary-900/30 hover:text-primary-700 dark:hover:text-primary-400 transition-colors border border-gray-200 dark:border-gray-700"
               >
                 {artistName}
               </button>
@@ -272,7 +272,7 @@ export function EventList({
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
       </div>
     );
   }
@@ -308,7 +308,7 @@ export function EventList({
               type="checkbox"
               checked={events.length > 0 && selectedIds.size === events.length}
               onChange={onSelectAll}
-              className="rounded text-indigo-600 dark:text-indigo-500 border-gray-300 dark:border-gray-600 focus:ring-indigo-500"
+              className="rounded text-primary-600 dark:text-primary-500 border-gray-300 dark:border-gray-600 focus:ring-primary-500"
             />
             Select all
           </label>

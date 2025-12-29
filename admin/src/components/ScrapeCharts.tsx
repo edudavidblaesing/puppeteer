@@ -229,7 +229,7 @@ export function StatCard({
 }: StatCardProps) {
   const variantStyles = {
     default: 'bg-white dark:bg-gray-800/50 border-gray-200 dark:border-gray-700/50',
-    highlight: 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-700/50',
+    highlight: 'bg-primary-50 dark:bg-primary-900/20 border-primary-200 dark:border-primary-700/50',
     success: 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-700/50',
     warning: 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-700/50',
   };
@@ -367,7 +367,7 @@ export function RecentActivity({ activities }: RecentActivityProps) {
             <SourceIcon sourceCode={activity.source_code} className="h-4 w-4 rounded-sm" />
             <span className="font-medium capitalize text-gray-900 dark:text-gray-100">{activity.city}</span>
             {activity.scrape_type === 'scheduled' && (
-              <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-700">
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 border border-primary-200 dark:border-primary-700">
                 AUTO
               </span>
             )}

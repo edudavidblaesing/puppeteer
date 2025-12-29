@@ -55,7 +55,7 @@ export function EventQuickEdit({ event, isOpen, onClose }: EventQuickEditProps) 
                 <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4 border border-gray-100 dark:border-gray-800">
                     <div className="flex items-center justify-between mb-3">
                         <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">Readiness Checklist</h3>
-                        <span className={`text-xs font-bold ${completion === 100 ? 'text-green-600 dark:text-green-400' : 'text-indigo-600 dark:text-indigo-400'}`}>{completion}%</span>
+                        <span className={`text-xs font-bold ${completion === 100 ? 'text-green-600 dark:text-green-400' : 'text-primary-600 dark:text-primary-400'}`}>{completion}%</span>
                     </div>
 
                     <div className="space-y-2">

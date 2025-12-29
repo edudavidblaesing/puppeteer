@@ -1,12 +1,10 @@
 import { useState, useCallback, useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { Organizer } from '@/types';
 import { fetchOrganizers, createOrganizer, updateOrganizer, deleteOrganizer } from '@/lib/api';
 
 export function useOrganizers() {
-  const [organizers, setOrganizers] = useState<Organizer[]>([]);
-  const [totalItems, setTotalItems] = useState(0);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
   // Pagination State
   const [page, setPage] = useState(1);
@@ -26,69 +24,81 @@ export function useOrganizers() {
     return () => clearTimeout(handler);
   }, [searchQuery]);
 
-  const loadOrganizers = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const data = await fetchOrganizers({
+  // Query Key
+  const queryKey = ['organizers', { page, limit, search: debouncedSearch, source: sourceFilter }];
+
+  // Fetch Organizers
+  const {
+    data,
+    isLoading,
+    isError,
+    error,
+    refetch
+  } = useQuery({
+    queryKey,
+    queryFn: async () => {
+      return fetchOrganizers({
         search: debouncedSearch,
         limit,
         offset: (page - 1) * limit,
         source: sourceFilter
       });
-      setOrganizers(data.data || []);
-      setTotalItems(data.total || 0);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load organizers');
-    } finally {
-      setIsLoading(false);
+    },
+    placeholderData: keepPreviousData,
+  });
+
+  const organizers = data?.data || [];
+  const totalItems = data?.total || 0;
+
+  // Mutations
+  const createMutation = useMutation({
+    mutationFn: createOrganizer,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['organizers'] });
     }
-  }, [page, limit, debouncedSearch, sourceFilter]);
+  });
 
-  // Auto-load
-  useEffect(() => {
-    loadOrganizers();
-  }, [loadOrganizers]);
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<Organizer> }) => updateOrganizer(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['organizers'] });
+    }
+  });
 
+  const deleteMutation = useMutation({
+    mutationFn: deleteOrganizer,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['organizers'] });
+    }
+  });
+
+  // Action Wrappers
   const addOrganizer = useCallback(async (data: Partial<Organizer>) => {
-    try {
-      const newOrganizer = await createOrganizer(data);
-      loadOrganizers();
-      return newOrganizer;
-    } catch (err: any) {
-      throw new Error(err.message || 'Failed to create organizer');
-    }
-  }, [loadOrganizers]);
+    return createMutation.mutateAsync(data);
+  }, [createMutation]);
 
   const editOrganizer = useCallback(async (id: string, data: Partial<Organizer>) => {
-    try {
-      const updatedOrganizer = await updateOrganizer(id, data);
-      setOrganizers(prev => prev.map(o => o.id === id ? { ...o, ...updatedOrganizer } : o));
-      return updatedOrganizer;
-    } catch (err: any) {
-      throw new Error(err.message || 'Failed to update organizer');
-    }
-  }, []);
+    return updateMutation.mutateAsync({ id, data });
+  }, [updateMutation]);
 
   const removeOrganizer = useCallback(async (id: string) => {
-    try {
-      await deleteOrganizer(id);
-      loadOrganizers();
-    } catch (err: any) {
-      throw new Error(err.message || 'Failed to delete organizer');
-    }
-  }, [loadOrganizers]);
+    return deleteMutation.mutateAsync(id);
+  }, [deleteMutation]);
+
+  const loadOrganizers = useCallback(async () => {
+    await refetch();
+  }, [refetch]);
 
   return {
     organizers,
-    filteredOrganizers: organizers, // Main list is filtered
+    filteredOrganizers: organizers,
     searchQuery,
     setSearchQuery,
     sourceFilter,
     setSourceFilter,
     total: totalItems,
-    isLoading,
-    error,
+    isLoading: isLoading || createMutation.isPending || updateMutation.isPending || deleteMutation.isPending,
+    error: isError ? (error as Error).message : null,
     loadOrganizers,
     addOrganizer,
     editOrganizer,

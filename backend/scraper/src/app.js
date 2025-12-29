@@ -26,6 +26,11 @@ app.use(cors());
 app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 
+app.use((req, res, next) => {
+    console.log(`[Request] ${req.method} ${req.url}`);
+    next();
+});
+
 // Serve static files (flyers usually) if any, or frontend build if serving from here
 // server.js didn't show specific static serving other than frontend?
 // Keeping it simple.
@@ -58,6 +63,7 @@ app.get('/db/countries', require('./controllers/cityController').getCountries);
 app.use('/db', statsRoutes); // Mount at /db to match /db/stats
 app.use('/scraped', scrapedRoutes);
 app.use('/db/search', require('./routes/searchRoutes'));
+app.get('/search/external', require('./controllers/externalSearchController').search);
 
 
 // Scraping Routes (Manual Triggers)
@@ -469,11 +475,18 @@ cron.schedule('0 2 * * *', () => {
     performAutoScrape();
 });
 
-// Error handling
-app.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(500).json({ error: 'Something went wrong!', details: err.message });
+const globalErrorHandler = require('./controllers/errorController');
+const AppError = require('./utils/AppError');
+
+// ... (existing routes)
+
+// Handle 404 for undefined routes
+app.all('*', (req, res, next) => {
+    next(new AppError(`Can't find ${req.originalUrl} on this server!`, 404));
 });
+
+// Global Error Handling Middleware
+app.use(globalErrorHandler);
 
 // Start Server
 if (require.main === module) {

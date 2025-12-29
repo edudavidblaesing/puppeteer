@@ -93,18 +93,18 @@ export function GlobalSearch() {
     return (
         <div className="relative w-full max-w-xl group" ref={containerRef}>
             <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-indigo-500 transition-colors" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-primary-500 transition-colors" />
                 <input
                     type="text"
                     placeholder="Search everything... (Events, Venues, Artists)"
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     onFocus={() => { if (query.length >= 2) setShowResults(true); }}
-                    className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-gray-800 border-none rounded-xl text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:ring-2 focus:ring-indigo-500/50 focus:bg-white dark:focus:bg-gray-900 transition-all"
+                    className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-gray-800 border-none rounded-xl text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:ring-2 focus:ring-primary-500/50 focus:bg-white dark:focus:bg-gray-900 transition-all"
                 />
                 {loading && (
                     <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                        <Loader className="w-4 h-4 animate-spin text-indigo-500" />
+                        <Loader className="w-4 h-4 animate-spin text-primary-500" />
                     </div>
                 )}
             </div>
@@ -123,13 +123,13 @@ export function GlobalSearch() {
                                 <button
                                     key={item.id}
                                     onClick={() => handleSelect(item, 'event')}
-                                    className="w-full text-left px-3 py-2 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg flex items-center gap-3 group transition-colors"
+                                    className="w-full text-left px-3 py-2 hover:bg-primary-50 dark:hover:bg-primary-900/20 rounded-lg flex items-center gap-3 group transition-colors"
                                 >
-                                    <div className="w-8 h-8 rounded-lg bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center shrink-0">
-                                        <Calendar className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                                    <div className="w-8 h-8 rounded-lg bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center shrink-0">
+                                        <Calendar className="w-4 h-4 text-primary-600 dark:text-primary-400" />
                                     </div>
                                     <div className="flex-1 min-w-0">
-                                        <p className="text-sm font-medium text-gray-900 dark:text-white truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
+                                        <p className="text-sm font-medium text-gray-900 dark:text-white truncate group-hover:text-primary-600 dark:group-hover:text-primary-400">
                                             {item.name}
                                         </p>
                                         <p className="text-xs text-gray-500 truncate">

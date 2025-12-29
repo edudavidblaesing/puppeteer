@@ -23,7 +23,7 @@ export default function EventPage() {
             return;
         }
 
-        const found = events.find(e => e.id === id);
+        const found = events.find((e: Event) => e.id === id);
         if (found) {
             setLocalEvent(found);
             setIsLoading(false);
@@ -34,7 +34,7 @@ export default function EventPage() {
     }, [events, id, isListLoading]);
 
     // Navigation Logic
-    const currentIndex = events.findIndex(e => e.id === id);
+    const currentIndex = events.findIndex((e: Event) => e.id === id);
     const prevEventId = currentIndex > 0 ? events[currentIndex - 1].id : undefined;
     const nextEventId = currentIndex >= 0 && currentIndex < events.length - 1 ? events[currentIndex + 1].id : undefined;
 
@@ -68,7 +68,7 @@ export default function EventPage() {
     if (isLoading || (id !== 'new' && isListLoading)) {
         return (
             <div className="flex items-center justify-center h-full">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
             </div>
         );
     }

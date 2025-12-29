@@ -10,10 +10,11 @@ import { Modal } from '@/components/ui/Modal';
 import { RelatedEventsList } from '@/components/features/RelatedEventsList';
 import { getBestSourceForField, SOURCE_PRIORITY } from '@/lib/smartMerge';
 import { Artist, Event } from '@/types';
-import { createArtist, updateArtist, searchArtists, updateEvent, fetchEvent, fetchCountries } from '@/lib/api';
+import { createArtist, updateArtist, searchArtists, updateEvent, fetchEvent, fetchCountries, fetchArtists } from '@/lib/api';
 import { SourceReference } from '@/types';
 import { EventForm } from '@/components/features/EventForm';
 import { useToast } from '@/contexts/ToastContext';
+import { AutoFillSearch } from '@/components/features/AutoFillSearch';
 
 interface ArtistFormProps {
   initialData?: Partial<Artist>;
@@ -39,18 +40,29 @@ export function ArtistForm({
     content_url: '',
     image_url: '',
     bio: '',
-    artist_type: 'individual'
+    artist_type: 'individual',
+    first_name: '',
+    last_name: '',
+    website: '',
+    facebook_url: '',
+    twitter_url: '',
+    instagram_url: '',
+    soundcloud_url: '',
+    bandcamp_url: '',
+    discogs_url: '',
+    spotify_url: ''
   });
-  const [editingEvent, setEditingEvent] = useState<Event | null>(null); // New state
+  const [editingEvent, setEditingEvent] = useState<Event | null>(null);
+
+  // ... (handlers skipped)
 
   const handleEditEvent = async (event: Event) => {
     try {
       // Fetch full event details to ensure we have source_references and full artist lists
       const fullEvent = await fetchEvent(event.id);
-      setEditingEvent(fullEvent || event); // Fallback to partial if fetch fails but shouldn't happen
+      setEditingEvent(fullEvent || event);
     } catch (e) {
       console.error('Failed to fetch full event details', e);
-      // Fallback to partial
       setEditingEvent(event);
     }
   };
@@ -61,7 +73,6 @@ export function ArtistForm({
       await updateEvent(editingEvent.id, data);
       success('Event updated successfully');
       setEditingEvent(null);
-      // Optional: Refresh list mechanism?
     } catch (e) {
       console.error(e);
       showError('Failed to update event');
@@ -75,24 +86,53 @@ export function ArtistForm({
     fetchCountries().then(setCountries).catch(console.error);
   }, []);
 
-  // Search / Autocomplete State
-  const [suggestions, setSuggestions] = useState<any[]>([]);
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  const [isSearching, setIsSearching] = useState(false);
-  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
   useEffect(() => {
     if (initialData) {
-      setFormData({
-        name: initialData.name,
-        country: initialData.country || '',
-        content_url: initialData.content_url || '',
-        image_url: initialData.image_url || '',
-        bio: initialData.bio || '',
-        artist_type: initialData.artist_type || '',
-        genres: initialData.genres || []
-      });
-      setGenresInput(initialData.genres?.join(', ') || '');
+      const sources = initialData.source_references || [];
+      const getBest = (field: keyof Artist) => {
+        // @ts-ignore
+        if (initialData[field]) return initialData[field];
+        const best = getBestSourceForField(sources, field as string);
+        // @ts-ignore
+        return best ? best[field] : (initialData[field] || '');
+      };
+
+      const newFormData = {
+        name: initialData.name || '',
+        country: (() => {
+          const val = getBest('country') as string || '';
+          if (!val) return '';
+          // If value is a code (length 2, uppercase), return it
+          if (val.length === 2 && val === val.toUpperCase()) return val;
+          // Try to find by name
+          const match = countries.find(c => c.name.toLowerCase() === val.toLowerCase());
+          return match ? match.code : val; // Return code if found, else original value
+        })(),
+        content_url: getBest('content_url') as string || '',
+        image_url: getBest('image_url') as string || '',
+        bio: getBest('bio') as string || '',
+        artist_type: getBest('artist_type') as string || '',
+        first_name: getBest('first_name') as string || '',
+        last_name: getBest('last_name') as string || '',
+        website: getBest('website') as string || '',
+        facebook_url: getBest('facebook_url') as string || '',
+        twitter_url: getBest('twitter_url') as string || '',
+        instagram_url: getBest('instagram_url') as string || '',
+        soundcloud_url: getBest('soundcloud_url') as string || '',
+        bandcamp_url: getBest('bandcamp_url') as string || '',
+        discogs_url: getBest('discogs_url') as string || '',
+        spotify_url: getBest('spotify_url') as string || '',
+        genres: initialData.genres && initialData.genres.length > 0 ? initialData.genres : (
+          (() => {
+            const best = getBestSourceForField(sources, 'genres');
+            // @ts-ignore
+            return best ? best.genres : [];
+          })()
+        )
+      };
+
+      setFormData(newFormData);
+      setGenresInput(Array.isArray(newFormData.genres) ? newFormData.genres.join(', ') : '');
     } else {
       setFormData({
         name: '',
@@ -100,12 +140,22 @@ export function ArtistForm({
         content_url: '',
         image_url: '',
         bio: '',
+        genres: [],
         artist_type: '',
-        genres: []
+        first_name: '',
+        last_name: '',
+        website: '',
+        facebook_url: '',
+        twitter_url: '',
+        instagram_url: '',
+        soundcloud_url: '',
+        bandcamp_url: '',
+        discogs_url: '',
+        spotify_url: ''
       });
       setGenresInput('');
     }
-  }, [initialData]);
+  }, [initialData, countries]);
 
   const handleGenresChange = (val: string) => {
     setGenresInput(val);
@@ -114,70 +164,28 @@ export function ArtistForm({
     setFormData(prev => ({ ...prev, genres: genresArray }));
   };
 
-  const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    setFormData({ ...formData, name: value });
 
-    // Debounce search
-    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
-
-    if (value.length > 2) {
-      searchTimeoutRef.current = setTimeout(async () => {
-        setIsSearching(true);
-        try {
-          // Using MusicBrainz API
-          const response = await fetch(`https://musicbrainz.org/ws/2/artist?query=${encodeURIComponent(value)}&fmt=json`, {
-            headers: {
-              'User-Agent': 'EventsAdminWrapper/1.0 ( mail@example.com )' // Required by MusicBrainz
-            }
-          });
-          const data = await response.json();
-          // Filter slightly for relevance if needed, but usually search is decent.
-          // We want artists with a higher score ideally.
-          if (data.artists) {
-            setSuggestions(data.artists.slice(0, 5));
-            setShowSuggestions(true);
-          }
-        } catch (err) {
-          console.error('Artist search failed', err);
-        } finally {
-          setIsSearching(false);
-        }
-      }, 500);
-    } else {
-      setSuggestions([]);
-      setShowSuggestions(false);
-    }
-  };
-
-  const selectArtist = (artist: any) => {
-    // Map MusicBrainz data to our fields
-    const countryCode = artist.country || '';
-    // genres/tags
-    const tags = artist.tags || [];
-    // simple hack to get top 3 tags by count
-    const genres = tags.sort((a: any, b: any) => (b.count || 0) - (a.count || 0))
-      .slice(0, 5)
-      .map((t: any) => t.name);
-
-    const newForm = {
-      ...formData,
-      name: artist.name, // Use canonical name
-      country: countryCode,
-      genres: genres,
-      // Bio is tougher, maybe use disambiguation if present
-      bio: artist.disambiguation ? `(${artist.disambiguation})` : formData.bio
-    };
-
-    setFormData(newForm);
-    setGenresInput(genres.join(', '));
-    setShowSuggestions(false);
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
     try {
+      // Duplicate Check for New Artists
+      if (!initialData?.id && formData.name) {
+        const existingResult = await fetchArtists({ search: formData.name });
+        const candidates = (existingResult as any).data || [];
+
+        const isDuplicate = candidates.some((a: Artist) =>
+          a.name.toLowerCase() === formData.name?.toLowerCase()
+        );
+
+        if (isDuplicate) {
+          showError('An artist with this name already exists.');
+          setIsSubmitting(false);
+          return;
+        }
+      }
+
       await onSubmit(formData);
     } finally {
       setIsSubmitting(false);
@@ -244,7 +252,11 @@ export function ArtistForm({
   };
 
   const handleResetToSource = (sourceCode: string) => {
-    resetFields(sourceCode, ['name', 'country', 'content_url', 'image_url', 'bio', 'genres', 'artist_type']);
+    resetFields(sourceCode, [
+      'name', 'country', 'content_url', 'image_url', 'bio', 'genres', 'artist_type',
+      'first_name', 'last_name', 'website',
+      'facebook_url', 'twitter_url', 'instagram_url', 'soundcloud_url', 'bandcamp_url', 'discogs_url', 'spotify_url'
+    ]);
   };
 
   return (
@@ -252,9 +264,35 @@ export function ArtistForm({
       {/* Header */}
       {!isModal && (
         <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between bg-gray-50 dark:bg-gray-900/50">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-            {initialData ? 'Edit Artist' : 'New Artist'}
-          </h2>
+          <div className="flex items-center">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+              {initialData ? 'Edit Artist' : 'New Artist'}
+            </h2>
+            {uniqueSources.length > 0 && (
+              <div className="flex items-center gap-2 ml-4 pl-4 border-l border-gray-200 dark:border-gray-700">
+                <span className="text-xs text-gray-500">Reset from:</span>
+                <button
+                  type="button"
+                  onClick={() => handleResetToSource('best')}
+                  className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-primary-50 dark:bg-primary-900/30 border border-primary-200 dark:border-primary-700 hover:bg-primary-100 dark:hover:bg-primary-900/50 text-primary-600 dark:text-primary-400 font-bold uppercase transition-colors"
+                  title="Reset to best matched data"
+                >
+                  <Star className="w-3 h-3 fill-current" /> Best
+                </button>
+                {uniqueSources.map(source => (
+                  <button
+                    key={source}
+                    type="button"
+                    onClick={() => handleResetToSource(source)}
+                    className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-primary-50 dark:hover:bg-primary-900/30 text-gray-600 dark:text-gray-300 uppercase"
+                    title={`Reset to ${source}`}
+                  >
+                    <SourceIcon sourceCode={source} className="w-3 h-3" />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <div className="flex items-center gap-2">
             {initialData && onDelete && (
               <Button
@@ -278,37 +316,8 @@ export function ArtistForm({
       )}
 
 
-      <div className="flex-1 overflow-y-auto p-6" onClick={() => setShowSuggestions(false)}>
+      <div className="flex-1 overflow-y-auto p-6">
         <form id="artist-form" onSubmit={handleSubmit} className="space-y-6 max-w-2xl mx-auto">
-
-          {uniqueSources.length > 0 && (
-            <div className="flex items-center gap-2 pb-4 border-b border-gray-100 dark:border-gray-800">
-              <span className="text-xs text-gray-500">Reset whole artist from:</span>
-              {uniqueSources.length > 0 && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => handleResetToSource('best')}
-                    className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-700 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 font-bold uppercase transition-colors"
-                    title="Reset to best matched data"
-                  >
-                    <Star className="w-3 h-3 fill-current" /> Best
-                  </button>
-                  {uniqueSources.map(source => (
-                    <button
-                      key={source}
-                      type="button"
-                      onClick={() => handleResetToSource(source)}
-                      className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-gray-600 dark:text-gray-300 uppercase"
-                      title={`Reset to ${source}`}
-                    >
-                      <SourceIcon sourceCode={source} className="w-3 h-3" />
-                    </button>
-                  ))}
-                </>
-              )}
-            </div>
-          )}
 
           <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -321,45 +330,64 @@ export function ArtistForm({
               />
             </div>
 
-            <div className="relative" onClick={e => e.stopPropagation()}>
+            <div className="relative">
+              <div className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Name / Auto-fill</div>
+              {!initialData?.id ? (
+                <AutoFillSearch
+                  type="artist"
+                  onSelect={(result) => {
+                    console.log('[ArtistForm] Autofill result:', result);
+                    let countryCode = result.country || '';
+
+                    // Robust Country Matching
+                    if (countryCode) {
+                      const strictMatch = countries.find(c => c.code === countryCode.toUpperCase());
+                      if (strictMatch) {
+                        countryCode = strictMatch.code;
+                      } else {
+                        const nameMatch = countries.find(c => c.name.toLowerCase() === countryCode.toLowerCase());
+                        if (nameMatch) {
+                          countryCode = nameMatch.code;
+                        }
+                      }
+                    }
+
+                    // Specific fallback for Spotify/MusicBrainz data which might be in raw
+                    if (!countryCode && result.raw?.country) {
+                      const rawCode = result.raw.country.toUpperCase();
+                      const found = countries.find(c => c.code === rawCode);
+                      if (found) countryCode = found.code;
+                    }
+
+                    const updates: Partial<Artist> = {
+                      name: result.name,
+                      country: countryCode || formData.country || '',
+                      image_url: result.image_url || formData.image_url || '',
+                      genres: result.genres || formData.genres || [],
+                      // Append attribution but keep existing bio if extensive
+                      bio: formData.bio || (result.raw?.disambiguation ? `(${result.raw.disambiguation})` : '')
+                    };
+
+                    if (result.genres) {
+                      setGenresInput(result.genres.join(', '));
+                    }
+
+                    setFormData(prev => ({ ...prev, ...updates }));
+                  }}
+                  placeholder="Search artist (MusicBrainz/Spotify) to auto-fill..."
+                  className="mb-2"
+                />
+              ) : null}
+
               <div className="relative">
                 <Input
                   label="Name"
                   value={formData.name}
-                  onChange={handleNameChange} // Use new handler
-                  onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true); }}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   required
                   placeholder="Artist Name"
                 />
-                {isSearching && (
-                  <div className="absolute right-3 top-[38px] animate-spin h-4 w-4 border-2 border-indigo-500 rounded-full border-t-transparent"></div>
-                )}
               </div>
-
-              {showSuggestions && suggestions.length > 0 && (
-                <div className="absolute z-10 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg mt-1 max-h-60 overflow-y-auto">
-                  {suggestions.map((artist) => (
-                    <div
-                      key={artist.id}
-                      className="px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer text-sm border-b border-gray-100 dark:border-gray-800 last:border-0"
-                      onClick={() => selectArtist(artist)}
-                    >
-                      <div className="flex justify-between items-center">
-                        <p className="font-medium text-gray-900 dark:text-white truncate">{artist.name}</p>
-                        {artist.country && <span className="text-xs text-gray-500 ml-2">{artist.country}</span>}
-                      </div>
-                      {artist.disambiguation && <p className="text-xs text-gray-500 truncate">{artist.disambiguation}</p>}
-                      <div className="flex gap-1 mt-1 flex-wrap">
-                        {artist.tags?.slice(0, 3).map((t: any) => (
-                          <span key={t.name} className="text-[10px] bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-gray-600 dark:text-gray-300">
-                            {t.name}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
 
               <SourceFieldOptions
                 sources={initialData?.source_references}
@@ -369,6 +397,37 @@ export function ArtistForm({
               />
             </div>
 
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Input
+                  label="First Name"
+                  value={formData.first_name || ''}
+                  onChange={(e) => setFormData({ ...formData, first_name: e.target.value })}
+                  placeholder="First Name"
+                />
+                <SourceFieldOptions
+                  sources={initialData?.source_references}
+                  field="first_name"
+                  currentValue={formData.first_name}
+                  onSelect={(val) => setFormData({ ...formData, first_name: val })}
+                />
+              </div>
+              <div>
+                <Input
+                  label="Last Name"
+                  value={formData.last_name || ''}
+                  onChange={(e) => setFormData({ ...formData, last_name: e.target.value })}
+                  placeholder="Last Name"
+                />
+                <SourceFieldOptions
+                  sources={initialData?.source_references}
+                  field="last_name"
+                  currentValue={formData.last_name}
+                  onSelect={(val) => setFormData({ ...formData, last_name: val })}
+                />
+              </div>
+            </div>
+
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Type
@@ -376,7 +435,7 @@ export function ArtistForm({
               <select
                 value={formData.artist_type || ''}
                 onChange={(e) => setFormData({ ...formData, artist_type: e.target.value })}
-                className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white"
+                className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 dark:text-white"
               >
                 <option value="">Select Type...</option>
                 {['Individual', 'DJ', 'Group', 'Band', 'Orchestra', 'Choir', 'Producer', 'Other'].map(t => (
@@ -399,7 +458,7 @@ export function ArtistForm({
                 value={formData.bio || ''}
                 onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
                 rows={4}
-                className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white"
+                className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 dark:text-white"
                 placeholder="Artist biography..."
               />
               <SourceFieldOptions
@@ -432,14 +491,66 @@ export function ArtistForm({
           </div>
 
           <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-gray-800">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 flex items-center gap-2">
-                <Globe className="w-4 h-4" /> Details & Links
-              </h3>
-              <ResetSectionButton
-                sources={uniqueSources}
-                onReset={(source) => resetFields(source, ['country', 'content_url', 'image_url'])}
-              />
+
+
+            <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-gray-800">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                  <Globe className="w-4 h-4" /> Social Connections
+                </h3>
+                <ResetSectionButton
+                  sources={uniqueSources}
+                  onReset={(source) => resetFields(source, ['website', 'facebook_url', 'twitter_url', 'instagram_url', 'soundcloud_url', 'bandcamp_url', 'discogs_url', 'spotify_url'])}
+                />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Input
+                    label="Website"
+                    value={formData.website || ''}
+                    onChange={(e) => setFormData({ ...formData, website: e.target.value })}
+                    placeholder="https://..."
+                    leftIcon={<ExternalLink className="w-4 h-4" />}
+                  />
+                  <SourceFieldOptions
+                    sources={initialData?.source_references}
+                    field="website"
+                    currentValue={formData.website}
+                    onSelect={(val) => setFormData({ ...formData, website: val })}
+                  />
+                </div>
+
+                {[
+                  { label: 'Facebook', field: 'facebook_url' },
+                  { label: 'Instagram', field: 'instagram_url' },
+                  { label: 'Twitter / X', field: 'twitter_url' },
+                  { label: 'SoundCloud', field: 'soundcloud_url' },
+                  { label: 'Bandcamp', field: 'bandcamp_url' },
+                  { label: 'Discogs', field: 'discogs_url' },
+                  { label: 'Spotify', field: 'spotify_url' },
+                ].map(({ label, field }) => (
+                  <div key={field}>
+                    <Input
+                      label={label}
+                      // @ts-ignore
+                      value={formData[field as keyof Artist] || ''}
+                      // @ts-ignore
+                      onChange={(e) => setFormData({ ...formData, [field]: e.target.value })}
+                      placeholder="https://..."
+                      leftIcon={<ExternalLink className="w-4 h-4" />}
+                    />
+                    <SourceFieldOptions
+                      sources={initialData?.source_references}
+                      field={field as keyof SourceReference}
+                      // @ts-ignore
+                      currentValue={formData[field as keyof Artist]}
+                      // @ts-ignore
+                      onSelect={(val) => setFormData({ ...formData, [field]: val })}
+                    />
+                  </div>
+                ))}
+              </div>
             </div>
 
             <div>
@@ -449,7 +560,7 @@ export function ArtistForm({
               <select
                 value={formData.country || ''}
                 onChange={(e) => setFormData({ ...formData, country: e.target.value })}
-                className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white"
+                className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 dark:text-white"
               >
                 <option value="">Select Country...</option>
                 {countries.map(c => (

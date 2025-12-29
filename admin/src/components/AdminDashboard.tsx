@@ -134,11 +134,13 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
   // Main state
   const [activeTab, setActiveTabState] = useState<ActiveTab>(initialTab || getTabFromPathname(pathname));
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
   // Handle tab changes with URL navigation
   const setActiveTab = useCallback((tab: ActiveTab) => {
     setActiveTabState(tab);
+    setError(null);
     router.push(`/${tab}`);
   }, [router]);
 
@@ -513,6 +515,9 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
           loadEvents({ noLimit: true })
         ]);
       }
+    } catch (error) {
+      console.error('Failed to load data:', error);
+      setError((error as Error).message || 'Failed to load data. Please check your connection.');
     } finally {
       setIsLoading(false);
     }
@@ -1380,7 +1385,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
           onClick={() => handleEdit(item)}
           className={clsx(
             'px-4 py-2.5 flex items-center gap-3 cursor-pointer border-b transition-colors relative',
-            editingItem?.id === item.id && 'border-l-2 border-l-indigo-500 dark:border-l-gray-400',
+            editingItem?.id === item.id && 'border-l-2 border-l-primary-500 dark:border-l-gray-400',
             isRejected && 'bg-gray-50 dark:bg-gray-900/50',
             isPending && 'pending-stripes',
             !isRejected && !isPending && 'bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800',
@@ -1392,7 +1397,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
             checked={selectedIds.has(item.id)}
             onClick={(e) => e.stopPropagation()}
             onChange={(e) => { e.stopPropagation(); handleSelect(item.id); }}
-            className="w-4 h-4 sm:w-auto sm:h-auto rounded text-indigo-600 dark:text-indigo-500 border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 touch-manipulation"
+            className="w-4 h-4 sm:w-auto sm:h-auto rounded text-primary-600 dark:text-primary-500 border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-primary-500 dark:focus:ring-primary-400 touch-manipulation"
           />
           <div className="w-10 h-10 rounded bg-gray-200 dark:bg-gray-800 flex items-center justify-center flex-shrink-0 overflow-hidden">
             {item.flyer_front ? (
@@ -1432,7 +1437,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                   }}
                   className={clsx(
                     'text-xs truncate hover:underline',
-                    isRejected ? 'text-gray-400 dark:text-gray-500 line-through' : 'text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400',
+                    isRejected ? 'text-gray-400 dark:text-gray-500 line-through' : 'text-gray-500 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400',
                     !item.venue_id && 'cursor-default hover:no-underline'
                   )}
                   disabled={!item.venue_id}
@@ -1474,7 +1479,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                             setLoadingArtist(false);
                           }
                         }}
-                        className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-200 dark:hover:bg-indigo-900/50 transition-colors"
+                        className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400 hover:bg-primary-200 dark:hover:bg-primary-900/50 transition-colors"
                       >
                         {artistName}
                       </button>
@@ -1575,7 +1580,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
           onClick={() => handleEdit(item)}
           className={clsx(
             'px-4 py-3 flex items-center gap-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 border-b border-gray-200 dark:border-gray-800 transition-colors bg-white dark:bg-gray-900',
-            editingItem?.id === item.id && 'bg-indigo-50 dark:bg-gray-800 border-l-2 border-l-indigo-500 dark:border-l-gray-400'
+            editingItem?.id === item.id && 'bg-primary-50 dark:bg-gray-800 border-l-2 border-l-primary-500 dark:border-l-gray-400'
           )}
         >
           <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-800 flex items-center justify-center flex-shrink-0 overflow-hidden">
@@ -1612,7 +1617,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
             )}
           </div>
           {item.content_url && (
-            <a href={item.content_url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-gray-400 hover:text-indigo-600">
+            <a href={item.content_url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-gray-400 hover:text-primary-600">
               <ExternalLink className="w-4 h-4" />
             </a>
           )}
@@ -1633,7 +1638,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
           onClick={() => handleEdit(item)}
           className={clsx(
             'px-4 py-3 flex items-center gap-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 border-b border-gray-200 dark:border-gray-800 transition-colors bg-white dark:bg-gray-900',
-            editingItem?.id === item.id && 'bg-indigo-50 dark:bg-gray-800 border-l-2 border-l-indigo-500 dark:border-l-gray-400'
+            editingItem?.id === item.id && 'bg-primary-50 dark:bg-gray-800 border-l-2 border-l-primary-500 dark:border-l-gray-400'
           )}
         >
           <div className="w-10 h-10 rounded bg-gray-200 dark:bg-gray-800 flex items-center justify-center flex-shrink-0">
@@ -1676,7 +1681,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
           onClick={() => handleEdit(item)}
           className={clsx(
             'px-4 py-3 flex items-center gap-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 border-b border-gray-200 dark:border-gray-800 transition-colors bg-white dark:bg-gray-900',
-            editingItem?.id === item.id && 'bg-indigo-50 dark:bg-gray-800 border-l-2 border-l-indigo-500 dark:border-l-gray-400'
+            editingItem?.id === item.id && 'bg-primary-50 dark:bg-gray-800 border-l-2 border-l-primary-500 dark:border-l-gray-400'
           )}
         >
           <div className="w-10 h-10 rounded bg-gray-200 dark:bg-gray-800 flex items-center justify-center flex-shrink-0">
@@ -1701,7 +1706,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
           onClick={() => handleEdit(item)}
           className={clsx(
             'px-4 py-3 flex items-center gap-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 border-b border-gray-200 dark:border-gray-800 transition-colors bg-white dark:bg-gray-900',
-            editingItem?.id === item.id && 'bg-indigo-50 dark:bg-gray-800 border-l-2 border-l-indigo-500 dark:border-l-gray-400'
+            editingItem?.id === item.id && 'bg-primary-50 dark:bg-gray-800 border-l-2 border-l-primary-500 dark:border-l-gray-400'
           )}
         >
           <div className="w-10 h-10 rounded bg-gray-200 dark:bg-gray-800 flex items-center justify-center flex-shrink-0">
@@ -1727,6 +1732,25 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
     if (activeTab === 'organizers') return organizers;
     return [];
   }, [activeTab, filteredEvents, artists, venues, adminCities, organizers]);
+
+  if (error && !isLoading) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center bg-gray-100 dark:bg-gray-950 p-4">
+        <div className="bg-red-100 dark:bg-red-900/30 p-4 rounded-full mb-4">
+          <AlertTriangle className="w-12 h-12 text-red-600 dark:text-red-400" />
+        </div>
+        <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Something went wrong</h3>
+        <p className="text-gray-600 dark:text-gray-400 text-center max-w-md mb-6">{error}</p>
+        <button
+          onClick={loadData}
+          className="px-6 py-2.5 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
+        >
+          <RefreshCw className="w-4 h-4" />
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full flex flex-col bg-gray-100 dark:bg-gray-950">
@@ -1816,7 +1840,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                   type="checkbox"
                   checked={showPastEvents}
                   onChange={(e) => setShowPastEvents(e.target.checked)}
-                  className="rounded border-gray-300 dark:border-gray-600 text-indigo-600 dark:text-indigo-500 focus:ring-indigo-500 dark:focus:ring-indigo-400 bg-white dark:bg-gray-900"
+                  className="rounded border-gray-300 dark:border-gray-600 text-primary-600 dark:text-primary-500 focus:ring-primary-500 dark:focus:ring-primary-400 bg-white dark:bg-gray-900"
                 />
                 <span className="hidden sm:inline">Show Old Past</span>
                 <span className="sm:hidden">Past</span>
@@ -1869,7 +1893,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
           {activeTab !== 'scrape' && (
             <button
               onClick={handleCreate}
-              className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-1"
+              className="px-3 py-1.5 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700 flex items-center gap-1"
             >
               <Plus className="w-4 h-4" /> <span className="hidden sm:inline">Add</span> <span className="hidden sm:inline">{activeTab === 'cities' ? 'city' : activeTab.slice(0, -1)}</span><span className="sm:hidden">+</span>
             </button>
@@ -1938,7 +1962,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                           setSelectedIds(newSelected);
                         }
                       }}
-                      className="rounded text-indigo-600"
+                      className="rounded text-primary-600"
                     />
                     Select all
                   </label>
@@ -1946,8 +1970,8 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
 
                 {/* Bulk actions for selected pending events */}
                 {selectedIds.size > 0 && (
-                  <div className="px-4 py-2 bg-indigo-50 dark:bg-indigo-900/20 border-b border-indigo-200 dark:border-indigo-700 flex items-center gap-2 flex-wrap">
-                    <span className="text-sm text-indigo-700 dark:text-indigo-300 font-medium">{selectedIds.size} selected</span>
+                  <div className="px-4 py-2 bg-primary-50 dark:bg-primary-900/20 border-b border-primary-200 dark:border-primary-700 flex items-center gap-2 flex-wrap">
+                    <span className="text-sm text-primary-700 dark:text-primary-300 font-medium">{selectedIds.size} selected</span>
                     <button onClick={() => handleBulkSetStatus('approved')} className="px-2.5 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200 flex items-center gap-1 flex-shrink-0">
                       <Eye className="w-3 h-3" /> Approve
                     </button>
@@ -1997,8 +2021,8 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                           }}
                           className={clsx(
                             "px-4 py-2.5 flex items-center gap-3 cursor-pointer border-b transition-colors pending-stripes bg-white dark:bg-gray-900 hover:bg-amber-50 dark:hover:bg-gray-800",
-                            selectedIds.has(event.id) && 'border-l-2 border-l-indigo-500 dark:border-l-gray-400',
-                            editingItem?.id === event.id && 'border-l-2 border-l-indigo-500 dark:border-l-gray-400',
+                            selectedIds.has(event.id) && 'border-l-2 border-l-primary-500 dark:border-l-gray-400',
+                            editingItem?.id === event.id && 'border-l-2 border-l-primary-500 dark:border-l-gray-400',
                             isPast && "opacity-60"
                           )}
                         >
@@ -2007,7 +2031,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                             checked={selectedIds.has(event.id)}
                             onClick={(e) => e.stopPropagation()}
                             onChange={(e) => { e.stopPropagation(); handleSelect(event.id); }}
-                            className="w-4 h-4 sm:w-auto sm:h-auto rounded text-indigo-600"
+                            className="w-4 h-4 sm:w-auto sm:h-auto rounded text-primary-600"
                           />
                           <div className="w-10 h-10 rounded bg-gray-200 dark:bg-gray-700 flex items-center justify-center flex-shrink-0 overflow-hidden">
                             {event.flyer_front ? (
@@ -2043,7 +2067,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                                     }
                                   }}
                                   className={clsx(
-                                    'text-xs truncate hover:underline text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400',
+                                    'text-xs truncate hover:underline text-gray-500 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400',
                                     !event.venue_id && 'cursor-default hover:no-underline'
                                   )}
                                   disabled={!event.venue_id}
@@ -2082,7 +2106,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                                             setLoadingArtist(false);
                                           }
                                         }}
-                                        className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-200 dark:hover:bg-indigo-900/50 transition-colors"
+                                        className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400 hover:bg-primary-200 dark:hover:bg-primary-900/50 transition-colors"
                                       >
                                         {artistName}
                                       </button>
@@ -2252,7 +2276,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                           finally { setIsMatching(false); }
                         }}
                         disabled={isMatching}
-                        className="px-2 py-1 text-xs bg-indigo-100 dark:bg-gray-800 text-indigo-700 dark:text-gray-300 hover:bg-indigo-200 dark:hover:bg-gray-700 rounded font-medium disabled:opacity-50 flex items-center gap-1 border border-indigo-200 dark:border-gray-700"
+                        className="px-2 py-1 text-xs bg-primary-100 dark:bg-gray-800 text-primary-700 dark:text-gray-300 hover:bg-primary-200 dark:hover:bg-gray-700 rounded font-medium disabled:opacity-50 flex items-center gap-1 border border-primary-200 dark:border-gray-700"
                       >
                         {isMatching ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Link2 className="w-3 h-3" />}
                         Link All
@@ -2310,7 +2334,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                             )}
                           </div>
                           {event.content_url && (
-                            <a href={event.content_url} target="_blank" rel="noopener noreferrer" className="text-gray-400 dark:text-gray-500 hover:text-indigo-600 dark:hover:text-indigo-400" onClick={e => e.stopPropagation()}>
+                            <a href={event.content_url} target="_blank" rel="noopener noreferrer" className="text-gray-400 dark:text-gray-500 hover:text-primary-600 dark:hover:text-primary-400" onClick={e => e.stopPropagation()}>
                               <ExternalLink className="w-3 h-3" />
                             </a>
                           )}
@@ -2327,19 +2351,19 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                   <div className="max-w-3xl mx-auto space-y-6">
                     {/* Sync Progress Banner - Shown when syncing */}
                     {isSyncing && syncProgress && (
-                      <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-700 rounded-lg p-4">
+                      <div className="bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-700 rounded-lg p-4">
                         <div className="flex items-start gap-3">
-                          <RefreshCw className="w-5 h-5 text-indigo-600 dark:text-indigo-400 animate-spin flex-shrink-0 mt-0.5" />
+                          <RefreshCw className="w-5 h-5 text-primary-600 dark:text-primary-400 animate-spin flex-shrink-0 mt-0.5" />
                           <div className="flex-1 min-w-0">
-                            <p className="font-medium text-indigo-900 dark:text-indigo-100 mb-1">Pipeline Running</p>
-                            <div className="space-y-1 text-sm text-indigo-700 dark:text-indigo-300">
+                            <p className="font-medium text-primary-900 dark:text-primary-100 mb-1">Pipeline Running</p>
+                            <div className="space-y-1 text-sm text-primary-700 dark:text-primary-300">
                               <p>{syncProgress}</p>
                               {scrapeStats?.last_scraped_city && (
                                 <p className="text-xs">
-                                  <span className="text-indigo-600 dark:text-indigo-400 font-medium">City:</span> {scrapeStats.last_scraped_city}
+                                  <span className="text-primary-600 dark:text-primary-400 font-medium">City:</span> {scrapeStats.last_scraped_city}
                                   {scrapeStats.last_scraped_source && (
                                     <span className="ml-3">
-                                      <span className="text-indigo-600 dark:text-indigo-400 font-medium">Source:</span> {scrapeStats.last_scraped_source.toUpperCase()}
+                                      <span className="text-primary-600 dark:text-primary-400 font-medium">Source:</span> {scrapeStats.last_scraped_source.toUpperCase()}
                                     </span>
                                   )}
                                 </p>
@@ -2389,11 +2413,11 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
 
                     {/* Next Auto-Scrape Info */}
                     {scrapeStats?.next_scheduled_scrape && scrapeStats?.auto_scrape_enabled && (
-                      <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-700 rounded-lg p-4">
+                      <div className="bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-700 rounded-lg p-4">
                         <div className="flex items-center gap-3">
-                          <div className="w-3 h-3 bg-indigo-500 dark:bg-indigo-400 rounded-full" />
+                          <div className="w-3 h-3 bg-primary-500 dark:bg-primary-400 rounded-full" />
                           <span className="text-sm text-gray-600 dark:text-gray-300">
-                            Next auto-scrape: <span className="font-medium text-indigo-900 dark:text-indigo-100">
+                            Next auto-scrape: <span className="font-medium text-primary-900 dark:text-primary-100">
                               {new Date(scrapeStats.next_scheduled_scrape).toLocaleString('en-US', {
                                 month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
                               })}
@@ -2409,7 +2433,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                     {/* Sync Controls Card */}
                     <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
                       <h3 className="font-semibold text-lg mb-4 flex items-center gap-2 text-gray-900 dark:text-gray-100">
-                        <CloudDownload className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                        <CloudDownload className="w-5 h-5 text-primary-600 dark:text-primary-400" />
                         Fetch New Events
                       </h3>
 
@@ -2421,7 +2445,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                             <select
                               value={scrapeCity}
                               onChange={(e) => setScrapeCity(e.target.value)}
-                              className="w-full px-3 py-2.5 sm:py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 focus:border-indigo-500 transition-colors text-base sm:text-sm"
+                              className="w-full px-3 py-2.5 sm:py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-primary-500 dark:focus:ring-primary-400 focus:border-primary-500 transition-colors text-base sm:text-sm"
                             >
                               <option value="all">🌍 All Cities</option>
                               <optgroup label="🇩🇪 Germany">
@@ -2468,7 +2492,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                                   type="checkbox"
                                   checked={scrapeSources.includes('ra')}
                                   onChange={() => toggleSource('ra')}
-                                  className="w-5 h-5 sm:w-4 sm:h-4 rounded text-indigo-600 dark:text-indigo-400 border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-indigo-500"
+                                  className="w-5 h-5 sm:w-4 sm:h-4 rounded text-primary-600 dark:text-primary-400 border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-primary-500"
                                 />
                                 <span className="text-sm sm:text-base text-gray-900 dark:text-gray-100 font-medium">Resident Advisor</span>
                               </label>
@@ -2478,7 +2502,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                                   type="checkbox"
                                   checked={scrapeSources.includes('tm')}
                                   onChange={() => toggleSource('tm')}
-                                  className="w-5 h-5 sm:w-4 sm:h-4 rounded text-indigo-600 dark:text-indigo-400 border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-indigo-500"
+                                  className="w-5 h-5 sm:w-4 sm:h-4 rounded text-primary-600 dark:text-primary-400 border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-primary-500"
                                 />
                                 <span className="text-sm sm:text-base text-gray-900 dark:text-gray-100 font-medium">Ticketmaster</span>
                               </label>
@@ -2490,7 +2514,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                         <button
                           onClick={handleSyncWorkflow}
                           disabled={isSyncing || scrapeSources.length === 0}
-                          className="w-full px-6 py-3.5 sm:py-3 bg-indigo-600 dark:bg-indigo-500 text-white rounded-lg hover:bg-indigo-700 dark:hover:bg-indigo-600 active:bg-indigo-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 font-medium shadow-lg hover:shadow-xl transition-all touch-manipulation text-base sm:text-sm"
+                          className="w-full px-6 py-3.5 sm:py-3 bg-primary-600 dark:bg-primary-500 text-white rounded-lg hover:bg-primary-700 dark:hover:bg-primary-600 active:bg-primary-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 font-medium shadow-lg hover:shadow-xl transition-all touch-manipulation text-base sm:text-sm"
                         >
                           {isSyncing ? (
                             <>
@@ -2506,12 +2530,12 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                         </button>
 
                         {/* Pipeline Info */}
-                        <div className="px-3 sm:px-4 py-2.5 sm:py-3 bg-indigo-50 dark:bg-indigo-950/30 rounded-lg border border-indigo-200 dark:border-indigo-800 text-xs sm:text-sm">
+                        <div className="px-3 sm:px-4 py-2.5 sm:py-3 bg-primary-50 dark:bg-primary-950/30 rounded-lg border border-primary-200 dark:border-primary-800 text-xs sm:text-sm">
                           <div className="flex items-start gap-2">
-                            <Layers className="w-4 h-4 text-indigo-600 dark:text-indigo-400 flex-shrink-0 mt-0.5" />
+                            <Layers className="w-4 h-4 text-primary-600 dark:text-primary-400 flex-shrink-0 mt-0.5" />
                             <div>
-                              <p className="font-medium text-indigo-900 dark:text-indigo-100">Automated Pipeline</p>
-                              <p className="text-indigo-700 dark:text-indigo-300 mt-0.5">Scrape → Dedupe → Match → Enrich → Sync</p>
+                              <p className="font-medium text-primary-900 dark:text-primary-100">Automated Pipeline</p>
+                              <p className="text-primary-700 dark:text-primary-300 mt-0.5">Scrape → Dedupe → Match → Enrich → Sync</p>
                               {scrapeCity === 'all' && (
                                 <p className="text-amber-600 dark:text-amber-400 mt-2 flex items-center gap-1">
                                   <AlertTriangle className="w-3 h-3" />
@@ -2722,7 +2746,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                         type="checkbox"
                         checked={selectedIds.size === filteredEvents.length && filteredEvents.length > 0}
                         onChange={handleSelectAll}
-                        className="rounded text-indigo-600"
+                        className="rounded text-primary-600"
                       />
                       Select all
                     </label>
@@ -3005,7 +3029,7 @@ export function AdminDashboard({ initialTab }: AdminDashboardProps) {
                 </button>
                 <button
                   onClick={handleSaveArtistOverlay}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg"
+                  className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg"
                 >
                   Save Artist
                 </button>

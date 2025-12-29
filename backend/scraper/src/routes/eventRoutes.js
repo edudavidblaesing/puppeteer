@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const eventController = require('../controllers/eventController');
+const { verifyToken } = require('../middleware/authMiddleware');
 
 // Helper to wrap async route handlers
 const asyncHandler = fn => (req, res, next) => {
@@ -17,19 +18,22 @@ router.get('/count', asyncHandler(eventController.getEventCount)); // Need to ve
 router.get('/recent-updates', asyncHandler(eventController.getRecentUpdates));
 router.get('/map', asyncHandler(eventController.getMapEvents));
 router.get('/changes', asyncHandler(eventController.getChanges));
-router.post('/changes/apply', asyncHandler(eventController.applyChanges));
-router.post('/changes/dismiss', asyncHandler(eventController.dismissChanges));
+router.post('/changes/apply', verifyToken, asyncHandler(eventController.applyChanges));
+router.post('/changes/dismiss', verifyToken, asyncHandler(eventController.dismissChanges));
 
 router.get('/:id', asyncHandler(eventController.getEvent));
 router.get('/', asyncHandler(eventController.listEvents));
-router.post('/', asyncHandler(eventController.createEvent));
-router.patch('/:id', asyncHandler(eventController.updateEvent));
-router.delete('/:id', asyncHandler(eventController.deleteEvent));
-router.delete('/', asyncHandler(eventController.deleteAllEvents));
+const validate = require('../middleware/validate');
+const { createEventSchema, updateEventSchema } = require('../schemas/eventSchema');
 
-router.post('/sync', asyncHandler(eventController.syncEvents));
-router.post('/publish-status', asyncHandler(eventController.publishStatus));
-router.post('/sync-venue-coords', asyncHandler(eventController.syncVenueCoords));
-router.post('/bulk-delete', asyncHandler(eventController.bulkDeleteEvents));
+router.post('/', verifyToken, validate(createEventSchema), asyncHandler(eventController.createEvent));
+router.patch('/:id', verifyToken, validate(updateEventSchema), asyncHandler(eventController.updateEvent));
+router.delete('/:id', verifyToken, asyncHandler(eventController.deleteEvent));
+router.delete('/', verifyToken, asyncHandler(eventController.deleteAllEvents));
+
+router.post('/sync', verifyToken, asyncHandler(eventController.syncEvents));
+router.post('/publish-status', verifyToken, asyncHandler(eventController.publishStatus));
+router.post('/sync-venue-coords', verifyToken, asyncHandler(eventController.syncVenueCoords));
+router.post('/bulk-delete', verifyToken, asyncHandler(eventController.bulkDeleteEvents));
 
 module.exports = router;

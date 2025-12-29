@@ -25,12 +25,12 @@ export function ScrapeDashboard({
       <div className="max-w-4xl mx-auto space-y-6">
         {/* Sync Progress Banner */}
         {isSyncing && (
-          <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-700 rounded-lg p-4">
+          <div className="bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-700 rounded-lg p-4">
             <div className="flex items-start gap-3">
-              <RefreshCw className="w-5 h-5 text-indigo-600 dark:text-indigo-400 animate-spin flex-shrink-0 mt-0.5" />
+              <RefreshCw className="w-5 h-5 text-primary-600 dark:text-primary-400 animate-spin flex-shrink-0 mt-0.5" />
               <div className="flex-1 min-w-0">
-                <p className="font-medium text-indigo-900 dark:text-indigo-100 mb-1">Pipeline Running</p>
-                <p className="text-sm text-indigo-700 dark:text-indigo-300">{syncProgress}</p>
+                <p className="font-medium text-primary-900 dark:text-primary-100 mb-1">Pipeline Running</p>
+                <p className="text-sm text-primary-700 dark:text-primary-300">{syncProgress}</p>
               </div>
             </div>
           </div>
@@ -64,7 +64,7 @@ export function ScrapeDashboard({
         {/* Controls */}
         <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6 shadow-sm">
           <h3 className="font-semibold text-lg mb-4 flex items-center gap-2 text-gray-900 dark:text-gray-100">
-            <Play className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+            <Play className="w-5 h-5 text-primary-600 dark:text-primary-400" />
             Actions
           </h3>
           <div className="flex flex-wrap gap-4">

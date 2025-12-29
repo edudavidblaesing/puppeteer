@@ -55,7 +55,7 @@ export default function SettingsPage() {
                 {/* Database Management Section */}
                 <section className="bg-white dark:bg-gray-900 rounded-xl shadow border border-gray-200 dark:border-gray-800 p-6">
                     <div className="flex items-start gap-4">
-                        <div className="p-3 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg text-indigo-600 dark:text-indigo-400">
+                        <div className="p-3 bg-primary-100 dark:bg-primary-900/30 rounded-lg text-primary-600 dark:text-primary-400">
                             <Database className="w-6 h-6" />
                         </div>
                         <div className="flex-1">

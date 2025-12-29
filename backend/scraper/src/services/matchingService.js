@@ -320,12 +320,41 @@ VALUES($1, $2)
 }
 
 // Link organizers to event
-async function linkOrganizersToEvent(eventId, organizers) {
+async function linkOrganizersToEvent(eventId, organizers, sourceCode = null) {
     if (!organizers || !Array.isArray(organizers)) return;
 
-    for (const organizer of organizers) {
-        const name = typeof organizer === 'string' ? organizer : organizer.name;
+    for (const organizerObj of organizers) {
+        const name = typeof organizerObj === 'string' ? organizerObj : organizerObj.name;
         if (!name) continue;
+
+        // 1. Ensure Scraped Organizer exists if we have source info
+        let scrapedOrganizerId = null;
+        if (sourceCode && typeof organizerObj === 'object' && organizerObj.source_organizer_id) {
+            try {
+                const scrapedRes = await pool.query(`
+                    INSERT INTO scraped_organizers(
+                        source_code, source_id, name, url, image_url, description, updated_at
+                    ) VALUES($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
+                    ON CONFLICT(source_code, source_id) DO UPDATE SET
+                        name = EXCLUDED.name,
+                        url = COALESCE(EXCLUDED.url, scraped_organizers.url),
+                        image_url = COALESCE(EXCLUDED.image_url, scraped_organizers.image_url),
+                        description = COALESCE(EXCLUDED.description, scraped_organizers.description),
+                        updated_at = CURRENT_TIMESTAMP
+                    RETURNING id
+                `, [
+                    sourceCode,
+                    organizerObj.source_organizer_id,
+                    name,
+                    organizerObj.content_url || null,
+                    organizerObj.image_url || null,
+                    organizerObj.description || null
+                ]);
+                scrapedOrganizerId = scrapedRes.rows[0].id;
+            } catch (err) {
+                console.warn(`[LinkOrganizers] Failed to create scraped organizer for ${name}: ${err.message}`);
+            }
+        }
 
         let organizerId;
         const existingOrganizer = await pool.query('SELECT id FROM organizers WHERE LOWER(name) = LOWER($1)', [name]);
@@ -349,11 +378,20 @@ async function linkOrganizersToEvent(eventId, organizers) {
             }
         }
 
+        // 3. Link Main Organizer to Scraped Organizer
+        if (scrapedOrganizerId) {
+            await pool.query(`
+                INSERT INTO organizer_scraped_links(organizer_id, scraped_organizer_id, match_confidence, is_primary)
+                VALUES($1, $2, 1.0, true)
+                ON CONFLICT(organizer_id, scraped_organizer_id) DO NOTHING
+            `, [organizerId, scrapedOrganizerId]);
+        }
+
         await pool.query(`
             INSERT INTO event_organizers(event_id, organizer_id)
-VALUES($1, $2)
+            VALUES($1, $2)
             ON CONFLICT(event_id, organizer_id) DO NOTHING
-    `, [eventId, organizerId]);
+        `, [eventId, organizerId]);
     }
 }
 
@@ -698,7 +736,7 @@ VALUES($1, $2, $3)
                         await linkArtistsToEvent(eventId, scraped.artists_json, scraped.source_code);
                     }
                     if (scraped.organizers_json && Array.isArray(scraped.organizers_json)) {
-                        await linkOrganizersToEvent(eventId, scraped.organizers_json);
+                        await linkOrganizersToEvent(eventId, scraped.organizers_json, scraped.source_code);
                     }
 
                     await pool.query(`
@@ -737,17 +775,17 @@ SELECT * FROM artists WHERE id = $1
     const current = currentResult.rows[0];
 
     const sourcesResult = await pool.query(`
-        SELECT sa.*, asl.match_confidence, asl.last_synced_at
+        SELECT sa.*, sa.website_url as website, asl.match_confidence
         FROM artist_scraped_links asl
         JOIN scraped_artists sa ON sa.id = asl.scraped_artist_id
         WHERE asl.artist_id = $1
         ORDER BY 
             CASE sa.source_code 
                 WHEN 'og' THEN 1 
-                WHEN 'manual' THEN 1
-                WHEN 'mb' THEN 2
-                WHEN 'sp' THEN 3
-                WHEN 'wiki' THEN 8
+                WHEN 'mb' THEN 2 
+                WHEN 'sp' THEN 3 
+                WHEN 'wiki' THEN 4
+                WHEN 'ra' THEN 5 
                 ELSE 10 
             END ASC
     `, [artistId]);
@@ -764,7 +802,7 @@ SELECT * FROM artists WHERE id = $1
         };
         let hasManualFields = false;
 
-        const managedFields = ['name', 'country', 'artist_type', 'genres', 'image_url', 'content_url', 'bio'];
+        const managedFields = ['name', 'country', 'artist_type', 'genres', 'image_url', 'content_url', 'bio', 'website', 'first_name', 'last_name', 'facebook_url', 'twitter_url', 'instagram_url', 'soundcloud_url', 'bandcamp_url', 'discogs_url', 'spotify_url'];
 
         managedFields.forEach(field => {
             if (currentFieldSources && currentFieldSources[field] === 'og') {
@@ -779,7 +817,7 @@ SELECT * FROM artists WHERE id = $1
     }
 
     const { merged, fieldSources } = mergeSourceData(sourcesToMerge, [
-        'name', 'country', 'artist_type', 'genres', 'image_url', 'content_url', 'bio'
+        'name', 'country', 'artist_type', 'genres', 'image_url', 'content_url', 'bio', 'website', 'first_name', 'last_name', 'facebook_url', 'twitter_url', 'instagram_url', 'soundcloud_url', 'bandcamp_url', 'discogs_url', 'spotify_url'
     ]);
 
     let genresVal = merged.genres;
@@ -789,19 +827,33 @@ SELECT * FROM artists WHERE id = $1
 
     await pool.query(`
         UPDATE artists SET
-name = COALESCE($1, name),
-    country = COALESCE($2, country),
-    artist_type = COALESCE($3, artist_type),
-    image_url = COALESCE($4, image_url),
-    content_url = COALESCE($5, content_url),
-    genres = COALESCE($6, genres),
-    bio = COALESCE($7, bio),
-    field_sources = $8,
-    updated_at = CURRENT_TIMESTAMP
-        WHERE id = $9
+            name = COALESCE($1, name),
+            country = COALESCE($2, country),
+            artist_type = COALESCE($3, artist_type),
+            image_url = COALESCE($4, image_url),
+            content_url = COALESCE($5, content_url),
+            genres = COALESCE($6, genres),
+            bio = COALESCE($7, bio),
+            website = COALESCE($8, website),
+            first_name = COALESCE($9, first_name),
+            last_name = COALESCE($10, last_name),
+            facebook_url = COALESCE($11, facebook_url),
+            twitter_url = COALESCE($12, twitter_url),
+            bandcamp_url = COALESCE($13, bandcamp_url),
+            discogs_url = COALESCE($14, discogs_url),
+            instagram_url = COALESCE($15, instagram_url),
+            soundcloud_url = COALESCE($16, soundcloud_url),
+            spotify_url = COALESCE($17, spotify_url),
+            field_sources = $18,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $19
     `, [
         merged.name, merged.country, merged.artist_type, merged.image_url,
-        merged.content_url, genresVal, merged.bio, JSON.stringify(fieldSources), artistId
+        merged.content_url, genresVal, merged.bio, merged.website,
+        merged.first_name, merged.last_name, merged.facebook_url,
+        merged.twitter_url, merged.bandcamp_url, merged.discogs_url,
+        merged.instagram_url, merged.soundcloud_url, merged.spotify_url,
+        JSON.stringify(fieldSources), artistId
     ]);
 
     const contributingSourceCodes = new Set(Object.values(fieldSources));
@@ -1244,6 +1296,83 @@ VALUES($1, $2, 1.0, true)
 async function autoEnrichArtists() {
     console.log('[Enrichment] Starting automatic artist enrichment...');
 
+    // 0. RA Deep Fetch (Enhance existing links)
+    // Find artists linked to RA that haven't been deep-fetched (using bio IS NULL as proxy)
+    try {
+        const { getArtist } = require('./raService');
+        const raArtistsToEnrich = await pool.query(`
+            SELECT a.id, sa.source_artist_id, sa.id as scraped_id
+            FROM artists a
+            JOIN artist_scraped_links asl ON asl.artist_id = a.id
+            JOIN scraped_artists sa ON sa.id = asl.scraped_artist_id
+            WHERE sa.source_code = 'ra' 
+            AND sa.bio IS NULL
+            ORDER BY a.created_at DESC
+            LIMIT 10
+        `);
+
+        if (raArtistsToEnrich.rows.length > 0) {
+            console.log(`[Enrichment] Found ${raArtistsToEnrich.rows.length} RA artists to deep-fetch...`);
+            for (const raArt of raArtistsToEnrich.rows) {
+                try {
+                    const details = await getArtist(raArt.source_artist_id);
+                    if (details) {
+                        // Map fields
+                        const facebook_url = details.facebook;
+                        const twitter_url = details.twitter;
+                        const instagram_url = details.instagram;
+                        const soundcloud_url = details.soundcloud;
+                        const discogs_url = details.discogs;
+                        const bandcamp_url = details.bandcamp;
+                        const website_url = details.website;
+                        const bio = details.biography?.content || details.blurb; // Extract content from object
+
+                        await pool.query(`
+                            UPDATE scraped_artists SET
+                                bio = $1,
+                                first_name = $2,
+                                last_name = $3,
+                                facebook_url = $4,
+                                twitter_url = $5,
+                                instagram_url = $6,
+                                soundcloud_url = $7,
+                                discogs_url = $8,
+                                bandcamp_url = $9,
+                                website_url = $10,
+                                country = COALESCE(country, $11),
+                                image_url = COALESCE(image_url, $12),
+                                raw_data = $13,
+                                updated_at = CURRENT_TIMESTAMP
+                            WHERE id = $14
+                        `, [
+                            bio,
+                            details.firstName,
+                            details.lastName,
+                            facebook_url,
+                            twitter_url,
+                            instagram_url,
+                            soundcloud_url,
+                            discogs_url,
+                            bandcamp_url,
+                            website_url,
+                            details.country?.name,
+                            details.image, // assume scalar URL
+                            details, // Save full RA details as raw_data
+                            raArt.scraped_id
+                        ]);
+
+                        await refreshMainArtist(raArt.id);
+                        console.log(`[Enrichment] Deep-fetched RA data for artist ${raArt.id}`);
+                    }
+                } catch (e) {
+                    console.error(`[Enrichment] Failed to deep-fetch RA artist ${raArt.source_artist_id}:`, e.message);
+                }
+            }
+        }
+    } catch (e) {
+        console.error('[Enrichment] Error in RA deep fetch block:', e);
+    }
+
     // Find artists that have no musicbrainz source link
     // Limit to 20 per run to avoid overly long sync times and rate limits
     const artistsToEnrich = await pool.query(`
@@ -1268,11 +1397,14 @@ async function autoEnrichArtists() {
 
     if (!isMbActive && !isSpActive && !isWikiActive) {
         console.log('[Enrichment] All enrichment sources (MB, SP, Wiki) are disabled. Skipping.');
-        return;
+        // Don't return here, we might have done RA enrichment above.
     }
 
     let enriched = 0;
+    // Continuing with MB/SP/Wiki logic...
     for (const artist of artistsToEnrich.rows) {
+        // ... (Existing logic below) ...
+
         try {
             // Search MB if active
             let details = null;
@@ -1486,6 +1618,58 @@ async function refreshMainVenue(venueId) {
 // Automatically enrich venues with Wikipedia data
 async function autoEnrichVenues() {
     console.log('[Enrichment] Starting automatic venue enrichment...');
+
+    // 0. RA Deep Fetch
+    try {
+        const { getVenue } = require('./raService');
+        const raVenuesToEnrich = await pool.query(`
+            SELECT v.id, sv.source_venue_id, sv.id as scraped_id
+            FROM venues v
+            JOIN venue_scraped_links vsl ON vsl.venue_id = v.id
+            JOIN scraped_venues sv ON sv.id = vsl.scraped_venue_id
+            WHERE sv.source_code = 'ra' 
+            AND sv.description IS NULL
+            ORDER BY v.created_at DESC
+            LIMIT 10
+        `);
+
+        if (raVenuesToEnrich.rows.length > 0) {
+            console.log(`[Enrichment] Found ${raVenuesToEnrich.rows.length} RA venues to deep-fetch...`);
+            for (const raVenue of raVenuesToEnrich.rows) {
+                try {
+                    const details = await getVenue(raVenue.source_venue_id);
+                    if (details) {
+                        await pool.query(`
+                            UPDATE scraped_venues SET
+                                description = COALESCE($1, description),
+                                image_url = COALESCE($2, image_url),
+                                content_url = COALESCE($3, content_url),
+                                city = COALESCE(city, $4),
+                                country = COALESCE(country, $5),
+                                raw_data = $6,
+                                updated_at = CURRENT_TIMESTAMP
+                            WHERE id = $7
+                        `, [
+                            details.description, // mapped from blurb in raService
+                            details.image_url, // if available
+                            details.url,
+                            details.area?.name,
+                            details.area?.country?.name,
+                            details, // raw_data
+                            raVenue.scraped_id
+                        ]);
+
+                        await refreshMainVenue(raVenue.id);
+                        console.log(`[Enrichment] Deep-fetched RA data for venue ${raVenue.id}`);
+                    }
+                } catch (e) {
+                    console.error(`[Enrichment] Failed to deep-fetch RA venue ${raVenue.source_venue_id}:`, e.message);
+                }
+            }
+        }
+    } catch (e) {
+        console.error('[Enrichment] Error in RA venue deep fetch:', e);
+    }
 
     // Find venues that have no wiki source link
     const venuesToEnrich = await pool.query(`

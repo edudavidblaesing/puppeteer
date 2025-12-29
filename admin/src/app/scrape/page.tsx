@@ -14,11 +14,11 @@ import clsx from 'clsx';
 
 export default function ScrapePage() {
   const router = useRouter();
-  const { 
-    filteredEvents, 
-    isLoading: isEventsLoading, 
-    loadEvents, 
-    editEvent, 
+  const {
+    filteredEvents,
+    isLoading: isEventsLoading,
+    loadEvents,
+    editEvent,
     removeEvent,
     setStatusFilter,
     statusFilter
@@ -96,7 +96,7 @@ export default function ScrapePage() {
     if (selectedIds.size === filteredEvents.length) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(filteredEvents.map(e => e.id)));
+      setSelectedIds(new Set(filteredEvents.map((e: any) => e.id)));
     }
   };
 

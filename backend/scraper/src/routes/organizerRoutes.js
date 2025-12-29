@@ -6,11 +6,15 @@ const asyncHandler = fn => (req, res, next) => {
     Promise.resolve(fn(req, res, next)).catch(next);
 };
 
+const { verifyToken } = require('../middleware/authMiddleware');
+const validate = require('../middleware/validate');
+const { createOrganizerSchema, updateOrganizerSchema } = require('../schemas/organizerSchema');
+
 router.get('/:id', asyncHandler(organizerController.getOrganizer));
 router.get('/', asyncHandler(organizerController.listOrganizers));
-router.post('/', asyncHandler(organizerController.createOrganizer));
-router.patch('/:id', asyncHandler(organizerController.updateOrganizer));
-router.delete('/:id', asyncHandler(organizerController.deleteOrganizer));
-router.post('/match', asyncHandler(organizerController.matchOrganizers));
+router.post('/', verifyToken, validate(createOrganizerSchema), asyncHandler(organizerController.createOrganizer));
+router.patch('/:id', verifyToken, validate(updateOrganizerSchema), asyncHandler(organizerController.updateOrganizer));
+router.delete('/:id', verifyToken, asyncHandler(organizerController.deleteOrganizer));
+router.post('/match', verifyToken, asyncHandler(organizerController.matchOrganizers));
 
 module.exports = router;

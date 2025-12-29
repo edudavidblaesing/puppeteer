@@ -342,6 +342,7 @@ async function processScrapedEvents(events, options = {}) {
                 // Fallback: If name is missing, try to use address
                 if (!v.name && v.address) {
                     v.name = v.address;
+                    event.venue_name = v.name; // Keep valid for event record
                     console.warn(`[Scraper] Venue name missing for event ${event.title}. Using address as name: "${v.name}"`);
                 }
 
@@ -351,8 +352,8 @@ async function processScrapedEvents(events, options = {}) {
                     const venueRes = await pool.query(`
                     INSERT INTO scraped_venues (
                         source_code, source_venue_id, name, address, city, country,
-                        latitude, longitude, content_url, description, updated_at
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP)
+                        latitude, longitude, content_url, description, raw_data, updated_at
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP)
                     ON CONFLICT (source_code, source_venue_id) DO UPDATE SET
                         name = EXCLUDED.name,
                         address = EXCLUDED.address,
@@ -362,12 +363,14 @@ async function processScrapedEvents(events, options = {}) {
                         longitude = EXCLUDED.longitude,
                         content_url = EXCLUDED.content_url,
                         description = COALESCE(EXCLUDED.description, scraped_venues.description),
+                        raw_data = EXCLUDED.raw_data,
                         updated_at = CURRENT_TIMESTAMP
                     RETURNING (xmax = 0) as inserted
                 `, [
                         event.source_code, v.source_venue_id, v.name, v.address,
                         v.city, v.country, v.latitude || venueLat, v.longitude || venueLon, v.content_url,
-                        v.description || null
+                        v.description || null,
+                        v // Save entire venue object as raw_data
                     ]);
                     if (venueRes.rows[0].inserted) {
                         stats.venuesCreated++;
@@ -383,21 +386,23 @@ async function processScrapedEvents(events, options = {}) {
                     if (!artist.name) continue;
                     const artistRes = await pool.query(`
                         INSERT INTO scraped_artists (
-                            source_code, source_artist_id, name, genres, image_url, content_url, artist_type, updated_at
-                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
+                            source_code, source_artist_id, name, genres, image_url, content_url, artist_type, raw_data, updated_at
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)
                         ON CONFLICT (source_code, source_artist_id) DO UPDATE SET
                             name = EXCLUDED.name,
                             genres = EXCLUDED.genres,
                             image_url = EXCLUDED.image_url,
                             content_url = EXCLUDED.content_url,
                             artist_type = EXCLUDED.artist_type,
+                            raw_data = EXCLUDED.raw_data,
                             updated_at = CURRENT_TIMESTAMP
                         RETURNING (xmax = 0) as inserted
                     `, [
                         event.source_code, artist.source_artist_id, artist.name,
                         artist.genres ? JSON.stringify(artist.genres) : null,
                         artist.image_url, artist.content_url || null,
-                        artist.type || null
+                        artist.type || null,
+                        artist // Save entire artist object as raw_data
                     ]);
                     if (artistRes.rows[0].inserted) {
                         stats.artistsCreated++;
@@ -415,13 +420,14 @@ async function processScrapedEvents(events, options = {}) {
 
                     const organizerRes = await pool.query(`
                         INSERT INTO scraped_organizers (
-                            source_code, source_id, name, description, image_url, url, updated_at
-                        ) VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
+                            source_code, source_id, name, description, image_url, url, raw_data, updated_at
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
                         ON CONFLICT (source_code, source_id) DO UPDATE SET
                             name = EXCLUDED.name,
                             description = EXCLUDED.description,
                             image_url = EXCLUDED.image_url,
                             url = EXCLUDED.url,
+                            raw_data = EXCLUDED.raw_data,
                             updated_at = CURRENT_TIMESTAMP
                         RETURNING (xmax = 0) as inserted
                     `, [
@@ -430,7 +436,8 @@ async function processScrapedEvents(events, options = {}) {
                         organizer.name,
                         organizer.description || null,
                         organizer.image_url || null,
-                        organizer.content_url || null
+                        organizer.content_url || null,
+                        organizer // Save entire organizer object as raw_data
                     ]);
 
                     if (organizerRes.rows[0].inserted) {

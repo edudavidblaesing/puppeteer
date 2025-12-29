@@ -38,7 +38,7 @@ export default function LoginPage() {
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-100">
-        <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
+        <Loader2 className="w-8 h-8 animate-spin text-primary-600" />
       </div>
     );
   }
@@ -49,13 +49,13 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-100 via-purple-50 to-pink-100">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-100 via-purple-50 to-pink-100">
       <div className="w-full max-w-md">
         <div className="bg-white rounded-2xl shadow-xl p-8">
           {/* Logo/Header */}
           <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-indigo-100 rounded-full mb-4">
-              <Lock className="w-8 h-8 text-indigo-600" />
+            <div className="inline-flex items-center justify-center w-16 h-16 bg-primary-100 rounded-full mb-4">
+              <Lock className="w-8 h-8 text-primary-600" />
             </div>
             <h1 className="text-2xl font-bold text-gray-900">Events Admin</h1>
             <p className="text-gray-500 mt-1">Sign in to continue</p>
@@ -82,7 +82,7 @@ export default function LoginPage() {
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
+                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors"
                   placeholder="Enter username"
                   required
                   autoComplete="username"
@@ -102,7 +102,7 @@ export default function LoginPage() {
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
+                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors"
                   placeholder="Enter password"
                   required
                   autoComplete="current-password"
@@ -114,7 +114,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={isSubmitting}
-              className="w-full py-2.5 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 focus:ring-4 focus:ring-indigo-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              className="w-full py-2.5 bg-primary-600 text-white font-medium rounded-lg hover:bg-primary-700 focus:ring-4 focus:ring-primary-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               {isSubmitting ? (
                 <>

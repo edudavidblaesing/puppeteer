@@ -74,6 +74,7 @@ async function scrapeResidentAdvisor(city, options = {}) {
             artists_json: e.artists?.map(a => ({
                 source_artist_id: a.id,
                 name: a.name,
+                image_url: a.image || null,
                 content_url: `https://ra.co/dj/${a.name.toLowerCase().replace(/\s/g, '')}`
             })) || [],
             organizers_json: e.promoters?.map(p => ({

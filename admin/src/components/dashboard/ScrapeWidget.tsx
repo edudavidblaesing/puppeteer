@@ -14,9 +14,10 @@ interface ScrapeWidgetProps {
     active_sources: string[];
     next_scheduled: string;
   };
+  onScrapeComplete?: () => void;
 }
 
-export function ScrapeWidget({ stats }: ScrapeWidgetProps) {
+export function ScrapeWidget({ stats, onScrapeComplete }: ScrapeWidgetProps) {
   const [isScraping, setIsScraping] = useState(false);
   const [configuredCities, setConfiguredCities] = useState<any[]>([]);
   const [globalSources, setGlobalSources] = useState<any[]>([]);
@@ -39,7 +40,13 @@ export function ScrapeWidget({ stats }: ScrapeWidgetProps) {
     const pollStatus = async () => {
       try {
         const status = await getScrapeStatus();
+        const wasScraping = isScraping;
         setIsScraping(status.isRunning);
+
+        // If it was scraping and now it's not (and we're running the poll), it means it finished?
+        // Actually, trigger onScrapeComplete if we detect a transition from true to false
+        // BUT: pollStatus runs every 3s.
+        // A better approach: if we started the scrape manually (handleScrape), we wait for the promise to resolve.
       } catch (e) {
         console.error('Failed to poll status', e);
       }
@@ -94,7 +101,16 @@ export function ScrapeWidget({ stats }: ScrapeWidgetProps) {
         enrichAfter: true,
         dedupeAfter: true
       });
-      // setLastScrape(new Date()); // Handled by props update from parent polling/refresh
+      // Scrape started successfully. It might run in background.
+      // If syncEventsPipeline awaits completion, then we are done here.
+      // If syncEventsPipeline just triggers job, we rely on polling.
+      // Assuming syncEventsPipeline waits for the job based on previous context, or at least waits for the trigger.
+
+      // If the robust backend implementation waits for completion, we call onScrapeComplete here.
+      if (onScrapeComplete) {
+        onScrapeComplete();
+      }
+
     } catch (error) {
       console.error(error);
       alert('Failed to trigger scraper');

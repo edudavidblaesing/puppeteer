@@ -48,14 +48,14 @@ export function RelatedEventsList({
                                     {onEdit ? (
                                         <button
                                             onClick={(e) => { e.preventDefault(); onEdit(event); }}
-                                            className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate hover:text-indigo-600 dark:hover:text-indigo-400 block text-left"
+                                            className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate hover:text-primary-600 dark:hover:text-primary-400 block text-left"
                                         >
                                             {event.title}
                                         </button>
                                     ) : (
                                         <Link
                                             href={`/events/${event.id}`}
-                                            className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate hover:text-indigo-600 dark:hover:text-indigo-400 block"
+                                            className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate hover:text-primary-600 dark:hover:text-primary-400 block"
                                         >
                                             {event.title}
                                         </Link>
@@ -82,7 +82,7 @@ export function RelatedEventsList({
                             {onEdit ? (
                                 <button
                                     onClick={(e) => { e.preventDefault(); onEdit(event); }}
-                                    className="opacity-0 group-hover:opacity-100 p-2 text-gray-400 hover:text-indigo-600 transition-all"
+                                    className="opacity-0 group-hover:opacity-100 p-2 text-gray-400 hover:text-primary-600 transition-all"
                                     title="Edit Event"
                                 >
                                     <Edit2 className="w-4 h-4" />
@@ -90,7 +90,7 @@ export function RelatedEventsList({
                             ) : (
                                 <Link
                                     href={`/events/${event.id}`}
-                                    className="opacity-0 group-hover:opacity-100 p-2 text-gray-400 hover:text-indigo-600 transition-all"
+                                    className="opacity-0 group-hover:opacity-100 p-2 text-gray-400 hover:text-primary-600 transition-all"
                                     title="View Event"
                                 >
                                     <ExternalLink className="w-4 h-4" />

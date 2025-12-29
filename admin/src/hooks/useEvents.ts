@@ -1,22 +1,19 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
-import { Event, EventType, EventStatus } from '@/types';
+import { useState, useEffect, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
+import { Event, EventStatus } from '@/types';
 import { fetchEvents, createEvent, updateEvent, deleteEvent, setPublishStatus } from '@/lib/api';
 
 export function useEvents() {
-  const [events, setEvents] = useState<Event[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
   // Pagination State
   const [page, setPage] = useState(1);
   const [limit] = useState(50);
-  const [totalItems, setTotalItems] = useState(0);
 
-  // Filters
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [cityFilter, setCityFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected' | EventStatus>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'drafts' | 'pending' | 'approved' | 'rejected' | EventStatus>('all');
   const [updatesFilter, setUpdatesFilter] = useState<'all' | 'new' | 'updated'>('all');
   const [timeFilter, setTimeFilter] = useState<'upcoming' | 'past' | 'all'>('upcoming');
   const [sourceFilter, setSourceFilter] = useState('');
@@ -28,7 +25,7 @@ export function useEvents() {
   useEffect(() => {
     const handler = setTimeout(() => {
       setDebouncedSearch(searchQuery);
-      setPage(1); // Reset to page 1 on search change
+      setPage(1);
     }, 500);
     return () => clearTimeout(handler);
   }, [searchQuery]);
@@ -38,13 +35,24 @@ export function useEvents() {
     setPage(1);
   }, [cityFilter, statusFilter, updatesFilter, timeFilter, sourceFilter]);
 
-  const loadEvents = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const OneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  // Query Key Construction
+  const queryKey = ['events', {
+    page, limit, search: debouncedSearch, city: cityFilter, status: statusFilter,
+    updates: updatesFilter, time: timeFilter, source: sourceFilter
+  }];
 
-      const response = await fetchEvents({
+  // FETCH Events using React Query
+  const {
+    data,
+    isLoading,
+    isError,
+    error,
+    refetch
+  } = useQuery({
+    queryKey,
+    queryFn: async () => {
+      const OneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      return fetchEvents({
         limit,
         offset: (page - 1) * limit,
         search: debouncedSearch,
@@ -55,66 +63,57 @@ export function useEvents() {
         createdAfter: updatesFilter === 'new' ? OneDayAgo : undefined,
         updatedAfter: updatesFilter === 'updated' ? OneDayAgo : undefined
       });
+    },
+    placeholderData: keepPreviousData, // Smooth pagination
+  });
 
-      setEvents(response.data || []);
-      setTotalItems(response.total || 0);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load events');
-    } finally {
-      setIsLoading(false);
+  const events = data?.data || [];
+  const totalItems = data?.total || 0;
+
+  // Mutations
+  const createMutation = useMutation({
+    mutationFn: createEvent,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['events'] });
     }
-  }, [page, limit, debouncedSearch, cityFilter, statusFilter, updatesFilter, timeFilter, sourceFilter]);
+  });
 
-  // Auto-load on dependency changes
-  useEffect(() => {
-    loadEvents();
-  }, [loadEvents]);
-
-  const addEvent = useCallback(async (data: Partial<Event>) => {
-    try {
-      const newEvent = await createEvent(data);
-      loadEvents(); // Reload to respect sort order/pagination
-      return newEvent;
-    } catch (err: any) {
-      throw new Error(err.message || 'Failed to create event');
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<Event> }) => updateEvent(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['events'] });
     }
-  }, [loadEvents]);
+  });
 
-  const editEvent = useCallback(async (id: string, data: Partial<Event>) => {
-    try {
-      const updatedEvent = await updateEvent(id, data);
-      // Optimistic update
-      setEvents(prev => prev.map(e => e.id === id ? { ...e, ...updatedEvent } : e));
-      return updatedEvent;
-    } catch (err: any) {
-      throw new Error(err.message || 'Failed to update event');
+  const deleteMutation = useMutation({
+    mutationFn: deleteEvent,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['events'] });
     }
-  }, []);
+  });
 
-  const removeEvent = useCallback(async (id: string) => {
-    try {
-      await deleteEvent(id);
-      loadEvents(); // Reload to refresh list
-    } catch (err: any) {
-      throw new Error(err.message || 'Failed to delete event');
+  const statusMutation = useMutation({
+    mutationFn: ({ ids, status }: { ids: string[], status: any }) => setPublishStatus(ids, status),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['events'] });
     }
-  }, [loadEvents]);
+  });
 
-  const updateStatus = useCallback(async (ids: string[], status: 'pending' | 'approved' | 'rejected' | EventStatus) => {
-    try {
-      await setPublishStatus(ids, status);
-      // Optimistic update
-      setEvents(prev => prev.map(e => ids.includes(e.id) ? { ...e, status: status as EventStatus, publish_status: status === 'PUBLISHED' ? 'approved' : status === 'REJECTED' ? 'rejected' : 'pending' } : e));
-    } catch (err: any) {
-      throw new Error(err.message || 'Failed to update status');
-    }
-  }, []);
+  // Action Wrappers (Maintain Interface)
+  const addEvent = async (data: Partial<Event>) => await createMutation.mutateAsync(data);
+  const editEvent = async (id: string, data: Partial<Event>) => await updateMutation.mutateAsync({ id, data });
+  const removeEvent = async (id: string) => await deleteMutation.mutateAsync(id);
+  const updateStatus = async (ids: string[], status: 'pending' | 'approved' | 'rejected' | EventStatus) =>
+    await statusMutation.mutateAsync({ ids, status });
+
+  // Load Events wrapper (refetch)
+  const loadEvents = async () => { await refetch(); };
 
   return {
     events,
-    filteredEvents: events, // Backwards compatibility: "filtered" is just current page events now
+    filteredEvents: events,
     isLoading,
-    error,
+    error: isError ? (error as Error).message : null,
     loadEvents,
     addEvent,
     editEvent,
@@ -132,7 +131,6 @@ export function useEvents() {
     setTimeFilter,
     sourceFilter,
     setSourceFilter,
-    // Legacy support mapping
     showPastEvents: timeFilter === 'past' || timeFilter === 'all',
     setShowPastEvents: (show: boolean) => setTimeFilter(show ? 'all' : 'upcoming'),
     page,

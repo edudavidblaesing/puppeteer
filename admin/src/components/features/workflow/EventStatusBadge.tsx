@@ -13,7 +13,7 @@ const statusConfig: Record<EventStatus, { label: string; color: string; bg: stri
     MANUAL_DRAFT: { label: 'Draft', color: 'text-gray-700 dark:text-gray-300', bg: 'bg-gray-100 dark:bg-gray-800' },
     SCRAPED_DRAFT: { label: 'Scraped', color: 'text-blue-700 dark:text-blue-300', bg: 'bg-blue-100 dark:bg-blue-900/30' },
     APPROVED_PENDING_DETAILS: { label: 'Needs Details', color: 'text-orange-700 dark:text-orange-300', bg: 'bg-orange-100 dark:bg-orange-900/30' },
-    READY_TO_PUBLISH: { label: 'Ready', color: 'text-indigo-700 dark:text-indigo-300', bg: 'bg-indigo-100 dark:bg-indigo-900/30' },
+    READY_TO_PUBLISH: { label: 'Ready', color: 'text-primary-700 dark:text-primary-300', bg: 'bg-primary-100 dark:bg-primary-900/30' },
     PUBLISHED: { label: 'Published', color: 'text-green-700 dark:text-green-300', bg: 'bg-green-100 dark:bg-green-900/30' },
     REJECTED: { label: 'Rejected', color: 'text-red-700 dark:text-red-300', bg: 'bg-red-100 dark:bg-red-900/30' },
     ARCHIVED: { label: 'Archived', color: 'text-gray-500 dark:text-gray-400', bg: 'bg-gray-100 dark:bg-gray-800' },

@@ -41,7 +41,7 @@ export function RelatedVenuesList({
                                 <div className="mb-1">
                                     <Link
                                         href={`/venues?search=${encodeURIComponent(venue.name)}`}
-                                        className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate hover:text-indigo-600 dark:hover:text-indigo-400 block"
+                                        className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate hover:text-primary-600 dark:hover:text-primary-400 block"
                                     >
                                         {venue.name}
                                     </Link>
@@ -61,7 +61,7 @@ export function RelatedVenuesList({
 
                             <Link
                                 href={`/venues?search=${encodeURIComponent(venue.name)}`}
-                                className="opacity-0 group-hover:opacity-100 p-2 text-gray-400 hover:text-indigo-600 transition-all"
+                                className="opacity-0 group-hover:opacity-100 p-2 text-gray-400 hover:text-primary-600 transition-all"
                                 title="View Venue"
                             >
                                 <ExternalLink className="w-4 h-4" />

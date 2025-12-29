@@ -168,8 +168,8 @@ export function Navigation() {
             "flex items-center gap-3 p-3 rounded-2xl bg-gray-50 dark:bg-gray-800/50 border border-gray-100 dark:border-gray-700",
             collapsed ? "justify-center" : ""
           )}>
-            <div className="w-10 h-10 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center shrink-0">
-              <User className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+            <div className="w-10 h-10 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center shrink-0">
+              <User className="w-5 h-5 text-primary-600 dark:text-primary-400" />
             </div>
             {!collapsed && (
               <div className="flex-1 min-w-0">

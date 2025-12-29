@@ -70,6 +70,18 @@ export interface SourceReference {
   email?: string;
   bio?: string;
   artists?: any;
+  // Socials / Profile
+  first_name?: string;
+  last_name?: string;
+  website_url?: string;
+  website?: string;
+  facebook_url?: string;
+  twitter_url?: string;
+  instagram_url?: string;
+  soundcloud_url?: string;
+  bandcamp_url?: string;
+  discogs_url?: string;
+  spotify_url?: string;
 }
 
 export interface Event {
@@ -133,6 +145,17 @@ export interface Artist {
   artist_type?: string | null;
   genres?: string[] | null;
   bio?: string | null;
+  // Socials / Profile
+  first_name?: string | null;
+  last_name?: string | null;
+  website?: string | null; // Database column is 'website'
+  facebook_url?: string | null;
+  twitter_url?: string | null;
+  instagram_url?: string | null;
+  soundcloud_url?: string | null;
+  bandcamp_url?: string | null;
+  discogs_url?: string | null;
+  spotify_url?: string | null;
   source_references?: SourceReference[];
   events?: Event[];
 }

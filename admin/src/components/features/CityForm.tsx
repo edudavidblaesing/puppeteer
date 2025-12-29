@@ -1,12 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { Save, Trash2, X, MapPin, Globe, Database, AlertCircle, ChevronDown, Star } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Save, Trash2, X, MapPin, Globe, Database, Search, ChevronDown, Loader2, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { City, SourceConfig } from '@/types';
-import { fetchSources, fetchCity } from '@/lib/api';
+import { fetchSources, fetchCity, fetchCountries, searchExternal, fetchAdminCities } from '@/lib/api';
 import { SourceIcon } from '@/components/ui/SourceIcon';
-import { ResetSectionButton } from '@/components/ui/ResetSectionButton';
-import { getBestSourceForField } from '@/lib/smartMerge';
+import { AutoFillSearch } from '@/components/features/AutoFillSearch';
 
 interface CityFormProps {
   initialData?: City;
@@ -16,88 +15,6 @@ interface CityFormProps {
   isLoading?: boolean;
   isModal?: boolean;
 }
-
-// Preset cities configuration data
-const PRESET_CITIES = [
-  {
-    name: 'Berlin',
-    country: 'DE',
-    timezone: 'Europe/Berlin',
-    latitude: 52.5200,
-    longitude: 13.4050,
-    source_ids: {
-      ra: '34',
-      tm: 'Berlin',
-      di: 'berlin',
-      eb: 'berlin--germany'
-    }
-  },
-  {
-    name: 'London',
-    country: 'GB',
-    timezone: 'Europe/London',
-    latitude: 51.5074,
-    longitude: -0.1278,
-    source_ids: {
-      ra: '13',
-      tm: 'London',
-      di: 'london',
-      eb: 'london'
-    }
-  },
-  {
-    name: 'New York',
-    country: 'US',
-    timezone: 'America/New_York',
-    latitude: 40.7128,
-    longitude: -74.0060,
-    source_ids: {
-      ra: '8',
-      tm: 'New York',
-      di: 'new-york',
-      eb: 'new-york'
-    }
-  },
-  {
-    name: 'Amsterdam',
-    country: 'NL',
-    timezone: 'Europe/Amsterdam',
-    latitude: 52.3676,
-    longitude: 4.9041,
-    source_ids: {
-      ra: '29',
-      tm: 'Amsterdam',
-      di: 'amsterdam',
-      eb: 'amsterdam--netherlands'
-    }
-  },
-  {
-    name: 'Barcelona',
-    country: 'ES',
-    timezone: 'Europe/Madrid',
-    latitude: 41.3851,
-    longitude: 2.1734,
-    source_ids: {
-      ra: '24',
-      tm: 'Barcelona',
-      di: 'barcelona',
-      eb: 'barcelona--spain'
-    }
-  },
-  {
-    name: 'Paris',
-    country: 'FR',
-    timezone: 'Europe/Paris',
-    latitude: 48.8566,
-    longitude: 2.3522,
-    source_ids: {
-      ra: '12',
-      tm: 'Paris',
-      di: 'paris',
-      eb: 'paris--france'
-    }
-  }
-];
 
 export function CityForm({ initialData, onSubmit, onDelete, onCancel, isLoading = false, isModal = false }: CityFormProps) {
   const [formData, setFormData] = useState<Partial<City>>({
@@ -111,12 +28,18 @@ export function CityForm({ initialData, onSubmit, onDelete, onCancel, isLoading 
   });
 
   const [availableSources, setAvailableSources] = useState<any[]>([]);
+  const [countries, setCountries] = useState<{ name: string; code: string }[]>([]);
   const [isFetchingDetails, setIsFetchingDetails] = useState(false);
-  const [selectedPreset, setSelectedPreset] = useState<string>('');
+  const [submitted, setSubmitted] = useState(false);
+  const [duplicateError, setDuplicateError] = useState<string | null>(null);
 
-  // Load available sources
+  // Timezones
+  const timezones = Intl.supportedValuesOf('timeZone');
+
+  // Load available sources and countries
   useEffect(() => {
     fetchSources().then(data => setAvailableSources(data)).catch(console.error);
+    fetchCountries().then(setCountries).catch(console.error);
   }, []);
 
   // Load city details including configs if initialData is provided
@@ -130,11 +53,6 @@ export function CityForm({ initialData, onSubmit, onDelete, onCancel, isLoading 
             ...detail,
             source_configs: detail.source_configs || []
           });
-
-          // Check if matches a preset
-          const match = PRESET_CITIES.find(p => p.name === detail.name);
-          if (match) setSelectedPreset(match.name);
-
         } catch (e) {
           console.error("Failed to fetch city details", e);
         } finally {
@@ -156,52 +74,171 @@ export function CityForm({ initialData, onSubmit, onDelete, onCancel, isLoading 
     loadDetails();
   }, [initialData]);
 
-  const handlePresetChange = (presetName: string) => {
-    setSelectedPreset(presetName);
-    const preset = PRESET_CITIES.find(c => c.name === presetName);
+  const selectCityResult = async (result: any) => {
+    console.log('[CityForm] Selected city result:', result);
+    try {
+      if (!result) return;
 
-    if (preset) {
-      // Update form data with preset values
-      const newConfigs = [...(formData.source_configs || [])];
+      const lat = parseFloat(result.lat);
+      const lon = parseFloat(result.lon);
 
-      // Update or add configs for known sources
-      availableSources.forEach(source => {
-        // @ts-ignore
-        const presetId = preset.source_ids[source.code];
+      // 1. Map Country
+      let countryCode = result.country || '';
 
-        if (presetId) {
-          const idx = newConfigs.findIndex(c => c.source_id === source.id);
-          if (idx >= 0) {
-            newConfigs[idx] = {
-              ...newConfigs[idx],
-              external_id: presetId,
-              is_active: true
-            };
-          } else {
-            newConfigs.push({
-              source_id: source.id,
-              external_id: presetId,
-              is_active: true,
-              schedule: '0 0 * * *' // Default schedule
-            } as SourceConfig);
+      // Helper to resolve country code
+      const resolveCountryCode = (input: string) => {
+        if (!input) return '';
+        const upper = input.toUpperCase();
+        if (countries.some(c => c.code === upper)) return upper;
+        const found = countries.find(c => c.name.toLowerCase() === input.toLowerCase());
+        return found ? found.code : '';
+      };
+
+      // Normalize country code
+      if (countryCode) {
+        countryCode = resolveCountryCode(countryCode);
+      }
+      if (!countryCode && result.raw?.address?.country) {
+        countryCode = resolveCountryCode(result.raw.address.country);
+      }
+      if (!countryCode && result.raw?.address?.country_code) {
+        countryCode = resolveCountryCode(result.raw.address.country_code);
+      }
+
+      // 2. Auto-fill Scrapers
+      const cityName = result.name || result.city || '';
+
+      const slugify = (text: string) => {
+        return text.toLowerCase()
+          .replace(/ä/g, 'ae')
+          .replace(/ö/g, 'oe')
+          .replace(/ü/g, 'ue')
+          .replace(/ß/g, 'ss')
+          .replace(/\s+/g, '-')
+          .replace(/[^a-z0-9-]/g, '');
+      };
+      const citySlug = slugify(cityName);
+      const tryIds = [cityName.toLowerCase(), citySlug];
+
+      // Fetch External IDs (Enrichment Step)
+      let externalDataUpdates: Record<string, string> = {};
+      try {
+        console.log(`[CityForm] Enriching data for ${cityName} (${countryCode})...`);
+        const enrichmentResults = await searchExternal('city', cityName);
+
+        enrichmentResults.forEach((item: any) => {
+          const itemCountryCode = resolveCountryCode(item.country);
+
+          // RA Match
+          if (item.source === 'ra') {
+            // Logic: 
+            // 1. Strict country match
+            // 2. OR name match if result country is ambiguous
+            // 3. OR strict name match regardless (since query was by name)
+            const nameMatch = item.name.toLowerCase() === cityName.toLowerCase();
+            if (itemCountryCode === countryCode || (countryCode && item.country === countryCode) || nameMatch) {
+              externalDataUpdates['ra'] = String(item.id);
+            }
           }
-        }
-      });
+          // TM Match
+          if (item.source === 'tm') {
+            if (itemCountryCode === countryCode || item.country === countryCode || item.name.toLowerCase() === cityName.toLowerCase()) {
+              externalDataUpdates['tm'] = String(item.id);
+            }
+          }
+        });
+        console.log('[CityForm] Found external IDs:', externalDataUpdates);
+      } catch (err) {
+        console.error('[CityForm] Enrichment failed', err);
+      }
+
+      const newSourceConfigs = availableSources
+        .filter(s => {
+          if (s.code === 'manual' || s.code === 'original') return false;
+          if (s.scopes) return s.scopes.some((scope: string) => ['event', 'venue'].includes(scope));
+          return s.entity_type === 'event' || !s.entity_type;
+        })
+        .map(source => {
+          let externalId = citySlug;
+          // Use enriched ID if available
+          if (externalDataUpdates[source.code.toLowerCase()]) {
+            externalId = externalDataUpdates[source.code.toLowerCase()];
+          }
+          // Fallback: If source matches search result source
+          else if (source.code.toLowerCase() === result.source?.toLowerCase()) {
+            externalId = result.id ? String(result.id) : citySlug;
+          }
+
+          return {
+            source_id: source.id,
+            external_id: externalId,
+            is_active: true
+          };
+        });
 
       setFormData(prev => ({
         ...prev,
-        name: preset.name,
-        country: preset.country,
-        timezone: preset.timezone,
-        latitude: preset.latitude,
-        longitude: preset.longitude,
-        source_configs: newConfigs
+        name: cityName,
+        country: countryCode,
+        latitude: isNaN(lat) ? 0 : lat,
+        longitude: isNaN(lon) ? 0 : lon,
+        source_configs: newSourceConfigs,
+        timezone: ''
       }));
+
+      // 3. Fetch Timezone (Non-blocking UI)
+      if (!isNaN(lat) && !isNaN(lon)) {
+        try {
+          const tzRes = await fetch(`https://timeapi.io/api/TimeZone/coordinate?latitude=${lat}&longitude=${lon}`);
+          if (tzRes.ok) {
+            const tzData = await tzRes.json();
+            if (tzData.timeZone) {
+              setFormData(prev => ({ ...prev, timezone: tzData.timeZone }));
+            }
+          }
+        } catch (e) {
+          console.error("Failed to fetch timezone", e);
+        }
+      }
+
+    } catch (e) {
+      console.error('[CityForm] Autofill error:', e);
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSubmitted(true);
+    setDuplicateError(null);
+
+    // Validation
+    const requiredFields = ['name', 'country', 'timezone', 'latitude', 'longitude'];
+    const missingFields = requiredFields.filter(field => !formData[field as keyof City]);
+
+    if (missingFields.length > 0) {
+      // Prevent submission if missing, handled by UI state but also logic
+      return;
+    }
+
+    // Duplicate Check
+    try {
+      const existing = await fetchAdminCities({ search: formData.name });
+      // Check exact name and country match
+      const isDuplicate = existing.data.some((c: City) =>
+        c.name.toLowerCase() === formData.name?.toLowerCase() &&
+        c.country === formData.country &&
+        c.id !== initialData?.id
+      );
+
+      if (isDuplicate) {
+        setDuplicateError('A city with this name and country already exists.');
+        return;
+      }
+    } catch (err) {
+      console.error('Duplicate check failed', err);
+      // We might want to warn but not block if check fails? For now, proceed.
+    }
+
     await onSubmit(formData);
   };
 
@@ -233,50 +270,16 @@ export function CityForm({ initialData, onSubmit, onDelete, onCancel, isLoading 
     return formData.source_configs?.find(c => c.source_id === sourceId);
   };
 
-  const uniqueSources = Array.from(new Set((initialData?.source_references || []).map(s => s.source_code)));
-
-  const resetFields = (sourceCode: string, fields: (keyof City)[]) => {
-    const newFormData = { ...formData };
-    let hasChanges = false;
-    const sources = initialData?.source_references || [];
-
-    fields.forEach(field => {
-      let val: any = undefined;
-
-      if (sourceCode === 'best') {
-        const bestSource = getBestSourceForField(sources, field as string);
-        if (bestSource) {
-          val = (bestSource as any)[field];
-        }
-      } else {
-        const source = sources.find(s => s.source_code === sourceCode);
-        if (source && (source as any)[field] !== undefined) {
-          val = (source as any)[field];
-        }
-      }
-
-      if (val !== undefined && val !== null) {
-        // @ts-ignore
-        newFormData[field] = val;
-        hasChanges = true;
-      }
-    });
-
-    if (hasChanges) setFormData(newFormData);
-  };
-
-  const handleResetToSource = (sourceCode: string) => {
-    resetFields(sourceCode, ['name', 'country', 'timezone', 'latitude', 'longitude']);
-  };
-
   return (
     <div className="h-full flex flex-col bg-white dark:bg-gray-900">
       {/* Header */}
       {!isModal && (
         <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between bg-gray-50 dark:bg-gray-900/50">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-            {initialData ? 'Edit City' : 'New City'}
-          </h2>
+          <div className="flex items-center">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+              {initialData ? 'Edit City' : 'New City'}
+            </h2>
+          </div>
           <div className="flex items-center gap-2">
             {initialData && onDelete && (
               <Button
@@ -306,130 +309,129 @@ export function CityForm({ initialData, onSubmit, onDelete, onCancel, isLoading 
         <div className="flex-1 overflow-y-auto p-6">
           <form id="city-form" onSubmit={handleSubmit} className="space-y-6 max-w-2xl mx-auto">
 
-            {uniqueSources.length > 0 && (
-              <div className="flex items-center gap-2 pb-4 border-b border-gray-100 dark:border-gray-800">
-                <span className="text-xs text-gray-500">Reset whole city from:</span>
-                <button
-                  type="button"
-                  onClick={() => handleResetToSource('best')}
-                  className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-700 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 font-bold uppercase transition-colors"
-                  title="Reset to best matched data"
-                >
-                  <Star className="w-3 h-3 fill-current" /> Best
-                </button>
-                {uniqueSources.map(source => (
-                  <button
-                    key={source}
-                    type="button"
-                    onClick={() => handleResetToSource(source)}
-                    className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-gray-600 dark:text-gray-300 uppercase"
-                    title={`Reset to ${source}`}
-                  >
-                    <SourceIcon sourceCode={source} className="w-3 h-3" />
-                  </button>
-                ))}
+            {duplicateError && (
+              <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-3 rounded-md border border-red-200 dark:border-red-800 flex items-center gap-2 text-sm">
+                <AlertTriangle className="w-4 h-4" />
+                {duplicateError}
               </div>
             )}
 
             <div className="space-y-4">
-              {/* Preset Selection & Basic Info */}
+              {/* Location Details Header */}
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 flex items-center gap-2">
                   <Globe className="w-4 h-4" /> Location Details
                 </h3>
-                <ResetSectionButton
-                  sources={uniqueSources}
-                  onReset={(source) => resetFields(source, ['name', 'country', 'timezone'])}
-                />
               </div>
 
-              {/* Preset Dropdown */}
-              {!initialData && (
+              {/* Search Auto-fill */}
+              <div className="relative">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Auto-fill from Search
+                </label>
                 <div className="relative">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Select City Preset
-                  </label>
-                  <div className="relative">
-                    <select
-                      value={selectedPreset}
-                      onChange={(e) => handlePresetChange(e.target.value)}
-                      className="w-full appearance-none rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white pr-10"
-                    >
-                      <option value="">-- Custom / Manual --</option>
-                      {PRESET_CITIES.map(city => (
-                        <option key={city.name} value={city.name}>{city.name} ({city.country})</option>
-                      ))}
-                    </select>
-                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-                  </div>
-                  <p className="text-xs text-gray-500 mt-1">Select a preset to auto-fill configurations</p>
+                  <AutoFillSearch
+                    type="city"
+                    onSelect={(result) => selectCityResult(result)}
+                    placeholder="Search city (OpenStreetMap) to auto-fill..."
+                    filter={(r) => r.source === 'osm'}
+                  />
                 </div>
-              )}
+              </div>
 
               <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Name <span className="text-red-500">*</span>
+                </label>
                 <Input
-                  label="Name"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  required
                   placeholder="City Name"
-                  readOnly={!!selectedPreset} // Lock if preset
+                  className={submitted && !formData.name ? 'border-red-300 focus:ring-red-500' : ''}
                 />
+                {submitted && !formData.name && (
+                  <p className="text-xs text-red-500 mt-1">Name is required.</p>
+                )}
               </div>
 
               <div>
-                <Input
-                  label="Country"
-                  value={formData.country || ''}
-                  onChange={(e) => setFormData({ ...formData, country: e.target.value })}
-                  placeholder="e.g. DE, US"
-                  readOnly={!!selectedPreset}
-                />
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Country <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <select
+                    value={formData.country || ''}
+                    onChange={(e) => setFormData({ ...formData, country: e.target.value })}
+                    className={`w-full appearance-none rounded-md border ${submitted && !formData.country ? 'border-red-300 dark:border-red-700 focus:ring-red-500' : 'border-gray-300 dark:border-gray-600 focus:ring-primary-500'
+                      } bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 dark:text-white pr-10`}
+                  >
+                    <option value="">Select Country...</option>
+                    {countries.map(c => (
+                      <option key={c.code} value={c.code}>{c.name} ({c.code})</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                </div>
+                {submitted && !formData.country && (
+                  <p className="text-xs text-red-500 mt-1">Country is required.</p>
+                )}
               </div>
 
               <div>
-                <Input
-                  label="Timezone"
-                  value={formData.timezone || ''}
-                  onChange={(e) => setFormData({ ...formData, timezone: e.target.value })}
-                  placeholder="e.g. Europe/Berlin"
-                  readOnly={!!selectedPreset}
-                />
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Timezone <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <select
+                    value={formData.timezone || ''}
+                    onChange={(e) => setFormData({ ...formData, timezone: e.target.value })}
+                    className={`w-full appearance-none rounded-md border ${submitted && !formData.timezone ? 'border-red-300 dark:border-red-700 focus:ring-red-500' : 'border-gray-300 dark:border-gray-600 focus:ring-primary-500'
+                      } bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 dark:text-white pr-10`}
+                  >
+                    <option value="">Select Timezone...</option>
+                    {timezones.map(tz => (
+                      <option key={tz} value={tz}>{tz}</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                </div>
+                {submitted && !formData.timezone && (
+                  <p className="text-xs text-red-500 mt-1">Timezone is required.</p>
+                )}
               </div>
             </div>
 
             <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-gray-800">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 flex items-center gap-2">
-                  <MapPin className="w-4 h-4" /> Coordinates
+                  <MapPin className="w-4 h-4" /> Coordinates <span className="text-red-500">*</span>
                 </h3>
-                <ResetSectionButton
-                  sources={uniqueSources}
-                  onReset={(source) => resetFields(source, ['latitude', 'longitude'])}
-                />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Latitude</label>
                   <Input
-                    label="Latitude"
                     type="number"
                     step="any"
                     value={formData.latitude ?? ''}
                     onChange={(e) => setFormData({ ...formData, latitude: parseFloat(e.target.value) })}
-                    readOnly={!!selectedPreset}
+                    className={submitted && !formData.latitude ? 'border-red-300' : ''}
                   />
                 </div>
                 <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Longitude</label>
                   <Input
-                    label="Longitude"
                     type="number"
                     step="any"
                     value={formData.longitude ?? ''}
                     onChange={(e) => setFormData({ ...formData, longitude: parseFloat(e.target.value) })}
-                    readOnly={!!selectedPreset}
+                    className={submitted && !formData.longitude ? 'border-red-300' : ''}
                   />
                 </div>
               </div>
+              {submitted && (!formData.latitude || !formData.longitude) && (
+                <p className="text-xs text-red-500">Coordinates are required. Use Auto-fill or enter manually.</p>
+              )}
             </div>
 
             {/* Source Configurations */}
@@ -455,12 +457,8 @@ export function CityForm({ initialData, onSubmit, onDelete, onCancel, isLoading 
                     const isActive = config?.is_active ?? false;
                     const extId = config?.external_id ?? '';
 
-                    // Check if this specific field is controlled by preset
-                    // @ts-ignore
-                    const isPresetValue = selectedPreset && PRESET_CITIES.find(p => p.name === selectedPreset)?.source_ids[source.code] === extId;
-
                     return (
-                      <div key={source.id} className={`p-4 rounded-lg border transition-colors ${isActive ? 'bg-indigo-50 border-indigo-200 dark:bg-indigo-900/20 dark:border-indigo-800' : 'bg-gray-50 border-gray-200 dark:bg-gray-800/50 dark:border-gray-700'}`}>
+                      <div key={source.id} className={`p-4 rounded-lg border transition-colors ${isActive ? 'bg-primary-50 border-primary-200 dark:bg-primary-900/20 dark:border-primary-800' : 'bg-gray-50 border-gray-200 dark:bg-gray-800/50 dark:border-gray-700'}`}>
                         <div className="flex items-start justify-between mb-2">
                           <div className="flex items-center gap-2">
                             <input
@@ -468,15 +466,13 @@ export function CityForm({ initialData, onSubmit, onDelete, onCancel, isLoading 
                               id={`source-${source.id}`}
                               checked={isActive}
                               onChange={(e) => updateSourceConfig(source.id, 'is_active', e.target.checked)}
-                              className="rounded text-indigo-600 focus:ring-indigo-500 border-gray-300"
-                            // Allow toggling even if preset is selected
+                              className="rounded text-primary-600 focus:ring-primary-500 border-gray-300"
                             />
                             <label htmlFor={`source-${source.id}`} className="font-medium text-sm text-gray-900 dark:text-white cursor-pointer select-none flex items-center gap-2">
                               <SourceIcon sourceCode={source.code} className="w-4 h-4" />
                               {source.name}
                             </label>
                           </div>
-                          {/* Code removed as icon is present */}
                         </div>
 
                         {isActive && (
@@ -489,8 +485,13 @@ export function CityForm({ initialData, onSubmit, onDelete, onCancel, isLoading 
                               onChange={(e) => updateSourceConfig(source.id, 'external_id', e.target.value)}
                               placeholder={`ID for ${source.name}`}
                               className="text-sm"
-                              readOnly={!!selectedPreset} // Lock ID if preset active
                             />
+                            {/* Proactive mapping helper could go here */}
+                            {formData.name && (
+                              <div className="mt-1 text-[10px] text-gray-400">
+                                Try: <span className="font-mono bg-gray-100 dark:bg-gray-800 px-1 rounded cursor-pointer hover:text-primary-500" onClick={() => updateSourceConfig(source.id, 'external_id', formData.name?.toLowerCase().replace(/\s+/g, '-'))}>{formData.name?.toLowerCase().replace(/\s+/g, '-')}</span>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -506,7 +507,7 @@ export function CityForm({ initialData, onSubmit, onDelete, onCancel, isLoading 
                   id="city_active"
                   checked={formData.is_active}
                   onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
-                  className="rounded text-indigo-600 dark:text-indigo-500 border-gray-300 dark:border-gray-600 focus:ring-indigo-500"
+                  className="rounded text-primary-600 dark:text-primary-500 border-gray-300 dark:border-gray-600 focus:ring-primary-500"
                 />
                 <label htmlFor="city_active" className="text-sm font-medium text-gray-700 dark:text-gray-300">
                   City Global Active Status
