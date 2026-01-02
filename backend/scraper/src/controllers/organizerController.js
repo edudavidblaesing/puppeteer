@@ -33,6 +33,24 @@ const getOrganizer = async (req, res) => {
     }
 };
 
+const getOrganizerUsage = async (req, res) => {
+    try {
+        const usage = await organizerService.getUsage(req.params.id);
+        res.json({ usage });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+const getOrganizerHistory = async (req, res) => {
+    try {
+        const history = await organizerService.getHistory(req.params.id);
+        res.json(history);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
 const createOrganizer = async (req, res) => {
     try {
         const organizer = await organizerService.create(req.body);
@@ -44,7 +62,7 @@ const createOrganizer = async (req, res) => {
 
 const updateOrganizer = async (req, res) => {
     try {
-        const organizer = await organizerService.update(req.params.id, req.body);
+        const organizer = await organizerService.update(req.params.id, req.body, req.user);
         if (!organizer) return res.status(404).json({ error: 'Organizer not found' });
         res.json({ success: true, organizer });
     } catch (error) {
@@ -54,12 +72,25 @@ const updateOrganizer = async (req, res) => {
 
 const deleteOrganizer = async (req, res) => {
     try {
-        const success = await organizerService.delete(req.params.id);
+        const success = await organizerService.delete(req.params.id, req.user);
         if (!success) return res.status(404).json({ error: 'Organizer not found' });
         res.json({ success: true, deleted: req.params.id });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
+};
+
+// ...
+
+module.exports = {
+    listOrganizers,
+    getOrganizer,
+    createOrganizer,
+    updateOrganizer,
+    deleteOrganizer,
+    matchOrganizers,
+    getOrganizerUsage,
+    getOrganizerHistory
 };
 
 const matchOrganizers = async (req, res) => {
@@ -78,5 +109,6 @@ module.exports = {
     createOrganizer,
     updateOrganizer,
     deleteOrganizer,
-    matchOrganizers
+    matchOrganizers,
+    getOrganizerUsage
 };

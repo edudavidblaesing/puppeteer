@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { format } from 'date-fns';
 import clsx from 'clsx';
-import { Calendar, MapPin, Building2, Music, Check, X, Keyboard } from 'lucide-react';
+import { Calendar, MapPin, Building2, Music, Check, X, Keyboard, GitPullRequest } from 'lucide-react';
 import { Event, EVENT_TYPES, getEventTiming } from '@/types';
 import { SourceIcon } from '@/components/ui/SourceIcon';
 import { useKeyboardNavigation } from '@/hooks/useKeyboardNavigation';
@@ -95,7 +95,7 @@ export function EventListItem({
       id={`event-item-${item.id}`}
       onClick={() => onEdit(item)}
       className={clsx(
-        'px-4 py-3 flex items-center gap-3 cursor-pointer transition-colors relative group',
+        'px-6 py-4 flex items-center gap-3 cursor-pointer transition-colors relative group',
         isFocused && 'ring-2 ring-primary-500 z-10 bg-primary-50 dark:bg-primary-900/20',
         isRejected && 'bg-gray-50 dark:bg-gray-900/50',
         isPending && 'pending-stripes',
@@ -198,9 +198,32 @@ export function EventListItem({
         )}
 
         <div className="flex items-center gap-1 mt-1 justify-end">
+          {item.has_pending_changes && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 font-medium flex items-center gap-1">
+              <GitPullRequest className="w-3 h-3" />
+              Updates
+            </span>
+          )}
           {item.status === 'PUBLISHED' && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 font-medium">
-              Published
+            <>
+              {isLive ? (
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 font-medium animate-pulse">
+                  Live
+                </span>
+              ) : isPast ? (
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 font-medium">
+                  Ended
+                </span>
+              ) : (
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 font-medium">
+                  Published
+                </span>
+              )}
+            </>
+          )}
+          {item.status === 'READY_TO_PUBLISH' && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 font-medium">
+              Ready
             </span>
           )}
           {item.status === 'CANCELED' && (
@@ -266,7 +289,10 @@ export function EventList({
     events,
     onApprove: onApprove ? (id, e) => onApprove(id, e) : undefined,
     onReject: onReject ? (id, e) => onReject(id, e) : undefined,
-    onEdit
+    onEdit: (id) => {
+      const event = events.find(e => e.id === id);
+      if (event) onEdit(event);
+    }
   });
 
   if (isLoading) {
@@ -288,7 +314,7 @@ export function EventList({
 
   return (
     <div className="bg-white dark:bg-gray-900 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-800">
-      <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/50 flex items-center justify-between">
+      <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/50 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <span className="text-sm text-gray-500 dark:text-gray-400">{events.length} events</span>
           <div className="flex items-center gap-2 text-[10px] md:text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded border border-gray-200 dark:border-gray-700">

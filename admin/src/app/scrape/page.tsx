@@ -48,10 +48,9 @@ export default function ScrapePage() {
 
   // Initial load
   useEffect(() => {
-    setStatusFilter('pending');
-    loadEvents();
+    // Only load stats, events are loaded by useQuery
     loadStats();
-  }, [loadEvents, loadStats, setStatusFilter]);
+  }, [loadStats]);
 
   const handleEdit = (event: Event) => {
     setSelectedEvent(event);

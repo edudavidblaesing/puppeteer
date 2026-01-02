@@ -114,6 +114,10 @@ export interface Event {
   organizers_list?: { id: string; name: string }[];
   ticket_url?: string | null;
   artists_list?: { id: string; name: string }[];
+
+  // Change Tracking
+  has_pending_changes?: boolean;
+  field_sources?: Record<string, string>;
 }
 
 export interface Venue {

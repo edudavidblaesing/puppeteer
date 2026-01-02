@@ -252,6 +252,7 @@ async function processScrapedEvents(events, options = {}) {
                     endDateTime = new Date(`${dateStr}T${timeStr}`);
 
                     if (!isNaN(endDateTime.getTime()) && endDateTime < now) {
+                        console.log(`[Scraper] Auto-rejecting past event: ${event.title} (${endDateTime.toISOString()})`);
                         status = EVENT_STATES.REJECTED;
                     }
                 }

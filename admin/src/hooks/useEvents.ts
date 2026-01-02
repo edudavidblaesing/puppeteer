@@ -1,39 +1,67 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { Event, EventStatus } from '@/types';
 import { fetchEvents, createEvent, updateEvent, deleteEvent, setPublishStatus } from '@/lib/api';
 
 export function useEvents() {
   const queryClient = useQueryClient();
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
 
-  // Pagination State
-  const [page, setPage] = useState(1);
-  const [limit] = useState(50);
+  // Helper to update URL params
+  const updateUrlParams = useCallback((updates: Record<string, string | null>) => {
+    const params = new URLSearchParams(searchParams.toString());
+    Object.entries(updates).forEach(([key, value]) => {
+      if (value === null || value === undefined || value === '') {
+        params.delete(key);
+      } else {
+        params.set(key, value);
+      }
+    });
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  }, [searchParams, router, pathname]);
 
-  // Filters
-  const [searchQuery, setSearchQuery] = useState('');
-  const [cityFilter, setCityFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'drafts' | 'pending' | 'approved' | 'rejected' | EventStatus>('all');
-  const [updatesFilter, setUpdatesFilter] = useState<'all' | 'new' | 'updated'>('all');
-  const [timeFilter, setTimeFilter] = useState<'upcoming' | 'past' | 'all'>('upcoming');
-  const [sourceFilter, setSourceFilter] = useState('');
+  // Read state from URL with defaults
+  const page = parseInt(searchParams.get('page') || '1');
+  const limit = parseInt(searchParams.get('limit') || '50');
+  const searchQuery = searchParams.get('search') || '';
+  const cityFilter = searchParams.get('city') || '';
+  const statusFilter = (searchParams.get('status') as EventStatus | 'all' | 'drafts' | 'needs_details') || 'all';
+  const updatesFilter = (searchParams.get('updates') as 'all' | 'new' | 'updated') || 'all';
+  const timeFilter = (searchParams.get('time') as 'upcoming' | 'past' | 'all') || 'upcoming';
+  const sourceFilter = searchParams.get('source') || '';
 
-  // Debounced Search state
+  // Local state for debounced search only (since it's an input)
+  const [localSearch, setLocalSearch] = useState(searchQuery);
   const [debouncedSearch, setDebouncedSearch] = useState(searchQuery);
 
-  // Debounce search query
+  // Sync available URL search to local search on mount/change
   useEffect(() => {
-    const handler = setTimeout(() => {
-      setDebouncedSearch(searchQuery);
-      setPage(1);
-    }, 500);
-    return () => clearTimeout(handler);
+    setLocalSearch(searchQuery);
+    setDebouncedSearch(searchQuery);
   }, [searchQuery]);
 
-  // Reset page when other filters change
+  // Debounce local search changes
   useEffect(() => {
-    setPage(1);
-  }, [cityFilter, statusFilter, updatesFilter, timeFilter, sourceFilter]);
+    const handler = setTimeout(() => {
+      if (localSearch !== debouncedSearch) {
+        setDebouncedSearch(localSearch);
+        updateUrlParams({ search: localSearch, page: '1' });
+      }
+    }, 500);
+    return () => clearTimeout(handler);
+  }, [localSearch, debouncedSearch, updateUrlParams]);
+
+  // Setters (wrappers around URL updates)
+  const setPage = (p: number) => updateUrlParams({ page: p.toString() });
+  const setCityFilter = (city: string) => updateUrlParams({ city, page: '1' });
+  const setStatusFilter = (status: string) => updateUrlParams({ status, page: '1' });
+  const setUpdatesFilter = (updates: string) => updateUrlParams({ updates, page: '1' });
+  const setTimeFilter = (time: string) => updateUrlParams({ time, page: '1' });
+  const setSourceFilter = (source: string) => updateUrlParams({ source, page: '1' });
+  const setSearchQuery = (q: string) => setLocalSearch(q);
 
   // Query Key Construction
   const queryKey = ['events', {
@@ -106,8 +134,8 @@ export function useEvents() {
   const updateStatus = async (ids: string[], status: 'pending' | 'approved' | 'rejected' | EventStatus) =>
     await statusMutation.mutateAsync({ ids, status });
 
-  // Load Events wrapper (refetch)
-  const loadEvents = async () => { await refetch(); };
+  // Load Events wrapper (refetch) - Memoized
+  const loadEvents = useCallback(async () => { await refetch(); }, [refetch]);
 
   return {
     events,
@@ -119,7 +147,7 @@ export function useEvents() {
     editEvent,
     removeEvent,
     updateStatus,
-    searchQuery,
+    searchQuery: localSearch,
     setSearchQuery,
     cityFilter,
     setCityFilter,

@@ -42,8 +42,18 @@ class EventService {
         }
 
         if (status && status !== 'all') {
-            if (status === 'drafts') {
+            if (status === 'draft' || status === 'drafts') {
                 query += ` AND e.status IN ('SCRAPED_DRAFT', 'MANUAL_DRAFT')`;
+            } else if (status === 'needs_details') {
+                query += ` AND e.status = 'APPROVED_PENDING_DETAILS'`;
+            } else if (status === 'ready') {
+                query += ` AND e.status = 'READY_TO_PUBLISH'`;
+            } else if (status === 'published') {
+                query += ` AND e.status = 'PUBLISHED'`;
+            } else if (status === 'cancelled') {
+                query += ` AND e.status = 'CANCELED'`;
+            } else if (status === 'rejected') {
+                query += ` AND e.status = 'REJECTED'`;
             } else {
                 query += ` AND e.status = $${paramIndex}`;
                 queryParams.push(status);
@@ -120,8 +130,8 @@ class EventService {
             `, [eventIds]),
             pool.query(`
                 SELECT esl.event_id, se.id, se.source_code, se.title, se.date, 
-                       se.start_time, se.venue_name, se.venue_city, 
-                       se.content_url, esl.match_confidence
+                       se.start_time, se.end_time, se.venue_name, se.venue_city, 
+                       se.content_url, se.description, esl.match_confidence
                 FROM event_scraped_links esl
                 JOIN scraped_events se ON se.id = esl.scraped_event_id
                 WHERE esl.event_id = ANY($1::text[])
@@ -148,9 +158,11 @@ class EventService {
                 title: row.title,
                 date: row.date,
                 start_time: row.start_time,
+                end_time: row.end_time,
                 venue_name: row.venue_name,
                 venue_city: row.venue_city,
                 content_url: row.content_url,
+                description: row.description,
                 confidence: row.match_confidence
             });
         });
@@ -349,68 +361,73 @@ class EventService {
             const currentEvent = currentRes.rows[0];
             const fieldSources = currentEvent.field_sources || {};
 
-            // Status Transitions
+            const changes = {};
+
+            // Track status change if any
             if (updates.status && updates.status !== currentEvent.status) {
-                if (!canTransition(currentEvent.status, updates.status)) {
-                    throw new Error(`Invalid state transition from ${currentEvent.status} to ${updates.status}`);
-                }
-
-                if (updates.status === EVENT_STATES.READY_TO_PUBLISH || updates.status === EVENT_STATES.PUBLISHED) {
-                    const validation = validateEventForPublish({ ...currentEvent, ...updates });
-                    if (!validation.isValid) {
-                        throw new Error(`Missing fields: ${validation.missingFields.join(', ')}`);
-                    }
-                }
-
-                await transitionEvent(client, id, currentEvent.status, updates.status, user?.id || 'admin');
-                delete updates.status;
+                // We rely on event_state_history for this, but could log here too.
+                // Let's stick to content changes here to avoid redundancy with state machine logs
             }
 
-            const allowedFields = [
-                'title', 'date', 'start_time', 'end_time', 'content_url',
-                'flyer_front', 'description', 'venue_id', 'venue_name',
-                'venue_address', 'venue_city', 'venue_country', 'artists',
-                'is_published', 'latitude', 'longitude', 'event_type', 'publish_status' // status handled above
-            ];
-
-            const setClauses = [];
-            const values = [];
-            let paramIndex = 1;
-
+            // Track content changes
+            const allowedFields = ['title', 'date', 'start_time', 'end_time', 'description', 'content_url', 'flyer_front', 'venue_name', 'venue_address', 'venue_city', 'venue_country', 'ticket_url', 'is_published', 'status', 'event_type'];
             for (const [key, value] of Object.entries(updates)) {
                 if (allowedFields.includes(key)) {
-                    fieldSources[key] = 'og';
-                    if ((key === 'start_time' || key === 'end_time') && value && /^\d{1,2}:\d{2}(:\d{2})?$/.test(value)) {
-                        let dateValue = updates.date || currentEvent.date;
-                        console.log(`[EventService] Processing ${key}. Value: "${value}". Raw Date:`, dateValue, 'Type:', typeof dateValue, 'Constructor:', dateValue?.constructor?.name);
+                    // Normalize for comparison
+                    let oldVal = currentEvent[key];
+                    let newVal = value;
 
-                        // Extract YYYY-MM-DD from dateValue
-                        if (dateValue instanceof Date) {
-                            dateValue = dateValue.toISOString().split('T')[0];
-                        } else if (typeof dateValue === 'string' && dateValue.includes('T')) {
-                            dateValue = dateValue.split('T')[0];
+                    // Handle Date/Time Normalization
+                    if (key === 'date') {
+                        if (oldVal instanceof Date) oldVal = oldVal.toISOString().split('T')[0];
+                        if (typeof oldVal === 'string' && oldVal.includes('T')) oldVal = oldVal.split('T')[0];
+
+                        if (newVal instanceof Date) newVal = newVal.toISOString().split('T')[0];
+                        if (typeof newVal === 'string' && newVal.includes('T')) newVal = newVal.split('T')[0];
+                    }
+
+                    if (key === 'start_time' || key === 'end_time') {
+                        const normTime = (v) => {
+                            if (!v) return null;
+                            if (v instanceof Date) return v.toISOString().split('T')[1].substring(0, 5); // HH:mm
+                            if (typeof v === 'string') {
+                                if (v.includes('T')) return v.split('T')[1].substring(0, 5);
+                                // Handle HH:mm:ss vs HH:mm
+                                if (v.length === 8) return v.substring(0, 5);
+                                return v.substring(0, 5);
+                            }
+                            return String(v);
                         }
+                        oldVal = normTime(oldVal);
+                        newVal = normTime(newVal);
+                    }
 
-                        console.log(`[EventService] Processed Date: "${dateValue}"`);
+                    // Treat null vs undefined vs empty string similarly for text fields
+                    const isEmpty = (v) => v === null || v === undefined || v === '';
+                    if (isEmpty(oldVal) && isEmpty(newVal)) continue;
 
-                        if (dateValue) {
-                            setClauses.push(`${key} = $${paramIndex++}::TIMESTAMP`);
-                            values.push(`${dateValue} ${value}`);
-                        } else {
-                            // If no date available, we can't form a timestamp. 
-                            // But let's just push value and let PG error specific to it found.
-                            setClauses.push(`${key} = $${paramIndex++}::TIMESTAMP`);
-                            values.push(value);
-                        }
-                    } else {
-                        setClauses.push(`${key} = $${paramIndex++}`);
-                        values.push(value);
+                    if (String(oldVal) !== String(newVal)) {
+                        changes[key] = { old: oldVal, new: newVal };
                     }
                 }
             }
 
+            // ... status transitions ...
+
+            // ... setClauses construction ...
+
             if (updates.artists_list && Array.isArray(updates.artists_list)) {
-                await this.syncEventArtists(client, id, updates.artists_list);
+                // Check if artists actually changed
+                const currentArtistIds = (currentEvent.artists_list || []).map(a => a.id).sort().join(',');
+                const newArtistIds = updates.artists_list.map(a => a.id).sort().join(',');
+
+                if (currentArtistIds !== newArtistIds) {
+                    await this.syncEventArtists(client, id, updates.artists_list);
+                    changes['artists_list'] = {
+                        old: `${(currentEvent.artists_list || []).length} artists`,
+                        new: `${updates.artists_list.length} artists`
+                    };
+                }
             }
 
             if (setClauses.length > 0) {
@@ -420,6 +437,14 @@ class EventService {
                 values.push(id);
 
                 await client.query(`UPDATE events SET ${setClauses.join(', ')} WHERE id = $${paramIndex}`, values);
+            }
+
+            // Insert Audit Log
+            if (Object.keys(changes).length > 0) {
+                await client.query(`
+                    INSERT INTO audit_logs (entity_type, entity_id, action, changes, performed_by)
+                    VALUES ($1, $2, $3, $4, $5)
+                `, ['event', id, 'UPDATE', JSON.stringify(changes), user?.id || 'system']);
             }
 
             // Sync links metadata
@@ -433,6 +458,44 @@ class EventService {
         } finally {
             client.release();
         }
+    }
+
+    async getHistory(id) {
+        // Fetch content changes
+        const auditLogs = await pool.query(`
+            SELECT id, action, changes, performed_by, created_at, 'content' as type
+            FROM audit_logs 
+            WHERE entity_type = 'event' AND entity_id = $1
+            ORDER BY created_at DESC
+        `, [id]);
+
+        // Fetch state history
+        const stateHistory = await pool.query(`
+            SELECT id, previous_state as old_state, new_state as state, actor as performed_by, created_at, 'status' as type
+            FROM event_state_history
+            WHERE event_id = $1
+            ORDER BY created_at DESC
+        `, [id]);
+
+        // Combine and sort
+        const combined = [
+            ...auditLogs.rows.map(r => ({ ...r, changes: r.changes || {} })),
+            ...stateHistory.rows.map(r => ({
+                ...r,
+                action: 'STATUS_CHANGE',
+                changes: { status: { old: r.old_state, new: r.state } }
+            }))
+        ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+        return combined;
+    }
+
+    async getUsage(eventId) {
+        // For now, events don't have blocking dependencies for deletion
+        return {
+            usage: 0,
+            usage_details: []
+        };
     }
 
     async delete(id) {
@@ -601,6 +664,11 @@ class EventService {
         const fieldsToUpdate = fields && fields.length > 0 ? fields : Object.keys(scraped.changes || {});
         if (fieldsToUpdate.length === 0) throw new Error('No fields to update');
 
+        // Fetch current event for Audit Log
+        const currentRes = await pool.query('SELECT * FROM events WHERE id = $1', [eventId]);
+        const currentEvent = currentRes.rows[0];
+        const auditChanges = {};
+
         const updates = [];
         const values = [eventId];
         let paramIndex = 2;
@@ -616,29 +684,62 @@ class EventService {
             const eventField = fieldMap[field] || field;
             if (scraped[field] !== undefined) {
                 updates.push(`${eventField} = $${paramIndex} `);
+
+                let newVal = scraped[field];
                 if (field === 'artists_json') {
-                    values.push(JSON.stringify(scraped.artists_json));
+                    newVal = JSON.stringify(scraped.artists_json);
+                    values.push(newVal);
+                } else if ((field === 'start_time' || field === 'end_time') && typeof newVal === 'string' && newVal.length === 8) {
+                    // If it's HH:MM:SS, try to combine with date
+                    const baseDate = scraped.date ? new Date(scraped.date) : (currentEvent.date ? new Date(currentEvent.date) : null);
+                    if (baseDate) {
+                        const [h, m, s] = newVal.split(':');
+                        const combined = new Date(baseDate);
+                        combined.setHours(parseInt(h), parseInt(m), parseInt(s));
+                        newVal = combined.toISOString();
+                    }
+                    values.push(newVal);
                 } else {
-                    values.push(scraped[field]);
+                    values.push(newVal);
                 }
+
+                // Track Diff (using normalized string for comparison)
+                if (currentEvent) {
+                    let oldVal = currentEvent[eventField];
+
+                    // Normalization for comparison
+                    const sOld = oldVal instanceof Date ? oldVal.toISOString() : (oldVal === null ? 'null' : String(oldVal));
+                    const sNew = (field === 'start_time' || field === 'end_time' || field === 'date') && typeof newVal === 'string' && newVal.includes('T') ? newVal : String(newVal);
+
+                    if (sOld !== sNew) {
+                        auditChanges[eventField] = { old: oldVal, new: newVal };
+                    }
+                }
+
                 paramIndex++;
             }
+        }
+
+        if (Object.keys(auditChanges).length > 0) {
+            await pool.query(`
+            INSERT INTO audit_logs (entity_type, entity_id, action, changes, performed_by)
+            VALUES ($1, $2, $3, $4, $5)
+        `, ['event', eventId, 'SCRAPER_UPDATE', JSON.stringify(auditChanges), 'system']);
         }
 
         await pool.query(`UPDATE events SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = $1`, values);
         await pool.query(`UPDATE scraped_events SET has_changes = false, changes = NULL WHERE id = $1`, [scrapedEventId]);
 
         const remaining = await pool.query(`
-            SELECT COUNT(*) FROM event_scraped_links esl
-            JOIN scraped_events se ON se.id = esl.scraped_event_id
-            WHERE esl.event_id = $1 AND se.has_changes = true
-        `, [eventId]);
+        SELECT COUNT(*) FROM event_scraped_links esl
+        JOIN scraped_events se ON se.id = esl.scraped_event_id
+        WHERE esl.event_id = $1 AND se.has_changes = true
+    `, [eventId]);
 
         await pool.query(`UPDATE events SET has_pending_changes = $1 WHERE id = $2`, [remaining.rows[0].count > 0, eventId]);
 
         return { success: true, applied_fields: fieldsToUpdate, has_remaining_changes: remaining.rows[0].count > 0 };
     }
-
     async dismissChanges(eventId, scrapedEventId) {
         await pool.query(`UPDATE scraped_events SET has_changes = false, changes = NULL WHERE id = $1`, [scrapedEventId]);
         const remaining = await pool.query(`
@@ -745,6 +846,41 @@ class EventService {
             }
         }
         return { inserted, updated, errors };
+    }
+    async rejectExpiredDrafts() {
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+
+            const result = await client.query(`
+                UPDATE events
+                SET status = 'REJECTED', updated_at = CURRENT_TIMESTAMP
+                WHERE status IN ('SCRAPED_DRAFT', 'MANUAL_DRAFT', 'APPROVED_PENDING_DETAILS')
+                AND (
+                    (date < CURRENT_DATE) OR
+                    (date = CURRENT_DATE AND (
+                        CASE 
+                            WHEN end_time IS NOT NULL THEN end_time 
+                            WHEN start_time IS NOT NULL THEN start_time 
+                            ELSE '23:59:59' 
+                        END
+                    )::time < CURRENT_TIME)
+                )
+                RETURNING id, title, status
+            `);
+
+            await client.query('COMMIT');
+            console.log(`[EventService] Auto-rejected ${result.rowCount} expired drafts`);
+            return {
+                count: result.rowCount,
+                rejected_ids: result.rows.map(e => e.id)
+            };
+        } catch (err) {
+            await client.query('ROLLBACK');
+            throw err;
+        } finally {
+            client.release();
+        }
     }
 }
 

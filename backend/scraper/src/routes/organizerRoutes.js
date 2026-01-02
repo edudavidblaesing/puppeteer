@@ -10,6 +10,8 @@ const { verifyToken } = require('../middleware/authMiddleware');
 const validate = require('../middleware/validate');
 const { createOrganizerSchema, updateOrganizerSchema } = require('../schemas/organizerSchema');
 
+router.get('/:id/usage', verifyToken, asyncHandler(organizerController.getOrganizerUsage));
+router.get('/:id/history', verifyToken, asyncHandler(organizerController.getOrganizerHistory));
 router.get('/:id', asyncHandler(organizerController.getOrganizer));
 router.get('/', asyncHandler(organizerController.listOrganizers));
 router.post('/', verifyToken, validate(createOrganizerSchema), asyncHandler(organizerController.createOrganizer));

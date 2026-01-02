@@ -15,7 +15,7 @@ const LOGO_MAP: Record<string, string> = {
     fb: '/logos/fb.png',
     ra: '/logos/ra.jpg',
     sp: '/logos/sp.png',
-    wiki: '/logos/wiki.png', // Assuming logo exists or will be added, otherwise falls back to text is fine but name is needed
+    wiki: '/logos/wiki.png',
     // legacy fallbacks
     ticketmaster: '/logos/tm.png',
     eventbrite: '/logos/eb.png',
@@ -24,6 +24,8 @@ const LOGO_MAP: Record<string, string> = {
     facebook: '/logos/fb.png',
     spotify: '/logos/sp.png',
     wikipedia: '/logos/wiki.png',
+    resident_advisor: '/logos/ra.jpg', // Added
+    residentadvisor: '/logos/ra.jpg', // Added
 };
 
 const SOURCE_NAMES: Record<string, string> = {

@@ -18,6 +18,8 @@ router.get('/count', asyncHandler(eventController.getEventCount)); // Need to ve
 router.get('/recent-updates', asyncHandler(eventController.getRecentUpdates));
 router.get('/map', asyncHandler(eventController.getMapEvents));
 router.get('/changes', asyncHandler(eventController.getChanges));
+router.get('/:id/usage', asyncHandler(eventController.getEventUsage));
+router.get('/:id/history', asyncHandler(eventController.getHistory));
 router.post('/changes/apply', verifyToken, asyncHandler(eventController.applyChanges));
 router.post('/changes/dismiss', verifyToken, asyncHandler(eventController.dismissChanges));
 
@@ -34,6 +36,7 @@ router.delete('/', verifyToken, asyncHandler(eventController.deleteAllEvents));
 router.post('/sync', verifyToken, asyncHandler(eventController.syncEvents));
 router.post('/publish-status', verifyToken, asyncHandler(eventController.publishStatus));
 router.post('/sync-venue-coords', verifyToken, asyncHandler(eventController.syncVenueCoords));
+router.post('/cleanup-expired', verifyToken, asyncHandler(eventController.cleanupExpired));
 router.post('/bulk-delete', verifyToken, asyncHandler(eventController.bulkDeleteEvents));
 
 module.exports = router;

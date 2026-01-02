@@ -56,6 +56,11 @@ export function SourceFieldOptions({ sources, field, onSelect, currentValue, lab
             }
           }
 
+          // Special handling for time fields display
+          if ((field as string).includes('time') && typeof val === 'string' && val.includes('T')) {
+            displayVal = val.split('T')[1].substring(0, 5);
+          }
+
           const isBest = bestSource && source.source_code === bestSource.source_code;
 
           return (

@@ -33,7 +33,7 @@ export function CityList({
 
   return (
     <div className="bg-white dark:bg-gray-900 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-800">
-      <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/50 flex items-center justify-between">
+      <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/50 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="text-sm text-gray-500 dark:text-gray-400">{cities.length} cities</span>
         </div>
@@ -44,11 +44,11 @@ export function CityList({
           <div
             key={city.id}
             onClick={() => onEdit(city)}
-            className="p-4 hover:bg-gray-50 dark:hover:bg-gray-800/50 cursor-pointer transition-colors group"
+            className="px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-800/50 cursor-pointer transition-colors group"
           >
             <div className="flex items-start gap-4">
-              <div className="w-10 h-10 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center flex-shrink-0 text-primary-600 dark:text-primary-400">
-                <MapPin className="w-5 h-5" />
+              <div className="w-12 h-12 rounded-lg bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center flex-shrink-0 text-primary-600 dark:text-primary-400 border border-primary-200 dark:border-primary-800">
+                <MapPin className="w-6 h-6" />
               </div>
 
               <div className="flex-1 min-w-0">

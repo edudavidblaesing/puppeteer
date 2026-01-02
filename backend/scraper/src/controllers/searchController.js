@@ -11,27 +11,36 @@ const searchAll = async (req, res) => {
         const limit = 5;
 
         const [events, venues, artists, organizers, cities] = await Promise.all([
-            // Events
+            // Events - Search title, description, venue name
             pool.query(`
                 SELECT id, title as name, date, start_time, venue_name, 'event' as type, flyer_front 
                 FROM events 
-                WHERE title ILIKE $1 
+                WHERE 
+                    title ILIKE $1 OR 
+                    description ILIKE $1 OR
+                    venue_name ILIKE $1
                 ORDER BY date DESC LIMIT $2`,
                 [searchTerm, limit]
             ),
-            // Venues
+            // Venues - Search name, address, city
             pool.query(`
                 SELECT id, name, city, 'venue' as type 
                 FROM venues 
-                WHERE name ILIKE $1 
+                WHERE 
+                    name ILIKE $1 OR
+                    address ILIKE $1 OR
+                    city ILIKE $1
                 ORDER BY name ASC LIMIT $2`,
                 [searchTerm, limit]
             ),
-            // Artists
+            // Artists - Search name, bio, genres
             pool.query(`
                 SELECT id, name, image_url, 'artist' as type 
                 FROM artists 
-                WHERE name ILIKE $1 
+                WHERE 
+                    name ILIKE $1 OR
+                    bio ILIKE $1 OR
+                    genres::text ILIKE $1
                 ORDER BY name ASC LIMIT $2`,
                 [searchTerm, limit]
             ),
@@ -47,7 +56,9 @@ const searchAll = async (req, res) => {
             pool.query(`
                 SELECT id, name, country, 'city' as type 
                 FROM cities 
-                WHERE name ILIKE $1 
+                WHERE 
+                    name ILIKE $1 OR
+                    country ILIKE $1
                 ORDER BY name ASC LIMIT $2`,
                 [searchTerm, limit]
             )

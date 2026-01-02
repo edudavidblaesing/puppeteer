@@ -21,7 +21,14 @@ const eventBase = {
     artists_list: z.array(z.object({
         id: z.string().or(z.number()), // Can be UUID or Int or temp ID
         name: z.string().min(1)
-    })).optional().nullable()
+    })).optional().nullable(),
+
+    // Status Logic
+    status: z.enum([
+        'SCRAPED_DRAFT', 'MANUAL_DRAFT', 'REJECTED',
+        'APPROVED_PENDING_DETAILS', 'READY_TO_PUBLISH',
+        'PUBLISHED', 'CANCELED'
+    ]).optional()
 };
 
 const createEventSchema = z.object({

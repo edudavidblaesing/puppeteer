@@ -36,7 +36,10 @@ export function EventWorkflowTable({
         events,
         onApprove: (id) => handleApprove(id),
         onReject: (id) => handleReject(id),
-        onEdit
+        onEdit: (id) => {
+            const event = events.find(e => e.id === id);
+            if (event) onEdit(event);
+        }
     });
 
     if (events.length === 0) {
@@ -63,7 +66,7 @@ export function EventWorkflowTable({
                 <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-800">
                     <thead className="bg-gray-50 dark:bg-gray-900">
                         <tr>
-                            <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase w-10">
+                            <th scope="col" className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase w-10">
                                 <input
                                     type="checkbox"
                                     className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
@@ -71,11 +74,11 @@ export function EventWorkflowTable({
                                     onChange={onSelectAll}
                                 />
                             </th>
-                            <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Event</th>
-                            <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                            <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Source</th>
-                            <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                            <th scope="col" className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+                            <th scope="col" className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase">Event</th>
+                            <th scope="col" className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                            <th scope="col" className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase">Source</th>
+                            <th scope="col" className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                            <th scope="col" className="px-6 py-4 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200 dark:divide-gray-800 bg-white dark:bg-gray-950">
@@ -89,7 +92,7 @@ export function EventWorkflowTable({
                                     focusedId === event.id && "ring-2 ring-primary-500 z-10 bg-primary-50 dark:bg-primary-900/20"
                                 )}
                             >
-                                <td className="px-4 py-3 whitespace-nowrap">
+                                <td className="px-6 py-4 whitespace-nowrap">
                                     <input
                                         type="checkbox"
                                         className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
@@ -97,7 +100,7 @@ export function EventWorkflowTable({
                                         onChange={() => onSelect(event.id)}
                                     />
                                 </td>
-                                <td className="px-4 py-3">
+                                <td className="px-6 py-4">
                                     <div className="flex items-center">
                                         <div className="h-10 w-10 flex-shrink-0 rounded bg-gray-100 dark:bg-gray-800 overflow-hidden mr-3 border border-gray-200 dark:border-gray-700">
                                             {event.flyer_front ? (
@@ -114,11 +117,11 @@ export function EventWorkflowTable({
                                         </div>
                                     </div>
                                 </td>
-                                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                                     {event.date ? format(new Date(event.date), 'MMM d, yyyy') : '-'}
                                     <div className="text-xs text-gray-400">{event.start_time?.slice(0, 5)}</div>
                                 </td>
-                                <td className="px-4 py-3 whitespace-nowrap">
+                                <td className="px-6 py-4 whitespace-nowrap">
                                     <div className="flex -space-x-1 overflow-hidden">
                                         {(event.source_references || []).map((ref: any, idx) => (
                                             <SourceIcon key={idx} sourceCode={ref.source_code} className="inline-block h-5 w-5 rounded-full ring-2 ring-white dark:ring-gray-900" />
@@ -128,10 +131,10 @@ export function EventWorkflowTable({
                                         )}
                                     </div>
                                 </td>
-                                <td className="px-4 py-3 whitespace-nowrap">
+                                <td className="px-6 py-4 whitespace-nowrap">
                                     <EventStatusBadge status={event.status || 'MANUAL_DRAFT'} date={event.date} />
                                 </td>
-                                <td className="px-4 py-3 whitespace-nowrap text-right text-sm font-medium">
+                                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                     <EventActionCell
                                         event={event}
                                         onApprove={handleApprove}

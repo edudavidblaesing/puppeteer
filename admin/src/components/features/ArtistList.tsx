@@ -34,7 +34,7 @@ export function ArtistList({
 
   return (
     <div className="bg-white dark:bg-gray-900 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-800">
-      <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/50 flex items-center justify-between">
+      <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/50 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="text-sm text-gray-500 dark:text-gray-400">{artists.length} artists</span>
         </div>
@@ -45,11 +45,11 @@ export function ArtistList({
           <div
             key={artist.id}
             onClick={() => onEdit(artist)}
-            className="p-4 hover:bg-gray-50 dark:hover:bg-gray-800/50 cursor-pointer transition-colors group"
+            className="px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-800/50 cursor-pointer transition-colors group"
           >
             <div className="flex items-start gap-4">
               {/* Artist Image or Placeholder */}
-              <div className="w-12 h-12 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center flex-shrink-0 overflow-hidden border border-gray-200 dark:border-gray-700">
+              <div className="w-12 h-12 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center flex-shrink-0 overflow-hidden border border-gray-200 dark:border-gray-700">
                 {artist.image_url ? (
                   <img src={artist.image_url} alt={artist.name} className="w-full h-full object-cover" />
                 ) : (

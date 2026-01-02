@@ -78,6 +78,12 @@ class VenueService {
             pIdx++;
         }
 
+        if (params.type) {
+            query += ` AND combined.venue_type = $${pIdx}`;
+            queryParams.push(params.type);
+            pIdx++;
+        }
+
         const validSorts = ['name', 'city', 'country', 'event_count'];
         const sortCol = validSorts.includes(sort) ? sort : 'name';
         const sortOrder = order.toLowerCase() === 'desc' ? 'DESC' : 'ASC';
@@ -138,9 +144,24 @@ class VenueService {
             pIdx++;
         }
 
+        if (params.type) {
+            countQuery += ` AND combined.venue_type = $${pIdx}`;
+            queryParams.push(params.type);
+            pIdx++;
+        }
+
         countQuery += `) subq`;
 
         const result = await this.pool.query(countQuery, queryParams);
+        return parseInt(result.rows[0].count);
+    }
+
+    async getUsage(id) {
+        const result = await this.pool.query(`
+            SELECT COUNT(*) as count 
+            FROM events 
+            WHERE venue_id = $1
+        `, [id]);
         return parseInt(result.rows[0].count);
     }
 
@@ -215,21 +236,39 @@ class VenueService {
             `, [venueId, name, city]);
         }
 
+        // Audit Log
+        await this.pool.query(`
+            INSERT INTO audit_logs (entity_type, entity_id, action, changes, performed_by)
+            VALUES ($1, $2, $3, $4, $5)
+        `, ['venue', venueId, 'CREATE', JSON.stringify(data), 'admin']);
+
         return this.findById(venueId);
     }
 
-    async update(id, updates) {
-        const currentRes = await this.pool.query('SELECT field_sources FROM venues WHERE id = $1', [id]);
+    async update(id, updates, user) {
+        const currentRes = await this.pool.query('SELECT * FROM venues WHERE id = $1', [id]);
         if (currentRes.rows.length === 0) return null;
+        const currentVenue = currentRes.rows[0];
 
-        const fieldSources = currentRes.rows[0].field_sources || {};
+        const fieldSources = currentVenue.field_sources || {};
         const allowedFields = ['name', 'address', 'city', 'country', 'content_url', 'latitude', 'longitude', 'venue_type', 'email', 'phone', 'capacity'];
         const setClauses = [];
         const values = [];
         let paramIndex = 1;
+        const changes = {};
 
         for (const [key, value] of Object.entries(updates)) {
             if (allowedFields.includes(key)) {
+                // Diff Logic
+                const oldVal = currentVenue[key];
+                const newVal = value;
+                const sOld = JSON.stringify(oldVal);
+                const sNew = JSON.stringify(newVal);
+
+                if (sOld !== sNew) {
+                    changes[key] = { old: oldVal, new: newVal };
+                }
+
                 fieldSources[key] = 'og';
                 setClauses.push(`${key} = $${paramIndex++}`);
                 values.push(value);
@@ -244,6 +283,14 @@ class VenueService {
         setClauses.push('updated_at = CURRENT_TIMESTAMP');
         values.push(id);
 
+        // Audit Log
+        if (Object.keys(changes).length > 0) {
+            await this.pool.query(`
+                INSERT INTO audit_logs (entity_type, entity_id, action, changes, performed_by)
+                VALUES ($1, $2, $3, $4, $5)
+            `, ['venue', id, 'UPDATE', JSON.stringify(changes), user?.id || 'admin']);
+        }
+
         const result = await this.pool.query(`
             UPDATE venues SET ${setClauses.join(', ')} WHERE id = $${paramIndex} RETURNING *
         `, values);
@@ -251,9 +298,27 @@ class VenueService {
         return result.rows[0];
     }
 
-    async delete(id) {
+    async delete(id, user) {
+        await this.pool.query(`
+            INSERT INTO audit_logs (entity_type, entity_id, action, changes, performed_by)
+            VALUES ($1, $2, $3, $4, $5)
+        `, ['venue', id, 'DELETE', '{}', user?.id || 'admin']);
         const result = await this.pool.query('DELETE FROM venues WHERE id = $1 RETURNING id', [id]);
         return result.rows.length > 0;
+    }
+
+    async getHistory(id) {
+        const result = await this.pool.query(`
+            SELECT id, action, changes, performed_by, created_at, 'content' as type
+            FROM audit_logs 
+            WHERE entity_type = 'venue' AND entity_id = $1
+            ORDER BY created_at DESC
+        `, [id]);
+
+        return result.rows.map(r => ({
+            ...r,
+            changes: r.changes || {}
+        }));
     }
 
     async deleteAll() {

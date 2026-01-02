@@ -104,6 +104,44 @@ exports.getCity = async (req, res) => {
     }
 };
 
+exports.getCityUsage = async (req, res) => {
+    const { id } = req.params;
+    try {
+        const cityRes = await pool.query('SELECT name FROM cities WHERE id = $1', [id]);
+        if (cityRes.rows.length === 0) return res.status(404).json({ error: 'City not found' });
+        const cityName = cityRes.rows[0].name;
+
+        // Count events in this city
+        const eventCountRes = await pool.query('SELECT COUNT(*) FROM events WHERE LOWER(venue_city) = LOWER($1)', [cityName]);
+        const venueCountRes = await pool.query('SELECT COUNT(*) FROM venues WHERE LOWER(city) = LOWER($1)', [cityName]);
+
+        const usage = parseInt(eventCountRes.rows[0].count) + parseInt(venueCountRes.rows[0].count);
+
+        res.json({ usage, details: { events: parseInt(eventCountRes.rows[0].count), venues: parseInt(venueCountRes.rows[0].count) } });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+};
+
+exports.getCityUsage = async (req, res) => {
+    const { id } = req.params;
+    try {
+        const cityRes = await pool.query('SELECT name FROM cities WHERE id = $1', [id]);
+        if (cityRes.rows.length === 0) return res.status(404).json({ error: 'City not found' });
+        const cityName = cityRes.rows[0].name;
+
+        // Count events in this city
+        const eventCountRes = await pool.query('SELECT COUNT(*) FROM events WHERE LOWER(venue_city) = LOWER($1)', [cityName]);
+        const venueCountRes = await pool.query('SELECT COUNT(*) FROM venues WHERE LOWER(city) = LOWER($1)', [cityName]);
+
+        const usage = parseInt(eventCountRes.rows[0].count) + parseInt(venueCountRes.rows[0].count);
+
+        res.json({ usage, details: { events: parseInt(eventCountRes.rows[0].count), venues: parseInt(venueCountRes.rows[0].count) } });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+};
+
 exports.createCity = async (req, res) => {
     const { name, country, latitude, longitude, timezone, is_active, source_configs } = req.body;
     const client = await pool.connect();
@@ -130,6 +168,12 @@ exports.createCity = async (req, res) => {
             }
         }
 
+        // Audit Log
+        await client.query(`
+            INSERT INTO audit_logs (entity_type, entity_id, action, changes, performed_by)
+            VALUES ($1, $2, $3, $4, $5)
+        `, ['city', city.id, 'CREATE', JSON.stringify(req.body), req.user?.id || 'admin']);
+
         await client.query('COMMIT');
         res.status(201).json(city);
     } catch (e) {
@@ -148,6 +192,25 @@ exports.updateCity = async (req, res) => {
     try {
         await client.query('BEGIN');
 
+        // Fetch current for diff
+        const currentRes = await client.query('SELECT * FROM cities WHERE id = $1', [id]);
+        if (currentRes.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'City not found' });
+        }
+        const currentCity = currentRes.rows[0];
+        const changes = {};
+
+        // Simple diff for top-level fields
+        const fieldsToCheck = ['name', 'country', 'latitude', 'longitude', 'timezone', 'is_active'];
+        const updates = { name, country, latitude, longitude, timezone, is_active };
+
+        for (const key of fieldsToCheck) {
+            if (updates[key] !== undefined && String(updates[key]) !== String(currentCity[key])) {
+                changes[key] = { old: currentCity[key], new: updates[key] };
+            }
+        }
+
         const result = await client.query(
             `UPDATE cities 
              SET name = COALESCE($1, name), 
@@ -160,11 +223,6 @@ exports.updateCity = async (req, res) => {
              WHERE id = $7 RETURNING *`,
             [name, country, latitude, longitude, timezone, is_active, id]
         );
-
-        if (result.rows.length === 0) {
-            await client.query('ROLLBACK');
-            return res.status(404).json({ error: 'City not found' });
-        }
 
         if (source_configs && Array.isArray(source_configs)) {
             for (const config of source_configs) {
@@ -180,6 +238,17 @@ exports.updateCity = async (req, res) => {
                     [id, config.source_id, config.external_id, config.is_active, config.config_json || {}]
                 );
             }
+            // Note: Deep diffing configs is harder, we'll just log that configs were updated genericly if needed, 
+            // or rely on top level flags. For now let's just log top level changes.
+            if (source_configs.length > 0) changes['source_configs'] = { old: 'updated', new: 'updated' };
+        }
+
+        // Audit Log
+        if (Object.keys(changes).length > 0) {
+            await client.query(`
+                INSERT INTO audit_logs (entity_type, entity_id, action, changes, performed_by)
+                VALUES ($1, $2, $3, $4, $5)
+            `, ['city', id, 'UPDATE', JSON.stringify(changes), req.user?.id || 'admin']);
         }
 
         await client.query('COMMIT');
@@ -195,9 +264,36 @@ exports.updateCity = async (req, res) => {
 exports.deleteCity = async (req, res) => {
     const { id } = req.params;
     try {
+        // Audit Log before delete (or after if we want to ensure success, but difficult if row gone? No, audit log is separate table)
+        // Best to do before delete or in transaction.
+        await pool.query(`
+            INSERT INTO audit_logs (entity_type, entity_id, action, changes, performed_by)
+            VALUES ($1, $2, $3, $4, $5)
+        `, ['city', id, 'DELETE', '{}', req.user?.id || 'admin']);
+
         const result = await pool.query('DELETE FROM cities WHERE id = $1 RETURNING *', [id]);
         if (result.rows.length === 0) return res.status(404).json({ error: 'City not found' });
         res.json({ success: true, message: 'City deleted' });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+};
+
+exports.getCityHistory = async (req, res) => {
+    const { id } = req.params;
+    try {
+        const result = await pool.query(`
+            SELECT id, action, changes, performed_by, created_at, 'content' as type
+            FROM audit_logs 
+            WHERE entity_type = 'city' AND entity_id = $1
+            ORDER BY created_at DESC
+        `, [id]);
+
+        const history = result.rows.map(r => ({
+            ...r,
+            changes: r.changes || {}
+        }));
+        res.json(history);
     } catch (e) {
         res.status(500).json({ error: e.message });
     }

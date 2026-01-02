@@ -27,6 +27,8 @@ router.get('/search', asyncHandler(venueController.listVenues)); // /search ofte
 router.get('/missing', asyncHandler(venueController.getMissingVenues));
 
 // CRUD
+router.get('/:id/usage', verifyToken, asyncHandler(venueController.getVenueUsage));
+router.get('/:id/history', verifyToken, asyncHandler(venueController.getVenueHistory));
 router.get('/:id', asyncHandler(venueController.getVenue));
 router.post('/enrich', verifyToken, asyncHandler(venueController.enrichVenue));
 router.get('/', asyncHandler(venueController.listVenues));

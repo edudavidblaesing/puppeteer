@@ -46,6 +46,16 @@ async function getEvent(req, res) {
     }
 }
 
+async function getEventUsage(req, res) {
+    try {
+        const usage = await eventService.getUsage(req.params.id);
+        res.json(usage);
+    } catch (error) {
+        console.error('Error in getEventUsage:', error);
+        res.status(500).json({ error: error.message });
+    }
+}
+
 async function getRecentUpdates(req, res) {
     try {
         const { limit } = req.query;
@@ -124,7 +134,9 @@ async function deleteAllEvents(req, res) {
 
 async function getChanges(req, res) {
     try {
-        const result = await eventService.getChanges(req.params.id);
+        const id = req.query.id || req.params.id;
+        if (!id) return res.status(400).json({ error: 'Event ID required' });
+        const result = await eventService.getChanges(id);
         res.json(result);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -193,9 +205,31 @@ async function syncVenueCoords(req, res) {
     }
 }
 
+async function cleanupExpired(req, res) {
+    try {
+        const result = await eventService.rejectExpiredDrafts();
+        res.json({ success: true, ...result });
+    } catch (error) {
+        console.error('Error cleaning up expired drafts:', error);
+        res.status(500).json({ error: error.message });
+    }
+}
+
+async function getHistory(req, res) {
+    try {
+        const history = await eventService.getHistory(req.params.id);
+        res.json({ data: history });
+    } catch (error) {
+        console.error('Error in getHistory:', error);
+        res.status(500).json({ error: error.message });
+    }
+}
+
 module.exports = {
     listEvents,
     getEvent,
+    getEventUsage,
+    getHistory,
     getRecentUpdates,
     getMapEvents,
     createEvent,
@@ -207,5 +241,6 @@ module.exports = {
     dismissChanges,
     publishStatus,
     syncEvents,
-    syncVenueCoords
+    syncVenueCoords,
+    cleanupExpired
 };

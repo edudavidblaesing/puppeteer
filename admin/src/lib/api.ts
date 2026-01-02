@@ -46,6 +46,11 @@ async function request<T = any>(endpoint: string, options: RequestInit = {}): Pr
   return response.json();
 }
 
+export async function getUsage(entityType: string, id: string) {
+  const result = await request<{ usage: number; details?: any }>(`/db/${entityType}/${id}/usage`);
+  return result;
+}
+
 export async function fetchEvents(params?: {
   city?: string;
   search?: string;
@@ -153,6 +158,7 @@ export async function fetchVenues(params?: {
   sort?: string;
   order?: string;
   source?: string;
+  type?: string;
 }) {
   const searchParams = new URLSearchParams();
   if (params?.city) searchParams.set('city', params.city);
@@ -162,6 +168,7 @@ export async function fetchVenues(params?: {
   if (params?.sort) searchParams.set('sort', params.sort);
   if (params?.order) searchParams.set('order', params.order);
   if (params?.source) searchParams.set('source', params.source);
+  if (params?.type) searchParams.set('type', params.type);
 
   return request(`/db/venues?${searchParams}`);
 }
@@ -246,6 +253,44 @@ export async function searchExternal(type: 'venue' | 'artist' | 'organizer' | 'c
 export async function fetchEventArtists(eventId: string) {
   const result = await request<{ data: any[] }>(`/db/events/${eventId}/artists`);
   return result.data || [];
+}
+
+// History API
+export async function fetchEventHistory(id: string) {
+  return fetchEntityHistory('event', id);
+}
+
+export async function fetchEntityHistory(type: 'event' | 'artist' | 'venue' | 'organizer' | 'city', id: string) {
+  const endpointMap: Record<string, string> = {
+    event: 'events',
+    artist: 'artists',
+    venue: 'venues',
+    organizer: 'organizers',
+    city: 'cities'
+  };
+  const collection = endpointMap[type] || type + 's';
+  const result = await request<{ data: any[] }>(`/db/${collection}/${id}/history`);
+  return result.data || result; // Some might return array directly, others { data: [] }
+}
+
+// Pending Changes API
+export async function fetchPendingChanges(eventId: string) {
+  const result = await request<{ event_id: string; has_changes: boolean; changes: any[] }>(`/db/events/changes?id=${eventId}`);
+  return result;
+}
+
+export async function applyPendingChanges(eventId: string, scrapedEventId: string, fields?: string[]) {
+  return request(`/db/events/changes/apply`, {
+    method: 'POST',
+    body: JSON.stringify({ id: eventId, scraped_event_id: scrapedEventId, fields }),
+  });
+}
+
+export async function dismissPendingChanges(eventId: string, scrapedEventId: string) {
+  return request(`/db/events/changes/dismiss`, {
+    method: 'POST',
+    body: JSON.stringify({ id: eventId, scraped_event_id: scrapedEventId }),
+  });
 }
 
 // Add artist to event
@@ -355,13 +400,14 @@ export async function deleteCity(id: string) {
 
 // ============== Admin Venues API ==============
 
-export async function fetchAdminVenues(params?: { search?: string; city?: string; limit?: number; offset?: number; source?: string }) {
+export async function fetchAdminVenues(params?: { search?: string; city?: string; limit?: number; offset?: number; source?: string; type?: string }) {
   const searchParams = new URLSearchParams();
   if (params?.search) searchParams.set('search', params.search);
   if (params?.city) searchParams.set('city', params.city);
   if (params?.limit) searchParams.set('limit', params.limit.toString());
   if (params?.offset) searchParams.set('offset', params.offset.toString());
   if (params?.source) searchParams.set('source', params.source);
+  if (params?.type) searchParams.set('type', params.type);
 
   return request(`/db/venues?${searchParams}`);
 }

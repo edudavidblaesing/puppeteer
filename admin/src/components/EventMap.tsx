@@ -116,9 +116,16 @@ export default function EventMap({
       name: string;
       events: Event[];
       coords: [number, number] | null;
-      approvedCount: number;
-      pendingCount: number;
-      rejectedCount: number;
+      statusCounts: {
+        draft: number;
+        needsDetails: number;
+        ready: number;
+        published: number;
+        canceled: number;
+        rejected: number;
+        other: number;
+      };
+      hasLive: boolean;
     }> = {};
 
     const filteredEvents = selectedCity
@@ -152,9 +159,16 @@ export default function EventMap({
           name: venueName,
           events: [],
           coords,
-          approvedCount: 0,
-          pendingCount: 0,
-          rejectedCount: 0,
+          statusCounts: {
+            draft: 0,
+            needsDetails: 0,
+            ready: 0,
+            published: 0,
+            canceled: 0,
+            rejected: 0,
+            other: 0
+          },
+          hasLive: false
         };
       } else if (!venues[venueName].coords) {
         if ((event as any).venue_latitude && (event as any).venue_longitude) {
@@ -165,9 +179,50 @@ export default function EventMap({
       }
 
       venues[venueName].events.push(event);
-      if (event.publish_status === 'approved') venues[venueName].approvedCount++;
-      else if (event.publish_status === 'pending') venues[venueName].pendingCount++;
-      else venues[venueName].rejectedCount++;
+
+      // Track statuses
+      const s = event.status;
+      if (s === 'SCRAPED_DRAFT' || s === 'MANUAL_DRAFT') venues[venueName].statusCounts.draft++;
+      else if (s === 'APPROVED_PENDING_DETAILS') venues[venueName].statusCounts.needsDetails++;
+      else if (s === 'READY_TO_PUBLISH') venues[venueName].statusCounts.ready++;
+      else if (s === 'PUBLISHED') venues[venueName].statusCounts.published++;
+      else if (s === 'CANCELED') venues[venueName].statusCounts.canceled++;
+      else if (s === 'REJECTED') venues[venueName].statusCounts.rejected++;
+      else venues[venueName].statusCounts.other++;
+
+      // Check Live
+      if (s === 'PUBLISHED' && event.date && event.start_time) {
+        // Simplified live check during aggregation
+        const now = new Date();
+        const eventDate = new Date(event.date);
+
+        if (eventDate.toDateString() === now.toDateString()) {
+          // It's today. Check times.
+          // Parsing logic same as before (simplified here for brevity of thought, but needed in code)
+          const startTimeStr = event.start_time.includes('T') ? event.start_time.split('T')[1] : event.start_time;
+          const startH = parseInt(startTimeStr.split(':')[0] || '0');
+          const startM = parseInt(startTimeStr.split(':')[1] || '0');
+
+          const start = new Date(eventDate);
+          start.setHours(startH, startM, 0);
+
+          // Default duration 4h if no end time or calculation
+          const end = new Date(start);
+          if (event.end_time) {
+            const endTimeStr = event.end_time.includes('T') ? event.end_time.split('T')[1] : event.end_time;
+            const endH = parseInt(endTimeStr.split(':')[0] || '0');
+            const endM = parseInt(endTimeStr.split(':')[1] || '0');
+            end.setHours(endH, endM, 0);
+            if (end < start) end.setDate(end.getDate() + 1); // Ends next day
+          } else {
+            end.setHours(start.getHours() + 4);
+          }
+
+          if (now >= start && now <= end) {
+            venues[venueName].hasLive = true;
+          }
+        }
+      }
     });
 
     return venues;
@@ -188,19 +243,17 @@ export default function EventMap({
     const initialZoom = zoom || (selectedCity ? CITY_ZOOM : EUROPE_VIEW.zoom);
 
     const map = L.map(mapContainerRef.current, {
-      zoomControl: !minimal,
+      zoomControl: false,
       dragging: !minimal,
       touchZoom: !minimal,
-      scrollWheelZoom: !minimal,
+      scrollWheelZoom: false,
       doubleClickZoom: !minimal,
       boxZoom: !minimal,
       keyboard: !minimal,
       attributionControl: !minimal
     }).setView(initialCoords, initialZoom);
 
-    if (!minimal) {
-      L.control.zoom({ position: 'bottomright' }).addTo(map);
-    }
+
 
     // Detect dark mode...
     const isDarkMode = document.documentElement.classList.contains('dark') ||
@@ -319,41 +372,36 @@ export default function EventMap({
         if (!data.coords) return;
 
         const eventCount = data.events.length;
-        const { approvedCount, pendingCount, rejectedCount } = data;
+        const { statusCounts, hasLive } = data;
 
-        // Check if any events are live (ongoing)
-        const hasLiveEvents = data.events.some(e => {
-          if (!e.date || !e.start_time || !e.end_time) return false;
-          const eventDate = new Date(e.date);
-          const today = new Date();
-          if (eventDate.toDateString() !== today.toDateString()) return false;
-
-          const startTime = e.start_time.includes('T') ? new Date(e.start_time) : new Date(`${e.date}T${e.start_time}`);
-          const endTime = e.end_time.includes('T') ? new Date(e.end_time) : new Date(`${e.date}T${e.end_time}`);
-          return today >= startTime && today <= endTime;
-        });
-
-        // Determine marker styling based on status and live state
+        // Determine marker styling based on status priority
+        // Priority: Live > Needs Details > Draft > Ready > Published > Canceled > Rejected
         let bgColor = 'bg-white dark:bg-gray-900';
         let borderColor = 'border-gray-300 dark:border-gray-700';
         let extraClass = '';
 
-        // Match list item backgrounds based on status
-        if (rejectedCount === eventCount) {
-          // All rejected
-          bgColor = 'bg-gray-50 dark:bg-gray-900/50';
-          borderColor = 'border-gray-400 dark:border-gray-600';
-        } else if (pendingCount > 0) {
-          // Has pending events
-          bgColor = 'pending-stripes';
-          borderColor = 'border-amber-500 dark:border-amber-600';
-        } else if (approvedCount === eventCount) {
-          // All approved
+        if (hasLive) {
+          extraClass = 'live-marker-pulse';
+          borderColor = 'border-emerald-500'; // Live is emerald
           bgColor = 'bg-white dark:bg-gray-900';
-          borderColor = 'border-emerald-500 dark:border-emerald-600';
-          if (hasLiveEvents) {
-            extraClass = 'live-marker-pulse';
-          }
+        } else if (statusCounts.needsDetails > 0) {
+          bgColor = 'bg-amber-50 dark:bg-amber-900/30';
+          borderColor = 'border-amber-500';
+        } else if (statusCounts.draft > 0) {
+          bgColor = 'bg-neutral-100 dark:bg-neutral-800'; // Drafts gray/neutral
+          borderColor = 'border-neutral-400';
+        } else if (statusCounts.ready > 0) {
+          bgColor = 'bg-lime-50 dark:bg-lime-900/30';
+          borderColor = 'border-lime-500';
+        } else if (statusCounts.published > 0) {
+          bgColor = 'bg-white dark:bg-gray-900';
+          borderColor = 'border-emerald-500';
+        } else if (statusCounts.canceled > 0) {
+          bgColor = 'bg-red-50 dark:bg-red-900/30';
+          borderColor = 'border-red-500';
+        } else if (statusCounts.rejected > 0) {
+          bgColor = 'bg-gray-200 dark:bg-gray-800';
+          borderColor = 'border-gray-500';
         }
 
         const icon = L.divIcon({
@@ -395,12 +443,17 @@ export default function EventMap({
           popupContent.className = 'p-3 min-w-[250px] max-w-[300px]';
           popupContent.innerHTML = `
             <h3 class="font-bold text-sm mb-2">${venueName}</h3>
-            <p class="text-xs text-gray-500 mb-2">${eventCount} events • ${approvedCount} approved, ${pendingCount} pending</p>
+            <p class="text-xs text-gray-500 mb-2">${eventCount} events</p>
             <div class="max-h-[200px] overflow-y-auto space-y-1">
               ${data.events.map((event, idx) => {
-            const statusColor = event.publish_status === 'approved' ? 'bg-emerald-50 border-emerald-200' :
-              event.publish_status === 'pending' ? 'bg-amber-50 border-amber-200' :
-                'bg-gray-50 border-gray-200';
+            let statusColor = 'bg-gray-50 border-gray-200';
+            const s = event.status;
+            if (s === 'PUBLISHED') statusColor = 'bg-emerald-50 border-emerald-200';
+            else if (s === 'READY_TO_PUBLISH') statusColor = 'bg-lime-50 border-lime-200';
+            else if (s === 'APPROVED_PENDING_DETAILS') statusColor = 'bg-amber-50 border-amber-200';
+            else if (s === 'SCRAPED_DRAFT' || s === 'MANUAL_DRAFT') statusColor = 'bg-neutral-50 border-neutral-200';
+            else if (s === 'CANCELED') statusColor = 'bg-red-50 border-red-200';
+            else if (s === 'REJECTED') statusColor = 'bg-gray-100 border-gray-300 text-gray-400';
             return `
                 <button 
                   data-event-idx="${idx}" 
@@ -592,19 +645,31 @@ export default function EventMap({
         <div className="absolute bottom-16 left-3 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-3" style={{ zIndex: 1000 }}>
           <div className="space-y-2">
             <div className="flex items-center">
-              <div className="w-4 h-4 rounded bg-emerald-500 mr-2 live-marker-pulse"></div>
-              <span className="text-xs text-gray-800 dark:text-gray-200 font-medium">LIVE</span>
+              <div className="w-3 h-3 rounded bg-neutral-300 mr-2 border border-neutral-400"></div>
+              <span className="text-xs text-gray-600 dark:text-gray-300">Draft</span>
             </div>
             <div className="flex items-center">
-              <div className="w-4 h-4 rounded bg-emerald-500 mr-2"></div>
+              <div className="w-3 h-3 rounded bg-amber-200 mr-2 border border-amber-400"></div>
+              <span className="text-xs text-gray-600 dark:text-gray-300">Needs Details</span>
+            </div>
+            <div className="flex items-center">
+              <div className="w-3 h-3 rounded bg-lime-300 mr-2 border border-lime-500"></div>
+              <span className="text-xs text-gray-600 dark:text-gray-300">Ready</span>
+            </div>
+            <div className="flex items-center">
+              <div className="w-3 h-3 rounded bg-white mr-2 border border-emerald-500"></div>
               <span className="text-xs text-gray-600 dark:text-gray-300">Published</span>
             </div>
             <div className="flex items-center">
-              <div className="w-4 h-4 rounded pending-stripes mr-2 border border-amber-500"></div>
-              <span className="text-xs text-gray-600 dark:text-gray-300">Pending</span>
+              <div className="w-3 h-3 rounded bg-emerald-500 mr-2 live-marker-pulse"></div>
+              <span className="text-xs text-gray-800 dark:text-gray-200 font-medium">LIVE</span>
             </div>
             <div className="flex items-center">
-              <div className="w-4 h-4 rounded bg-gray-400/60 mr-2"></div>
+              <div className="w-3 h-3 rounded bg-red-200 mr-2 border border-red-400"></div>
+              <span className="text-xs text-gray-600 dark:text-gray-300">Canceled</span>
+            </div>
+            <div className="flex items-center">
+              <div className="w-3 h-3 rounded bg-gray-600 mr-2"></div>
               <span className="text-xs text-gray-600 dark:text-gray-300">Rejected</span>
             </div>
           </div>

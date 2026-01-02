@@ -91,6 +91,15 @@ class OrganizerService {
         return parseInt(result.rows[0].count);
     }
 
+    async getUsage(id) {
+        const result = await this.pool.query(`
+            SELECT COUNT(*) as count 
+            FROM event_organizers 
+            WHERE organizer_id = $1
+        `, [id]);
+        return parseInt(result.rows[0].count);
+    }
+
     async findById(id) {
         console.log(`[OrganizerService] findById called with: ${id}`);
         const result = await this.pool.query('SELECT * FROM organizers WHERE id = $1', [id]);
@@ -148,20 +157,43 @@ class OrganizerService {
             VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         `, [id, name, description, image_url, finalWebsite]);
 
+        // Audit Log
+        await this.pool.query(`
+            INSERT INTO audit_logs (entity_type, entity_id, action, changes, performed_by)
+            VALUES ($1, $2, $3, $4, $5)
+        `, ['organizer', id, 'CREATE', JSON.stringify({ name, description, image_url, website: finalWebsite }), 'admin']);
+
         return this.findById(id);
     }
 
-    async update(id, updates) {
+    async update(id, updates, user) {
+        // Fetch current for diff
+        const currentRes = await this.pool.query('SELECT * FROM organizers WHERE id = $1', [id]);
+        if (currentRes.rows.length === 0) return null;
+        const currentOrganizer = currentRes.rows[0];
+
         const allowedFields = ['name', 'description', 'image_url', 'website'];
         const setClauses = [];
         const values = [];
         let paramIndex = 1;
+        const changes = {};
+
+        // Pre-process updates to handle website_url normalization
+        if (updates.website_url !== undefined) {
+            updates.website = updates.website_url;
+            delete updates.website_url;
+        }
 
         for (const [key, value] of Object.entries(updates)) {
-            if (key === 'website_url') {
-                setClauses.push(`website = $${paramIndex++}`);
-                values.push(value);
-            } else if (allowedFields.includes(key)) {
+            if (allowedFields.includes(key)) {
+                // Diff Logic
+                const oldVal = currentOrganizer[key];
+                const newVal = value;
+                // Simple string comparison usually sufficient
+                if (String(oldVal) !== String(newVal)) {
+                    changes[key] = { old: oldVal, new: newVal };
+                }
+
                 setClauses.push(`${key} = $${paramIndex++}`);
                 values.push(value);
             }
@@ -171,7 +203,14 @@ class OrganizerService {
 
         setClauses.push('updated_at = CURRENT_TIMESTAMP');
 
-        // Correct logic: don't set ID, just use it in WHERE
+        // Audit Log
+        if (Object.keys(changes).length > 0) {
+            await this.pool.query(`
+                INSERT INTO audit_logs (entity_type, entity_id, action, changes, performed_by)
+                VALUES ($1, $2, $3, $4, $5)
+            `, ['organizer', id, 'UPDATE', JSON.stringify(changes), user?.id || 'admin']);
+        }
+
         const whereClause = `WHERE id = $${paramIndex}`;
         values.push(id);
 
@@ -182,9 +221,28 @@ class OrganizerService {
         return result.rows[0];
     }
 
-    async delete(id) {
+    async delete(id, user) {
+        await this.pool.query(`
+            INSERT INTO audit_logs (entity_type, entity_id, action, changes, performed_by)
+            VALUES ($1, $2, $3, $4, $5)
+        `, ['organizer', id, 'DELETE', '{}', user?.id || 'admin']);
+
         const result = await this.pool.query('DELETE FROM organizers WHERE id = $1 RETURNING id', [id]);
         return result.rows.length > 0;
+    }
+
+    async getHistory(id) {
+        const result = await this.pool.query(`
+            SELECT id, action, changes, performed_by, created_at, 'content' as type
+            FROM audit_logs 
+            WHERE entity_type = 'organizer' AND entity_id = $1
+            ORDER BY created_at DESC
+        `, [id]);
+
+        return result.rows.map(r => ({
+            ...r,
+            changes: r.changes || {}
+        }));
     }
 
     async match(options) {

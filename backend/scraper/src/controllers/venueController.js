@@ -206,6 +206,15 @@ const getMissingVenues = async (req, res) => {
     }
 };
 
+const getVenueUsage = async (req, res) => {
+    try {
+        const usage = await venueService.getUsage(req.params.id);
+        res.json({ usage });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
 const createVenue = async (req, res) => {
     try {
         const venue = await venueService.create(req.body);
@@ -216,9 +225,18 @@ const createVenue = async (req, res) => {
     }
 };
 
+const getVenueHistory = async (req, res) => {
+    try {
+        const history = await venueService.getHistory(req.params.id);
+        res.json(history);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
 const updateVenue = async (req, res) => {
     try {
-        const venue = await venueService.update(req.params.id, req.body);
+        const venue = await venueService.update(req.params.id, req.body, req.user);
         if (!venue) return res.status(404).json({ error: 'Venue not found' });
         res.json({ success: true, venue });
     } catch (error) {
@@ -229,12 +247,36 @@ const updateVenue = async (req, res) => {
 
 const deleteVenue = async (req, res) => {
     try {
-        const success = await venueService.delete(req.params.id);
+        const success = await venueService.delete(req.params.id, req.user);
         if (!success) return res.status(404).json({ error: 'Venue not found' });
         res.json({ success: true, deleted: req.params.id });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
+};
+
+// ...
+
+module.exports = {
+    listVenues,
+    getVenue,
+    getMissingVenues,
+    createVenue,
+    updateVenue,
+    deleteVenue,
+    deleteVenues,
+    bulkDeleteVenues,
+    geocodeVenues,
+    geocodeAllVenues,
+    getGeocodingStatus,
+    testGeocode,
+    geocodeVenue,
+    matchVenues,
+    syncFromEvents,
+    linkEvents,
+    enrichVenue,
+    getVenueUsage,
+    getVenueHistory
 };
 
 const deleteVenues = async (req, res) => {
@@ -280,5 +322,6 @@ module.exports = {
     matchVenues,
     syncFromEvents,
     linkEvents,
-    enrichVenue
+    enrichVenue,
+    getVenueUsage
 };

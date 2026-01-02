@@ -14,6 +14,8 @@ router.post('/match', verifyToken, asyncHandler(artistController.matchArtists));
 router.get('/search', asyncHandler(artistController.searchArtists)); // This might need to be distinct if logic differs from list
 router.get('/missing', asyncHandler(artistController.getMissingArtists));
 
+router.get('/:id/usage', verifyToken, asyncHandler(artistController.getArtistUsage));
+router.get('/:id/history', verifyToken, asyncHandler(artistController.getArtistHistory));
 router.get('/:id', asyncHandler(artistController.getArtist));
 router.post('/enrich', verifyToken, asyncHandler(artistController.enrichArtists));
 router.post('/:id/enrich', verifyToken, asyncHandler(artistController.enrichArtist));

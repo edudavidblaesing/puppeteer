@@ -1,31 +1,37 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import dynamic from 'next/dynamic';
-import { format } from 'date-fns';
 import {
-  Save, X, Trash2, MapPin, Calendar, Clock, Globe,
-  Search, Plus, Users, Music, AlertTriangle, Star,
-  Image as ImageIcon, Link as LinkIcon, Ticket
+  MapPin, Calendar, Clock, Search, Plus, Users, Music, AlertTriangle, Star,
+  Image as ImageIcon, Link as LinkIcon, Ticket, X, History, Check, RotateCcw,
+  GitPullRequest
 } from 'lucide-react';
 import { Event, EVENT_TYPES, EventType, Venue, Artist, EventStatus } from '@/types';
-// Define runtime values if EventStatus is just a type alias
-import { EVENT_STATES, EventStatusState, canTransition, ALLOWED_TRANSITIONS } from '@/lib/eventStateMachine';
+import { EVENT_STATES, EventStatusState, canTransition } from '@/lib/eventStateMachine';
 
-// Re-export for compatibility if needed, though mostly used locally
+// Re-export for compatibility if needed
 export const EventStatusValues = EVENT_STATES;
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { SourceFieldOptions } from '@/components/ui/SourceFieldOptions';
 import { ResetSectionButton } from '@/components/ui/ResetSectionButton';
+import { FormLayout } from '@/components/ui/FormLayout';
+import { FormSection } from '@/components/ui/FormSection';
 import { SourceIcon } from '@/components/ui/SourceIcon';
-import { Modal } from '@/components/ui/Modal';
-import { getBestSourceForField, SOURCE_PRIORITY } from '@/lib/smartMerge';
-import { VenueForm } from '@/components/features/VenueForm';
-import { ArtistForm } from '@/components/features/ArtistForm';
+import { getBestSourceForField } from '@/lib/smartMerge';
 import {
-  searchVenues, searchArtists, createVenue, createArtist,
-  fetchArtist, updateArtist, fetchVenue, updateVenue
+  searchVenues, searchArtists,
+  fetchPendingChanges, applyPendingChanges, dismissPendingChanges
 } from '@/lib/api';
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
+import { useDeleteWithUsage } from '@/hooks/useDeleteWithUsage';
+import { useToast } from '@/contexts/ToastContext';
+import { Modal } from '@/components/ui/Modal';
+import { Trash2 } from 'lucide-react';
+import HistoryPanel from './HistoryPanel';
+import { ArtistForm } from '@/components/features/ArtistForm';
+import { createArtist } from '@/lib/api';
+import clsx from 'clsx';
 
 // Dynamic import for Map
 const EventMap = dynamic(() => import('@/components/EventMap'), { ssr: false });
@@ -34,25 +40,33 @@ interface EventFormProps {
   initialData?: Event;
   onSubmit: (data: Partial<Event>) => Promise<void>;
   onDelete?: (id: string) => Promise<void>;
-  onCancel: () => void;
+  onCancel: (force?: boolean) => void;
   isLoading?: boolean;
   isModal?: boolean;
   prevEventId?: string;
   nextEventId?: string;
-  onNavigate?: (id: string) => void;
+  onNavigate?: (type: 'event' | 'venue' | 'artist', id?: string, data?: any) => void;
+  isPanel?: boolean;
+  onDirtyChange?: (isDirty: boolean) => void;
 }
 
 export function EventForm({
   initialData,
-  onSubmit, // NOW this just saves, does NOT redirect
+  onSubmit,
   onDelete,
   onCancel,
   isLoading = false,
   isModal = false,
   prevEventId,
   nextEventId,
-  onNavigate
+  onNavigate,
+  isPanel = false,
+  onDirtyChange
 }: EventFormProps) {
+  // Tabs State
+  const [activeTab, setActiveTab] = useState<'details' | 'history'>('details');
+  const [pendingChanges, setPendingChanges] = useState<any>(null);
+
   const [formData, setFormData] = useState<Partial<Event>>(() => {
     if (!initialData) {
       return {
@@ -76,31 +90,18 @@ export function EventForm({
       end_time: normalizeTime(initialData.end_time)
     };
   });
-  const [transitionError, setTransitionError] = useState<string | null>(null);
 
-  // Navigation State
-  const [showUnsavedModal, setShowUnsavedModal] = useState(false);
-  const [pendingNavigationId, setPendingNavigationId] = useState<string | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
+  // Fetch Changes Effect
+  useEffect(() => {
+    if (initialData?.id && initialData?.has_pending_changes) {
+      fetchPendingChanges(initialData.id)
+        .then(res => {
+          if (res.has_changes) setPendingChanges(res);
+        })
+        .catch(err => console.error('Failed to fetch pending changes:', err));
+    }
+  }, [initialData?.id, initialData?.has_pending_changes]);
 
-  const [showMap, setShowMap] = useState(false);
-
-  // Venue Logic
-  const [venueSearchQuery, setVenueSearchQuery] = useState(initialData?.venue_name || '');
-  const [venueSuggestions, setVenueSuggestions] = useState<Venue[]>([]);
-  const [showVenueSuggestions, setShowVenueSuggestions] = useState(false);
-  const [isVenueSearching, setIsVenueSearching] = useState(false);
-  const venueSearchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const [showVenueModal, setShowVenueModal] = useState(false);
-  const [editingVenueData, setEditingVenueData] = useState<Venue | undefined>(undefined);
-
-  // Artist Logic
-  const [artistSearchQuery, setArtistSearchQuery] = useState('');
-  const [artistSuggestions, setArtistSuggestions] = useState<Artist[]>([]);
-  const [showArtistSuggestions, setShowArtistSuggestions] = useState(false);
-  const [isArtistSearching, setIsArtistSearching] = useState(false);
-  const artistSearchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const [showArtistModal, setShowArtistModal] = useState(false);
   const [selectedArtists, setSelectedArtists] = useState<{ id: string; name: string }[]>(() => {
     if (initialData?.artists_list && Array.isArray(initialData.artists_list)) {
       return initialData.artists_list.map((a: any) => ({
@@ -110,7 +111,6 @@ export function EventForm({
     }
     return [];
   });
-  const [editingArtistData, setEditingArtistData] = useState<Artist | undefined>(undefined);
 
   const [endDate, setEndDate] = useState(() => {
     if (initialData?.end_time && initialData.end_time.includes('T')) {
@@ -119,33 +119,20 @@ export function EventForm({
     return '';
   });
 
-  // Use refs for latest state in event listeners
-  const formDataRef = useRef(formData);
-  const selectedArtistsRef = useRef<any[]>([]); // We need to sync this too
+  const [saveError, setSaveError] = useState<string | null>(null);
 
-  // Keep refs updated
-  useEffect(() => {
-    formDataRef.current = formData;
-  }, [formData]);
-  // We need to manage selectedArtists ref too, let's see where it is defined
-  // It's defined later in original file, we need to move it up or just access state if not using closure
-  // Since we use useEffect for keydown, we can depend on state if we attach/detach carefully.
-  // Actually, attaching keydown to window requires refs or dependency array reuse.
-  // Dependency array is better if performance allows.
-
-  const isFormDirty = () => {
+  // Derived Dirty State
+  const isDirty = useMemo(() => {
     if (!initialData) return false;
 
-    // Check key fields
+    // Check Artists
     const currentArtists = selectedArtists.map(a => String(a.id)).sort().join(',');
     const initialArtists = (initialData.artists_list || []).map((a: any) => String(a.id)).sort().join(',');
 
-    if (currentArtists !== initialArtists) {
-      console.log('Dirty Artist Check:', { current: currentArtists, initial: initialArtists });
-      return true;
-    }
+    if (currentArtists !== initialArtists) return true;
 
-    const fields: (keyof Event)[] = ['title', 'date', 'start_time', 'end_time', 'venue_name', 'status', 'description', 'ticket_url'];
+    // Check Fields
+    const fields: (keyof Event)[] = ['title', 'date', 'start_time', 'end_time', 'venue_name', 'status', 'description', 'ticket_url', 'event_type', 'flyer_front', 'content_url'];
 
     for (const f of fields) {
       let val1 = formData[f];
@@ -159,11 +146,13 @@ export function EventForm({
 
       // Normalize Times (HH:mm)
       if (f === 'start_time' || f === 'end_time') {
-        if (typeof val1 === 'string' && val1.includes('T')) val1 = val1.split('T')[1].substring(0, 5);
-        else if (typeof val1 === 'string') val1 = val1.substring(0, 5);
-
-        if (typeof val2 === 'string' && val2.includes('T')) val2 = val2.split('T')[1].substring(0, 5);
-        else if (typeof val2 === 'string') val2 = val2.substring(0, 5);
+        const norm = (v: any) => {
+          if (typeof v === 'string' && v.includes('T')) return v.split('T')[1].substring(0, 5);
+          if (typeof v === 'string') return v.substring(0, 5);
+          return v;
+        };
+        val1 = norm(val1);
+        val2 = norm(val2);
       }
 
       // Treat null, undefined, and empty strings as equal
@@ -173,120 +162,30 @@ export function EventForm({
       if (v1Empty && v2Empty) continue;
 
       if (val1 != val2) {
-        console.log(`Dirty Field Check [${f}]:`, { val1, val2 });
         return true;
       }
     }
     return false;
-  };
+  }, [formData, selectedArtists, initialData]);
 
-  const [pendingAction, setPendingAction] = useState<{ type: 'navigate' | 'cancel', payload?: any } | null>(null);
-
-  const attemptNavigation = (targetId: string) => {
-    if (isFormDirty()) {
-      setPendingAction({ type: 'navigate', payload: targetId });
-      setShowUnsavedModal(true);
-    } else {
-      onNavigate?.(targetId);
-    }
-  };
-
-  const attemptCancel = () => {
-    if (isFormDirty()) {
-      setPendingAction({ type: 'cancel' });
-      setShowUnsavedModal(true);
-    } else {
-      onCancel();
-    }
-  };
-
+  // Notify parent of dirty change
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignore if input focused
-      if (['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement).tagName)) return;
+    onDirtyChange?.(isDirty);
+  }, [isDirty, onDirtyChange]);
 
-      if (e.key === 'ArrowUp') {
-        if (prevEventId) {
-          e.preventDefault();
-          attemptNavigation(prevEventId);
-        }
-      } else if (e.key === 'ArrowDown') {
-        if (nextEventId) {
-          e.preventDefault();
-          attemptNavigation(nextEventId);
-        }
-      } else if (e.key === 'Escape') {
-        if (!showUnsavedModal && !showVenueModal && !showArtistModal) {
-          e.preventDefault();
-          attemptCancel();
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [prevEventId, nextEventId, onNavigate, formData, selectedArtists, showUnsavedModal, showVenueModal, showArtistModal]);
-
-  const confirmNavigation = async (save: boolean) => {
-    if (!pendingAction) return;
-
-    if (save) {
-      setIsSaving(true);
-      // We need to construct the event object same as handleSubmit
-      try {
-        // Helper to get final data
-        let finalStartTime = formData.start_time;
-        // Ensure we send only HH:mm (or HH:mm:ss), NOT a full ISO string
-        if (finalStartTime && finalStartTime.includes('T')) {
-          finalStartTime = finalStartTime.split('T')[1].substring(0, 5);
-        }
-
-        let finalEndTime = formData.end_time;
-        if (finalEndTime && finalEndTime.includes('T')) {
-          finalEndTime = finalEndTime.split('T')[1].substring(0, 5);
-        }
-
-        const finalData = {
-          ...formData,
-          start_time: finalStartTime,
-          end_time: finalEndTime,
-          artists_list: selectedArtists
-        };
-
-        await onSubmit(finalData);
-        setShowUnsavedModal(false);
-        // Execute pending action
-        if (pendingAction.type === 'navigate') {
-          onNavigate?.(pendingAction.payload);
-        } else if (pendingAction.type === 'cancel') {
-          onCancel();
-        }
-      } catch (e) {
-        console.error("Save failed during nav", e);
-        // Stay on page
-      } finally {
-        setIsSaving(false);
-        setPendingAction(null);
-      }
-    } else {
-      // Discard
-      setShowUnsavedModal(false);
-      if (pendingAction.type === 'navigate') {
-        onNavigate?.(pendingAction.payload);
-      } else if (pendingAction.type === 'cancel') {
-        onCancel();
-      }
-      setPendingAction(null);
+  // Sync status from external updates (e.g. List view quick actions)
+  useEffect(() => {
+    if (initialData?.status && initialData.status !== formData.status) {
+      setFormData(prev => ({ ...prev, status: initialData.status }));
     }
-  };
+  }, [initialData?.status]);
 
-  // Original handleSubmit needs to call onSubmit then EXIT (onCancel)
-  const handleMainSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
 
+  // Prepare Save Function
+  // Prepare Save Function
+  const internalSave = async () => {
     // Construct full ISO timestamps
     let finalStartTime = formData.start_time;
-    // Ensure we send only HH:mm, NOT a full ISO string
     if (finalStartTime && finalStartTime.includes('T')) {
       finalStartTime = finalStartTime.split('T')[1].substring(0, 5);
     }
@@ -296,30 +195,123 @@ export function EventForm({
       finalEndTime = finalEndTime.split('T')[1].substring(0, 5);
     }
 
-    // Include the selected artists in the form data
     const finalData = {
       ...formData,
+      status: formData.status, // Ensure status is explicitly included
       start_time: finalStartTime,
       end_time: finalEndTime,
       artists_list: selectedArtists
     };
 
+    setSaveError(null);
     await onSubmit(finalData);
-    // Explicitly exit after save if it's the main save button
-    onCancel();
   };
 
+  const handleSaveButton = async () => {
+    try {
+      await internalSave();
+      // Explicit save button closes the form
+      onCancel(true);
+    } catch (err: any) {
+      console.error('Failed to save event:', err);
+      setSaveError(err.message || 'Failed to save event');
+      showError(err.message || 'Failed to save event');
+      // Scroll to top
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  const { success, error: showError } = useToast();
+
+  const { handleDeleteClick, confirmDelete: performDelete, cancelDelete, showConfirm: showConfirmDelete, usageCount, isDeleting } = useDeleteWithUsage({
+    entityType: 'events', // Note: Make sure backend endpoint exists now
+    onDelete: async (id) => {
+      if (onDelete) await onDelete(id);
+    },
+    onSuccess: () => {
+      onCancel(true);
+      success('Event deleted successfully');
+    },
+    onError: (err) => showError(err.message || 'Failed to delete event')
+  });
+
+  // Unsaved Changes Hook
+  const { promptBeforeAction, modalElement } = useUnsavedChanges({
+    isLinkDirty: isDirty,
+    onSave: internalSave, // Helper only saves, lets hook handle pending action (navigation/close)
+    onDiscard: () => onCancel(true) // Discard triggers close/refresh if needed? No, usually discard just proceeds. But if 'Escape', we want to close.
+  });
+
+  const handleCancelRequest = () => {
+    promptBeforeAction(() => onCancel(false)); // Check dirty before cancel
+  };
+
+  // Navigation Keys
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement).tagName)) return;
+
+      if (e.key === 'ArrowUp' && prevEventId) {
+        e.preventDefault();
+        promptBeforeAction(() => onNavigate?.('event', prevEventId));
+      } else if (e.key === 'ArrowDown' && nextEventId) {
+        e.preventDefault();
+        promptBeforeAction(() => onNavigate?.('event', nextEventId));
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        handleCancelRequest();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [prevEventId, nextEventId, onNavigate, isDirty]);
+
+
+  // --- Logic State ---
+  const [transitionError, setTransitionError] = useState<string | null>(null);
+  const [venueSearchQuery, setVenueSearchQuery] = useState(initialData?.venue_name || '');
+  const [venueSuggestions, setVenueSuggestions] = useState<Venue[]>([]);
+  const [showVenueSuggestions, setShowVenueSuggestions] = useState(false);
+  const [isVenueSearching, setIsVenueSearching] = useState(false);
+  const venueSearchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const [artistSearchQuery, setArtistSearchQuery] = useState('');
+  const [artistSuggestions, setArtistSuggestions] = useState<Artist[]>([]);
+  const [showArtistSuggestions, setShowArtistSuggestions] = useState(false);
+  const [isArtistSearching, setIsArtistSearching] = useState(false);
+  /* Removed duplicate isArtistSearching */
+  const artistSearchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [isArtistModalOpen, setIsArtistModalOpen] = useState(false);
+  const [artistModalQuery, setArtistModalQuery] = useState('');
+
+  const handleCreateArtist = async (data: Partial<Artist>) => {
+    if (!data.name) {
+      showError('Artist name is required');
+      return;
+    }
+    try {
+      // Cast to required type or rely on API to handle
+      const newArtist = await createArtist(data as { name: string, country?: string });
+      if (newArtist) {
+        selectArtist(newArtist);
+        setIsArtistModalOpen(false);
+        success(`Artist "${newArtist.name}" created`);
+      }
+    } catch (err: any) {
+      console.error(err);
+      showError(err.message || 'Failed to create artist');
+    }
+  };
+
+  const uniqueSources = Array.from(new Set((initialData?.source_references || []).map(s => s.source_code)));
+  const sources = initialData?.source_references || [];
 
   const handleStatusChange = (newStatus: EventStatus) => {
-    // Current status fallback to manual draft if undefined
-    // IMPORTANT: Validate against the SAVED state (initialData), not the current form state
-    // so we don't allow skipping steps by selecting intermediate states
-    const currentStatus = (initialData?.status || EventStatusValues.MANUAL_DRAFT) as EventStatusState;
+    const savedStatus = (initialData?.status || EventStatusValues.MANUAL_DRAFT) as EventStatusState;
 
-    // Check if transition is allowed
-    if (!canTransition(currentStatus, newStatus as EventStatusState)) {
-      setTransitionError(`Cannot transition from ${currentStatus.replace(/_/g, ' ')} to ${newStatus.replace(/_/g, ' ')}`);
-      // Auto-dismiss after 3 seconds
+    if (!canTransition(savedStatus, newStatus as EventStatusState)) {
+      setTransitionError(`Cannot transition from ${savedStatus.replace(/_/g, ' ')} to ${newStatus.replace(/_/g, ' ')}`);
       setTimeout(() => setTransitionError(null), 3000);
       return;
     }
@@ -328,204 +320,7 @@ export function EventForm({
     setFormData(prev => ({ ...prev, status: newStatus }));
   };
 
-  // --- Venue Handlers ---
-
-  // Triggers search when query changes (user types OR reset updates it)
-  useEffect(() => {
-    if (venueSearchTimeoutRef.current) clearTimeout(venueSearchTimeoutRef.current);
-
-    if (venueSearchQuery.length > 1) {
-      venueSearchTimeoutRef.current = setTimeout(async () => {
-        setIsVenueSearching(true);
-        try {
-          const results = await searchVenues(venueSearchQuery, formData.venue_city || undefined);
-          setVenueSuggestions(results);
-          setShowVenueSuggestions(true);
-        } catch (err) {
-          console.error('Venue search failed', err);
-        } finally {
-          setIsVenueSearching(false);
-        }
-      }, 400);
-    } else {
-      setVenueSuggestions([]);
-      setShowVenueSuggestions(false);
-    }
-
-    return () => {
-      if (venueSearchTimeoutRef.current) clearTimeout(venueSearchTimeoutRef.current);
-    };
-  }, [venueSearchQuery, formData.venue_city]);
-
-  const handleVenueSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value;
-    setVenueSearchQuery(val);
-    setFormData(prev => ({
-      ...prev,
-      venue_name: val,
-      venue_id: null
-    }));
-  };
-
-  const selectVenue = (venue: Venue) => {
-    setFormData(prev => ({
-      ...prev,
-      venue_id: venue.id,
-      venue_name: venue.name,
-      venue_address: venue.address,
-      venue_city: venue.city,
-      venue_country: venue.country,
-      latitude: venue.latitude,
-      longitude: venue.longitude
-    }));
-    setShowVenueSuggestions(false);
-    setVenueSearchQuery('');
-  };
-
-  const removeVenue = () => {
-    setVenueSearchQuery(formData.venue_name || '');
-    setFormData(prev => ({
-      ...prev,
-      venue_id: null,
-      // Keep name in formData to match search query, but clear structured data
-      venue_name: formData.venue_name,
-      venue_address: null,
-      venue_city: null,
-      venue_country: null,
-      latitude: null,
-      longitude: null
-    }));
-  };
-
-  const handleCreateVenue = async (data: Partial<Venue>) => {
-    try {
-      let result: Venue;
-      if (editingVenueData?.id) {
-        result = await updateVenue(editingVenueData.id, data);
-      } else {
-        // @ts-ignore - API returns { success, venue }
-        const response = await createVenue(data as any);
-        // @ts-ignore
-        result = response.venue;
-      }
-      selectVenue(result);
-      setShowVenueModal(false);
-      setEditingVenueData(undefined);
-    } catch (e) {
-      console.error("Failed to save venue", e);
-      // You might want to show a toast here
-    }
-  };
-
-  const openCreateVenueForQuery = () => {
-    setEditingVenueData(undefined); // New mode
-    // Pre-fill name with query
-    setEditingVenueData({ name: venueSearchQuery } as any);
-    setShowVenueModal(true);
-    setShowVenueSuggestions(false);
-  };
-
-  const handleEditVenue = async () => {
-    if (formData.venue_id) {
-      try {
-        const v = await fetchVenue(formData.venue_id);
-        setEditingVenueData(v);
-        setShowVenueModal(true);
-      } catch (e) {
-        console.error("Failed to fetch venue for edit", e);
-      }
-    }
-  };
-
-
-  // --- Artist Handlers ---
-
-  const handleArtistSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    setArtistSearchQuery(value);
-
-    if (artistSearchTimeoutRef.current) clearTimeout(artistSearchTimeoutRef.current);
-
-    if (value.length > 1) {
-      artistSearchTimeoutRef.current = setTimeout(async () => {
-        setIsArtistSearching(true);
-        try {
-          const results = await searchArtists(value);
-          // Filter out already selected
-          const filtered = results.filter((a: Artist) => !selectedArtists.find(sa => sa.id === a.id));
-          setArtistSuggestions(filtered);
-          setShowArtistSuggestions(true);
-        } catch (err) {
-          console.error('Artist search failed', err);
-        } finally {
-          setIsArtistSearching(false);
-        }
-      }, 400);
-    } else {
-      setArtistSuggestions([]);
-      setShowArtistSuggestions(false);
-    }
-  };
-
-  const selectArtist = (artist: Artist) => {
-    setSelectedArtists(prev => [...prev, { id: artist.id, name: artist.name }]);
-    setArtistSearchQuery('');
-    setShowArtistSuggestions(false);
-  };
-
-  const removeArtist = (id: string) => {
-    setSelectedArtists(prev => prev.filter(a => a.id !== id));
-  };
-
-  const handleCreateArtist = async (data: Partial<Artist>) => {
-    try {
-      let result: Artist;
-      if (editingArtistData?.id) {
-        result = await updateArtist(editingArtistData.id, data as any);
-        // Update name in selected list if edited
-        setSelectedArtists(prev => prev.map(a => a.id === result.id ? { id: result.id, name: result.name } : a));
-      } else {
-        const response = await createArtist(data as any);
-        result = response.artist;
-        selectArtist(result);
-      }
-      setShowArtistModal(false);
-      setEditingArtistData(undefined);
-    } catch (e) {
-      console.error("Failed to save artist", e);
-    }
-  };
-
-  const openCreateArtistForQuery = () => {
-    setEditingArtistData(undefined);
-    setEditingArtistData({ name: artistSearchQuery } as any);
-    setShowArtistModal(true);
-    setShowArtistSuggestions(false);
-  };
-
-  const handleEditArtist = async (artist: { id: string; name: string }) => {
-    // If it's a temp ID or source ID that hasn't been created yet
-    if (!artist.id || artist.id.toString().startsWith('temp-') || artist.id.toString().startsWith('source-')) {
-      setEditingArtistData({ name: artist.name } as any);
-      setShowArtistModal(true);
-      return;
-    }
-
-    try {
-      const data = await fetchArtist(artist.id);
-      setEditingArtistData(data);
-      setShowArtistModal(true);
-    } catch (e) {
-      console.error("Failed to fetch artist details", e);
-      // Fallback to opening with name if fetch fails
-      setEditingArtistData({ name: artist.name } as any);
-      setShowArtistModal(true);
-    }
-  };
-
-
-  const uniqueSources = Array.from(new Set((initialData?.source_references || []).map(s => s.source_code)));
-
+  // -- Helpers --
   const resetFields = (sourceCode: string, fields: (keyof Event)[]) => {
     const newFormData = { ...formData };
     let hasChanges = false;
@@ -536,55 +331,37 @@ export function EventForm({
 
       if (sourceCode === 'best') {
         const bestSource = getBestSourceForField(sources, field as string);
-        if (bestSource) {
-          val = (bestSource as any)[field];
-        }
+        if (bestSource) val = (bestSource as any)[field];
       } else {
         const source = sources.find(s => s.source_code === sourceCode);
-        if (source && (source as any)[field] !== undefined) {
-          val = (source as any)[field];
-        }
+        if (source && (source as any)[field] !== undefined) val = (source as any)[field];
       }
 
       if (val !== undefined && val !== null) {
         if (field === 'start_time' || field === 'end_time') {
           let timeVal = '';
-          let dateVal = '';
-
-          if (val instanceof Date) {
-            const iso = val.toISOString();
-            dateVal = iso.split('T')[0];
-            timeVal = iso.split('T')[1].substring(0, 5);
-          } else if (typeof val === 'string' && val.includes('T')) {
-            const [d, t] = val.split('T');
-            dateVal = d;
-            timeVal = t.substring(0, 5);
-          } else {
-            timeVal = String(val).substring(0, 5);
-          }
+          if (val instanceof Date) timeVal = val.toISOString().split('T')[1].substring(0, 5);
+          else if (typeof val === 'string' && val.includes('T')) timeVal = val.split('T')[1].substring(0, 5);
+          else timeVal = String(val).substring(0, 5);
 
           // @ts-ignore
           newFormData[field] = timeVal;
-          // Only update endDate if we have a date part
-          if (field === 'end_time' && dateVal) setEndDate(dateVal);
-        } else if (field === 'artists') {
-          // Special handling for artists: reset selectedArtists list
-          let artistList: any[] = [];
-          if (Array.isArray(val)) {
-            artistList = val;
-          } else if (typeof val === 'string') {
-            try { artistList = JSON.parse(val); } catch { }
+          if (field === 'end_time' && typeof val === 'string' && val.includes('T')) {
+            setEndDate(val.split('T')[0]);
           }
+        } else if (field === 'artists') {
+          let artistList: any[] = [];
+          if (Array.isArray(val)) artistList = val;
+          else if (typeof val === 'string') { try { artistList = JSON.parse(val); } catch { } }
 
           if (Array.isArray(artistList)) {
             setSelectedArtists(artistList.map((a: any) => ({
               id: a.id || a.source_artist_id || 'source-' + Math.random(),
               name: a.name
             })));
-            hasChanges = true; // Mark as changed so other fields update if needed
+            hasChanges = true;
           }
         } else if (field === 'venue_name') {
-          // If resetting venue name, we should unlink the Venue ID to ensure it matches source string
           // @ts-ignore
           newFormData['venue_id'] = null;
           // @ts-ignore
@@ -601,7 +378,6 @@ export function EventForm({
     if (hasChanges) setFormData(newFormData);
   };
 
-
   const handleResetToSource = (sourceCode: string) => {
     resetFields(sourceCode, [
       'title', 'date', 'start_time', 'end_time', 'description',
@@ -611,7 +387,6 @@ export function EventForm({
     ]);
   };
 
-  // Helper for single field source selection
   const handleSourceSelect = (field: keyof Event, value: any) => {
     if ((field === 'start_time' || field === 'end_time')) {
       let timeVal = value;
@@ -630,645 +405,496 @@ export function EventForm({
     }
   };
 
+  // Search Logic (Venue/Artist)
+  useEffect(() => {
+    if (venueSearchTimeoutRef.current) clearTimeout(venueSearchTimeoutRef.current);
+    if (venueSearchQuery.length > 1) {
+      venueSearchTimeoutRef.current = setTimeout(async () => {
+        setIsVenueSearching(true);
+        try {
+          const results = await searchVenues(venueSearchQuery, formData.venue_city || undefined);
+          setVenueSuggestions(results);
+          setShowVenueSuggestions(true);
+        } catch (err) { console.error(err); } finally { setIsVenueSearching(false); }
+      }, 400);
+    } else {
+      setVenueSuggestions([]);
+      setShowVenueSuggestions(false);
+    }
+    return () => { if (venueSearchTimeoutRef.current) clearTimeout(venueSearchTimeoutRef.current); };
+  }, [venueSearchQuery, formData.venue_city]);
+
+  const removeVenue = () => {
+    setVenueSearchQuery(formData.venue_name || '');
+    setFormData(prev => ({
+      ...prev,
+      venue_id: null,
+      venue_name: formData.venue_name,
+      venue_address: null,
+      venue_city: null,
+      venue_country: null,
+      latitude: null,
+      longitude: null
+    }));
+  };
+
+  const selectVenue = (venue: Venue) => {
+    setFormData(prev => ({
+      ...prev,
+      venue_id: venue.id,
+      venue_name: venue.name,
+      venue_address: venue.address,
+      venue_city: venue.city,
+      venue_country: venue.country,
+      latitude: venue.latitude,
+      longitude: venue.longitude
+    }));
+    setShowVenueSuggestions(false);
+    setVenueSearchQuery('');
+  };
+
+  const openCreateVenueForQuery = () => {
+    onNavigate?.('venue', undefined, { name: venueSearchQuery });
+    setShowVenueSuggestions(false);
+  };
+
+  const handleArtistSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setArtistSearchQuery(value);
+    if (artistSearchTimeoutRef.current) clearTimeout(artistSearchTimeoutRef.current);
+    if (value.length > 1) {
+      artistSearchTimeoutRef.current = setTimeout(async () => {
+        setIsArtistSearching(true);
+        try {
+          const results = await searchArtists(value);
+          const filtered = results.filter((a: Artist) => !selectedArtists.find(sa => sa.id === a.id));
+          setArtistSuggestions(filtered);
+          setShowArtistSuggestions(true);
+        } catch (err) { console.error(err); } finally { setIsArtistSearching(false); }
+      }, 400);
+    } else {
+      setArtistSuggestions([]);
+      setShowArtistSuggestions(false);
+    }
+  };
+
+  const selectArtist = (artist: Artist) => {
+    setSelectedArtists(prev => [...prev, { id: artist.id, name: artist.name }]);
+    setArtistSearchQuery('');
+    setShowArtistSuggestions(false);
+  };
+
+  // Header Extra Content (Reset Buttons & Tabs)
+  const headerExtras = (
+    <div className="flex items-center gap-4">
+      <div className="flex bg-gray-100 dark:bg-gray-800 rounded-lg p-0.5">
+        <button
+          type="button"
+          onClick={() => setActiveTab('details')}
+          className={clsx(
+            "px-3 py-1 text-xs font-semibold rounded transition-all",
+            activeTab === 'details' ? "bg-white dark:bg-gray-700 shadow text-gray-900 dark:text-gray-100" : "text-gray-500 hover:text-gray-900 dark:hover:text-gray-300"
+          )}
+        >
+          Details
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('history')}
+          className={clsx(
+            "px-3 py-1 text-xs font-semibold rounded transition-all",
+            activeTab === 'history' ? "bg-white dark:bg-gray-700 shadow text-gray-900 dark:text-gray-100" : "text-gray-500 hover:text-gray-900 dark:hover:text-gray-300"
+          )}
+        >
+          History
+        </button>
+      </div>
+
+      {uniqueSources.length > 0 && (
+        <div className="flex items-center gap-2 pl-4 border-l border-gray-200 dark:border-gray-700">
+          <span className="text-xs text-gray-500">Reset:</span>
+          <button
+            type="button"
+            onClick={() => handleResetToSource('best')}
+            className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-primary-50 dark:bg-primary-900/30 border border-primary-200 dark:border-primary-700 hover:bg-primary-100 dark:hover:bg-primary-900/50 text-primary-600 dark:text-primary-400 font-bold uppercase transition-colors"
+            title="Reset to best matched data"
+          >
+            <Star className="w-3 h-3 fill-current" /> Best
+          </button>
+          {uniqueSources.map(source => (
+            <button
+              key={source}
+              type="button"
+              onClick={() => handleResetToSource(source)}
+              className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-primary-50 dark:hover:bg-primary-900/30 text-gray-600 dark:text-gray-300 uppercase"
+              title={`Reset to ${source}`}
+            >
+              <SourceIcon sourceCode={source} className="w-3 h-3" />
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
   return (
-    <div className="flex flex-col h-full bg-white dark:bg-gray-900">
-      <Modal
-        isOpen={showVenueModal}
-        onClose={() => setShowVenueModal(false)}
-        title={editingVenueData?.id ? 'Edit Venue' : 'Create New Venue'}
-        size="lg"
-        noPadding
+    <>
+      {modalElement}
+      <FormLayout
+        title={initialData ? 'Edit Event' : 'New Event'}
+        isModal={isModal}
+        isPanel={isPanel}
+        onCancel={handleCancelRequest}
+        onSave={handleSaveButton}
+        onDelete={initialData && onDelete ? () => promptBeforeAction(() => handleDeleteClick(initialData.id)) : undefined}
+        isLoading={isLoading}
+        headerExtras={headerExtras}
+        saveLabel="Save & Close"
       >
-        <div className="h-[600px]">
-          <VenueForm
-            initialData={editingVenueData || { name: venueSearchQuery }}
-            onSubmit={handleCreateVenue}
-            onCancel={() => setShowVenueModal(false)}
-            isModal
-          />
-        </div>
-      </Modal>
+        {activeTab === 'history' ? (
+          <div className="py-6"><HistoryPanel entityId={initialData?.id || ''} entityType="event" /></div>
+        ) : (
+          <div className="space-y-6">
+            {/* Scraper Updates Alert */}
+            {pendingChanges && pendingChanges.has_changes && (
+              <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4 mb-6">
+                <div className="flex items-start gap-3">
+                  <GitPullRequest className="w-5 h-5 text-amber-600 dark:text-amber-500 mt-0.5" />
+                  <div className="flex-1">
+                    <h4 className="text-sm font-medium text-amber-900 dark:text-amber-100">Scraper Updates Available</h4>
+                    <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">
+                      The scraper has detected changes for this event.
+                    </p>
 
-      <Modal
-        isOpen={showArtistModal}
-        onClose={() => setShowArtistModal(false)}
-        title={editingArtistData?.id ? 'Edit Artist' : 'Create New Artist'}
-        size="lg"
-        noPadding
-      >
-        <div className="h-[600px]">
-          <ArtistForm
-            initialData={editingArtistData || { name: artistSearchQuery } as Artist}
-            onSubmit={handleCreateArtist}
-            onCancel={() => setShowArtistModal(false)}
-            isModal
-          />
-        </div>
-      </Modal>
-
-      <Modal
-        isOpen={showUnsavedModal}
-        onClose={() => setShowUnsavedModal(false)}
-        title="Unsaved Changes"
-        size="md"
-      >
-        <div className="space-y-4">
-          <p className="text-gray-600 dark:text-gray-300">
-            You have unsaved changes. Do you want to save them before leaving?
-          </p>
-          <div className="flex justify-end gap-3">
-            <Button variant="ghost" onClick={() => { setShowUnsavedModal(false); setPendingAction(null); }}>Cancel</Button>
-            <Button variant="danger" onClick={() => confirmNavigation(false)}>Discard</Button>
-            <Button variant="primary" onClick={() => confirmNavigation(true)} disabled={isSaving}>
-              {isSaving ? 'Saving...' : 'Save & Continue'}
-            </Button>
-          </div>
-        </div>
-      </Modal>
-
-      <form onSubmit={handleMainSubmit} className="flex flex-col h-full min-h-0 relative">
-        {/* Header */}
-        {!isModal && (
-          <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between bg-gray-50 dark:bg-gray-900/50">
-            <div className="flex items-center gap-3">
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                {initialData ? 'Edit Event' : 'New Event'}
-              </h2>
-
-              {/* Global Reset Section - Moved to Header */}
-              {uniqueSources.length > 0 && (
-                <div className="flex items-center gap-2 ml-4 pl-4 border-l border-gray-200 dark:border-gray-700">
-                  <span className="text-xs text-gray-500">Reset from:</span>
-                  <button
-                    type="button"
-                    onClick={() => handleResetToSource('best')}
-                    className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-primary-50 dark:bg-primary-900/30 border border-primary-200 dark:border-primary-700 hover:bg-primary-100 dark:hover:bg-primary-900/50 text-primary-600 dark:text-primary-400 font-bold uppercase transition-colors"
-                    title="Reset to best matched data"
-                  >
-                    <Star className="w-3 h-3 fill-current" /> Best
-                  </button>
-                  {uniqueSources.map(source => (
-                    <button
-                      key={source}
-                      type="button"
-                      onClick={() => handleResetToSource(source)}
-                      className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-primary-50 dark:hover:bg-primary-900/30 text-gray-600 dark:text-gray-300 uppercase"
-                      title={`Reset to ${source}`}
-                    >
-                      <SourceIcon sourceCode={source} className="w-3 h-3" />
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              {initialData && onDelete && (
-                <Button
-                  type="button"
-                  variant="danger"
-                  size="sm"
-                  onClick={() => onDelete(initialData.id)}
-                  disabled={isLoading}
-                >
-                  <Trash2 className="w-4 h-4" />
-                </Button>
-              )}
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={attemptCancel}
-                disabled={isLoading}
-              >
-                <X className="w-4 h-4" />
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {/* Scrollable Content */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
-
-
-          {/* Status & Visibility Bar */}
-          <div className="flex items-center justify-between bg-gray-50 dark:bg-gray-800/50 p-3 rounded-lg border border-gray-200 dark:border-gray-700">
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center gap-4">
-                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Workflow</span>
-                <div className="flex bg-white dark:bg-gray-900 rounded-md p-1 border border-gray-200 dark:border-gray-700 shadow-sm flex-wrap gap-1">
-                  {[
-                    { value: EventStatusValues.MANUAL_DRAFT, label: 'Draft' },
-                    { value: EventStatusValues.APPROVED_PENDING_DETAILS, label: 'Needs Details' },
-                    { value: EventStatusValues.READY_TO_PUBLISH, label: 'Ready' },
-                    { value: EventStatusValues.PUBLISHED, label: 'Published' },
-                    { value: EventStatusValues.CANCELED, label: 'Canceled' },
-                    { value: EventStatusValues.REJECTED, label: 'Rejected' },
-                  ].map(option => {
-                    // Start from the persistent state for validation
-                    const savedStatus = (initialData?.status || EventStatusValues.MANUAL_DRAFT) as EventStatusState;
-                    const currentFormStatus = (formData.status || EventStatusValues.MANUAL_DRAFT) as EventStatusState;
-
-                    // Allow if:
-                    // 1. It is a valid transition from the SAVED status
-                    // 2. OR it is the saved status itself (reset)
-                    // 3. OR it is the currently selected status (stay)
-                    const isAllowed = canTransition(savedStatus, option.value as EventStatusState) ||
-                      savedStatus === option.value;
-
-                    const isActive = formData.status === option.value;
-
-                    return (
-                      <button
-                        key={option.value}
-                        type="button"
-                        onClick={() => handleStatusChange(option.value)}
-                        disabled={!isAllowed}
-                        className={`px-3 py-1 text-xs font-medium rounded transition-colors whitespace-nowrap ${isActive
-                          ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400 ring-1 ring-primary-500'
-                          : isAllowed
-                            ? 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
-                            : 'text-gray-300 dark:text-gray-700 cursor-not-allowed opacity-50'
-                          }`}
-                        title={!isAllowed ? `Cannot move to ${option.label} from ${savedStatus.replace(/_/g, ' ')}` : ''}
-                      >
-                        {option.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-              {transitionError && (
-                <div className="flex items-center gap-2 text-xs text-red-600 bg-red-50 dark:bg-red-900/20 px-2 py-1 rounded">
-                  <AlertTriangle className="w-3 h-3" />
-                  {transitionError}
-                </div>
-              )}
-            </div>
-
-            {/* Publicly Visible Toggle Removed */}
-          </div>
-
-          {/* Basic Info */}
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">Basic Info</h3>
-              <ResetSectionButton
-                sources={uniqueSources}
-                onReset={(source) => resetFields(source, ['title', 'event_type', 'date', 'start_time', 'end_time'])}
-              />
-            </div>
-            <div>
-              <Input
-                label="Title"
-                value={formData.title || ''}
-                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                required
-              />
-              <SourceFieldOptions
-                sources={initialData?.source_references}
-                field="title"
-                currentValue={formData.title}
-                onSelect={(val) => handleSourceSelect('title', val)}
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              {/* Type Dropdown - Full width or half? Original was half. */}
-              {/* Let's keep Type half width and maybe leave the other half empty or put something else later. 
-                Actually, let's just close the grid after Type so it takes its space, 
-                or better, make Type full width if appropriate, OR just close the grid div. 
-            */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Type
-                </label>
-                <select
-                  value={formData.event_type || 'event'}
-                  onChange={(e) => setFormData({ ...formData, event_type: e.target.value as EventType })}
-                  className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 dark:text-white"
-                >
-                  {EVENT_TYPES.map(type => (
-                    <option key={type.value} value={type.value}>
-                      {type.icon} {type.label}
-                    </option>
-                  ))}
-                </select>
-                <SourceFieldOptions
-                  sources={initialData?.source_references}
-                  field="event_type"
-                  currentValue={formData.event_type}
-                  onSelect={(val) => handleSourceSelect('event_type', val)}
-                />
-              </div>
-              {/* Empty col to keep Type half width */}
-              <div></div>
-            </div>
-
-            {/* Start Date & Time */}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Input
-                  label="Start Date"
-                  type="date"
-                  value={formData.date ? formData.date.split('T')[0] : ''}
-                  onChange={(e) => {
-                    setFormData({ ...formData, date: e.target.value });
-                    if (!endDate) setEndDate(e.target.value);
-                  }}
-                  required
-                />
-                <SourceFieldOptions
-                  sources={initialData?.source_references}
-                  field="date"
-                  currentValue={formData.date ? formData.date.split('T')[0] : ''}
-                  onSelect={(val) => handleSourceSelect('date', val)}
-                />
-              </div>
-              <div>
-                <Input
-                  label="Start Time"
-                  type="time"
-                  value={formData.start_time ? formData.start_time.slice(0, 5) : ''}
-                  onChange={(e) => setFormData({ ...formData, start_time: e.target.value })}
-                />
-                <SourceFieldOptions
-                  sources={initialData?.source_references}
-                  field="start_time"
-                  currentValue={formData.start_time}
-                  onSelect={(val) => handleSourceSelect('start_time', val)}
-                />
-              </div>
-            </div>
-
-            {/* End Date & Time */}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Input
-                  label="End Date (Optional)"
-                  type="date"
-                  value={endDate || ''}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  placeholder="Same as start date"
-                />
-                <SourceFieldOptions
-                  sources={(initialData?.source_references || []).map(s => {
-                    // Calculate virtual end_date
-                    let calculatedDate = '';
-                    if (s.end_time && s.end_time.includes('T')) {
-                      calculatedDate = s.end_time.split('T')[0];
-                    } else if (s.date && s.end_time && s.start_time) {
-                      try {
-                        const d = new Date(s.date);
-                        const t1 = parseInt(s.start_time.replace(':', ''));
-                        const t2 = parseInt(s.end_time.replace(':', ''));
-                        // If end < start (e.g. 0400 < 2300), assume +1 day
-                        if (t2 < t1) d.setDate(d.getDate() + 1);
-                        calculatedDate = d.toISOString().split('T')[0];
-                      } catch (e) { }
-                    } else if (s.date) {
-                      // Fallback to start date
-                      calculatedDate = String(s.date).split('T')[0];
-                    }
-
-                    return { ...s, end_date: calculatedDate };
-                  })}
-                  // @ts-ignore
-                  field="end_date"
-                  currentValue={endDate}
-                  onSelect={(val) => setEndDate(val)}
-                />
-              </div>
-              <div>
-                <Input
-                  label="End Time"
-                  type="time"
-                  value={formData.end_time ? formData.end_time.slice(0, 5) : ''}
-                  onChange={(e) => setFormData({ ...formData, end_time: e.target.value })}
-                />
-                <SourceFieldOptions
-                  sources={initialData?.source_references}
-                  field="end_time"
-                  currentValue={formData.end_time}
-                  onSelect={(val) => handleSourceSelect('end_time', val)}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Artists Selection */}
-          <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-gray-800">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 flex items-center gap-2">
-                  <Users className="w-4 h-4" /> Artists
-                </h3>
-              </div>
-              <ResetSectionButton
-                sources={uniqueSources}
-                onReset={(source) => resetFields(source, ['artists'])}
-              />
-            </div>
-
-            <div className="relative" onClick={(e) => e.stopPropagation()}>
-              <div className="flex flex-wrap gap-2 mb-2">
-                {selectedArtists.map(artist => {
-                  let displayName = artist.name;
-                  // Double check if name is somehow a JSON string (rare but possible in legacy data)
-                  if (typeof displayName === 'string' && (displayName.startsWith('{') || displayName.startsWith('['))) {
-                    try {
-                      const parsed = JSON.parse(displayName);
-                      displayName = parsed.name || displayName;
-                    } catch { }
-                  }
-
-                  return (
-                    <span key={artist.id} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-sm font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
-                      <span onClick={() => handleEditArtist(artist)} className="cursor-pointer hover:underline mr-1">
-                        {displayName}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => removeArtist(artist.id)}
-                        className="ml-1 text-purple-600 hover:text-purple-900 dark:text-purple-400 dark:hover:text-purple-200 focus:outline-none"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </span>
-                  );
-                })}
-              </div>
-
-              <Input
-                value={artistSearchQuery}
-                onChange={handleArtistSearchChange}
-                onFocus={() => { if (artistSuggestions.length > 0) setShowArtistSuggestions(true); }}
-                placeholder="Search and add artists..."
-                leftIcon={<Search className="w-4 h-4" />}
-              />
-              {initialData?.source_references && (
-                <SourceFieldOptions
-                  sources={initialData?.source_references}
-                  field="artists"
-                  currentValue={selectedArtists}
-                  onSelect={(val) => {
-                    if (Array.isArray(val)) {
-                      setSelectedArtists(val.map((a: any) => ({
-                        id: a.id || a.source_artist_id || 'temp-' + Math.random(),
-                        name: a.name
-                      })));
-                    }
-                  }}
-                  formatDisplay={(val) => Array.isArray(val) ? val.map((a: any) => a.name).join(', ') : ''}
-                />
-              )}
-
-              {isArtistSearching && (
-                <div className="absolute right-3 top-[calc(100%-38px)] animate-spin h-4 w-4 border-2 border-purple-500 rounded-full border-t-transparent"></div>
-              )}
-
-              {showArtistSuggestions && artistSearchQuery.length > 1 && (
-                <div className="absolute z-10 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg mt-1 max-h-60 overflow-y-auto">
-                  {artistSuggestions.map(artist => (
-                    <div
-                      key={artist.id}
-                      className="px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer text-sm flex items-center justify-between"
-                      onClick={() => selectArtist(artist)}
-                    >
-                      <span>{artist.name}</span>
-                      {artist.country && <span className="text-xs text-gray-500">{artist.country}</span>}
-                    </div>
-                  ))}
-                  <div
-                    className="px-4 py-2 hover:bg-primary-50 dark:hover:bg-primary-900/20 cursor-pointer text-sm text-primary-600 dark:text-primary-400 border-t border-gray-100 dark:border-gray-700 font-medium flex items-center gap-2"
-                    onClick={openCreateArtistForQuery}
-                  >
-                    <Plus className="w-4 h-4" /> Create "{artistSearchQuery}"
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-
-
-
-          {/* Venue Selection */}
-          <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-gray-800">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 flex items-center gap-2">
-                <MapPin className="w-4 h-4" /> Location
-              </h3>
-              <ResetSectionButton
-                sources={uniqueSources}
-                onReset={(source) => resetFields(source, ['venue_name', 'venue_address', 'venue_city', 'venue_country', 'latitude', 'longitude'])}
-              />
-            </div>
-
-            <div className="flex gap-4 items-start">
-              {/* Left Column: Map Preview */}
-              <div className="w-1/3 space-y-2">
-                <div className="w-full aspect-video bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 relative pointer-events-none">
-                  {(formData.venue_id || (formData.latitude && formData.longitude)) ? (
-                    <EventMap
-                      events={[formData as Event]}
-                      center={formData.latitude && formData.longitude ? [formData.latitude, formData.longitude] : undefined}
-                      zoom={13}
-                      minimal
-                    />
-                  ) : (
-                    <div className="flex items-center justify-center h-full text-gray-400">
-                      <MapPin className="w-8 h-8 opacity-20" />
-                    </div>
-                  )}
-                </div>
-                <SourceFieldOptions
-                  sources={initialData?.source_references}
-                  field="venue_name"
-                  currentValue={formData.venue_name}
-                  onSelect={(val) => {
-                    setFormData({ ...formData, venue_name: val, venue_id: null });
-                    setVenueSearchQuery(val);
-                  }}
-                />
-              </div>
-
-              {/* Right Column: Inputs */}
-              <div className="flex-1 space-y-4">
-                {/* Venue Selector / Display */}
-                {formData.venue_id ? (
-                  <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4 border border-gray-200 dark:border-gray-700 flex items-start justify-between">
-                    <div>
-                      <h4 className="font-medium text-gray-900 dark:text-gray-100 flex items-center gap-2">
-                        {formData.venue_name}
-                        <span className="text-xs px-2 py-0.5 rounded bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">Linked</span>
-                      </h4>
-                      <p className="text-sm text-gray-500 mt-1">{formData.venue_address}</p>
-                      <p className="text-xs text-gray-400 mt-0.5">{[formData.venue_city, formData.venue_country].filter(Boolean).join(', ')}</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Button variant="ghost" size="sm" onClick={handleEditVenue}>Edit</Button>
-                      <Button variant="ghost" size="sm" onClick={removeVenue} className="text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20">
-                        <X className="w-4 h-4" />
+                    <div className="mt-3 flex gap-2">
+                      <Button size="sm" variant="outline" onClick={async () => {
+                        if (initialData?.id && pendingChanges.changes?.[0]) {
+                          await applyPendingChanges(initialData.id, pendingChanges.changes[0].id);
+                          window.location.reload();
+                        }
+                      }}>
+                        <Check className="w-4 h-4 mr-1.5" /> Apply All Updates
+                      </Button>
+                      <Button size="sm" variant="ghost" className="text-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/40" onClick={async () => {
+                        if (initialData?.id && pendingChanges.changes?.[0]) {
+                          await dismissPendingChanges(initialData.id, pendingChanges.changes[0].id);
+                          setPendingChanges(null);
+                        }
+                      }}>
+                        Dismiss
                       </Button>
                     </div>
-                  </div>
-                ) : (
-                  /* Search Input */
-                  <div className="relative" onClick={(e) => e.stopPropagation()}>
-                    <Input
-                      value={venueSearchQuery}
-                      onChange={handleVenueSearchChange}
-                      onFocus={() => { if (venueSuggestions.length > 0) setShowVenueSuggestions(true); }}
-                      placeholder="Search for a venue..."
-                      autoComplete="off"
-                      leftIcon={<Search className="w-4 h-4" />}
-                    />
-                    {isVenueSearching && (
-                      <div className="absolute right-3 top-[38px] animate-spin h-4 w-4 border-2 border-primary-500 rounded-full border-t-transparent"></div>
-                    )}
 
-                    {showVenueSuggestions && venueSearchQuery.length > 1 && (
-                      <div className="absolute z-10 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg mt-1 max-h-60 overflow-y-auto">
-                        {venueSuggestions.map(venue => (
-                          <div
-                            key={venue.id}
-                            className="px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer text-sm"
-                            onClick={() => selectVenue(venue)}
-                          >
-                            <p className="font-medium text-gray-900 dark:text-white">{venue.name}</p>
-                            <p className="text-xs text-gray-500 truncate">{venue.address}, {venue.city}</p>
+                    {/* Change List */}
+                    {pendingChanges.changes?.[0]?.changes && (
+                      <div className="mt-4 bg-white/50 dark:bg-black/20 rounded border border-amber-100 dark:border-amber-900/50 p-3 text-sm">
+                        {Object.entries(pendingChanges.changes[0].changes).map(([key, val]: any) => (
+                          <div key={key} className="flex gap-2 items-center py-1">
+                            <span className="font-medium w-32 capitalize">{key.replace('_', ' ')}:</span>
+                            <span className="text-gray-500 line-through truncate max-w-[150px]">{String(val.old)}</span>
+                            <span className="text-emerald-600 dark:text-emerald-400">→</span>
+                            <span className="font-medium truncate max-w-[150px]">{String(val.new)}</span>
                           </div>
                         ))}
-                        <div
-                          className="px-4 py-2 hover:bg-primary-50 dark:hover:bg-primary-900/20 cursor-pointer text-sm text-primary-600 dark:text-primary-400 border-t border-gray-100 dark:border-gray-700 font-medium flex items-center gap-2"
-                          onClick={openCreateVenueForQuery}
-                        >
-                          <Plus className="w-4 h-4" /> Create "{venueSearchQuery}"
-                        </div>
                       </div>
                     )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Error Alert */}
+            {saveError && (
+              <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-center gap-2 text-red-700 dark:text-red-300">
+                <AlertTriangle className="w-5 h-5 flex-shrink-0" />
+                <p className="text-sm font-medium">{saveError}</p>
+              </div>
+            )}
+
+            {/* Workflow State Bar */}
+            <div className="flex items-center justify-between bg-gray-50 dark:bg-gray-800/50 p-3 rounded-lg border border-gray-200 dark:border-gray-700">
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-4">
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Workflow</span>
+                  <div className="flex bg-white dark:bg-gray-900 rounded-md p-1 border border-gray-200 dark:border-gray-700 shadow-sm flex-wrap gap-1">
+                    {[
+                      { value: EventStatusValues.MANUAL_DRAFT, label: 'Draft' },
+                      { value: EventStatusValues.APPROVED_PENDING_DETAILS, label: 'Needs Details' },
+                      { value: EventStatusValues.READY_TO_PUBLISH, label: 'Ready' },
+                      { value: EventStatusValues.PUBLISHED, label: 'Published' },
+                      { value: EventStatusValues.CANCELED, label: 'Canceled' },
+                      { value: EventStatusValues.REJECTED, label: 'Rejected' },
+                    ].map(option => {
+                      const savedStatus = (initialData?.status || EventStatusValues.MANUAL_DRAFT) as EventStatusState;
+
+                      // STRICT VALIDATION: Only allow transitions from the SAVED status.
+                      // This forces the user to save the form (updating savedStatus) before progressing to the next step.
+                      const isAllowed = canTransition(savedStatus, option.value as EventStatusState) ||
+                        savedStatus === option.value;
+
+                      const isActive = formData.status === option.value;
+
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => handleStatusChange(option.value)}
+                          disabled={!isAllowed}
+                          className={`px-3 py-1 text-xs font-medium rounded transition-colors whitespace-nowrap ${isActive
+                            ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400 ring-1 ring-primary-500'
+                            : isAllowed
+                              ? 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                              : 'text-gray-300 dark:text-gray-700 cursor-not-allowed opacity-50'
+                            }`}
+                          title={!isAllowed ? `Cannot move to ${option.label} from ${savedStatus.replace(/_/g, ' ')}` : ''}
+                        >
+                          {option.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                {transitionError && (
+                  <div className="flex items-center gap-2 text-xs text-red-600 bg-red-50 dark:bg-red-900/20 px-2 py-1 rounded">
+                    <AlertTriangle className="w-3 h-3" />
+                    {transitionError}
                   </div>
                 )}
               </div>
             </div>
 
+            {/* Basic Info */}
+            <FormSection
+              title="Basic Info"
+              sources={uniqueSources}
+              onReset={(source) => resetFields(source, ['title', 'event_type', 'date', 'start_time', 'end_time'])}
+            >
+              <div className="space-y-4 pt-4">
+                <div>
+                  <Input
+                    label="Title"
+                    value={formData.title || ''}
+                    onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                    required
+                  />
+                  <SourceFieldOptions sources={sources} field="title" onSelect={(v) => handleSourceSelect('title', v)} currentValue={formData.title} />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Type
+                    </label>
+                    <select
+                      value={formData.event_type || 'event'}
+                      onChange={(e) => setFormData({ ...formData, event_type: e.target.value as EventType })}
+                      className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 dark:text-white"
+                    >
+                      {EVENT_TYPES.map(type => (
+                        <option key={type.value} value={type.value}>
+                          {type.label}
+                        </option>
+                      ))}
+                    </select>
+                    <SourceFieldOptions sources={sources} field="event_type" onSelect={(v) => handleSourceSelect('event_type', v)} currentValue={formData.event_type} />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Input label="Start Date" type="date" value={formData.date ? formData.date.split('T')[0] : ''} onChange={(e) => { setFormData({ ...formData, date: e.target.value }); if (!endDate) setEndDate(e.target.value); }} required />
+                    <SourceFieldOptions sources={sources} field="date" onSelect={(v) => handleSourceSelect('date', v)} currentValue={formData.date} />
+                  </div>
+                  <div>
+                    <Input label="Start Time" type="time" value={formData.start_time || ''} onChange={(e) => setFormData({ ...formData, start_time: e.target.value })} />
+                    <SourceFieldOptions sources={sources} field="start_time" onSelect={(v) => handleSourceSelect('start_time', v)} currentValue={formData.start_time} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Input label="End Date (Optional)" type="date" value={endDate || ''} onChange={(e) => setEndDate(e.target.value)} placeholder="Same as start date" />
+                    <SourceFieldOptions sources={sources} field="end_time" label="End Date" onSelect={(v) => handleSourceSelect('end_time', v)} currentValue={endDate} />
+                  </div>
+                  <div>
+                    <Input label="End Time" type="time" value={formData.end_time || ''} onChange={(e) => setFormData({ ...formData, end_time: e.target.value })} />
+                    <SourceFieldOptions sources={sources} field="end_time" onSelect={(v) => handleSourceSelect('end_time', v)} currentValue={formData.end_time} />
+                  </div>
+                </div>
+              </div>
+            </FormSection>
+
+            {/* Artists */}
+            <FormSection
+              title="Artists"
+              icon={<Users className="w-4 h-4" />}
+              sources={uniqueSources}
+              onReset={(source) => resetFields(source, ['artists'])}
+            >
+              <div className="space-y-4 pt-4">
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {selectedArtists.map(artist => (
+                    <span key={artist.id} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-sm font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                      <span onClick={() => onNavigate?.('artist', artist.id)} className="cursor-pointer hover:underline mr-1">{artist.name}</span>
+                      <button type="button" onClick={() => setSelectedArtists(prev => prev.filter(p => p.id !== artist.id))} className="ml-1 text-purple-600 hover:text-purple-900"><X className="w-3 h-3" /></button>
+                    </span>
+                  ))}
+                </div>
+                <div className="relative">
+                  <Input value={artistSearchQuery} onChange={handleArtistSearchChange} onFocus={() => { if (artistSuggestions.length > 0) setShowArtistSuggestions(true); }} placeholder="Search artists..." leftIcon={<Search className="w-4 h-4" />} />
+                  {isArtistSearching && <div className="absolute right-3 top-[38px] animate-spin h-4 w-4 border-2 border-primary-500 rounded-full border-t-transparent"></div>}
+                  {showArtistSuggestions && artistSearchQuery.length > 1 && (
+                    <div className="absolute z-50 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg mt-1 max-h-60 overflow-y-auto">
+                      {artistSuggestions.map(artist => (
+                        <div key={artist.id} className="px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer text-sm flex justify-between" onClick={() => selectArtist(artist)}>
+                          <span>{artist.name}</span>
+                          {artist.country && <span className="text-xs text-gray-500">{artist.country}</span>}
+                        </div>
+                      ))}
+                      <div className="px-4 py-2 hover:bg-primary-50 dark:hover:bg-primary-900/20 cursor-pointer text-sm text-primary-600 font-medium flex items-center gap-2" onClick={() => { setArtistModalQuery(artistSearchQuery); setIsArtistModalOpen(true); setShowArtistSuggestions(false); }}>
+                        <Plus className="w-4 h-4" /> Create "{artistSearchQuery}"
+                      </div>
+                    </div>
+                  )}
+                </div>
+                {/* Note: SourceFieldOptions for artists is complex due to array nature; sticking to reset buttons for now unless requested */}
+              </div>
+            </FormSection>
+
+            {/* Venue */}
+            <FormSection
+              title="Location"
+              icon={<MapPin className="w-4 h-4" />}
+              sources={uniqueSources}
+              onReset={(source) => resetFields(source, ['venue_name', 'venue_address', 'venue_city', 'venue_country', 'latitude', 'longitude'])}
+            >
+              <div className="pt-4 flex gap-4 items-start">
+                <div className="w-1/3 aspect-video bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 relative pointer-events-none">
+                  {(formData.venue_id || (formData.latitude && formData.longitude)) ? (
+                    <EventMap events={[formData as Event]} center={formData.latitude && formData.longitude ? [formData.latitude, formData.longitude] : undefined} zoom={13} minimal />
+                  ) : <div className="flex items-center justify-center h-full text-gray-400"><MapPin className="w-8 h-8 opacity-20" /></div>}
+                </div>
+                <div className="flex-1">
+                  {formData.venue_id ? (
+                    <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4 border border-gray-200 dark:border-gray-700 flex justify-between">
+                      <div>
+                        <h4 className="font-medium text-gray-900 dark:text-gray-100 flex items-center gap-2">{formData.venue_name} <span className="text-xs px-2 py-0.5 rounded bg-green-100 text-green-800">Linked</span></h4>
+                        <p className="text-sm text-gray-500">{formData.venue_address}</p>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button variant="ghost" size="sm" onClick={() => onNavigate?.('venue', formData.venue_id!)}>Edit</Button>
+                        <Button variant="ghost" size="sm" onClick={removeVenue} className="text-red-500"><X className="w-4 h-4" /></Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="relative">
+                      <Input value={venueSearchQuery} onChange={(e) => { setVenueSearchQuery(e.target.value); setFormData({ ...formData, venue_name: e.target.value, venue_id: null }); }} onFocus={() => { if (venueSuggestions.length > 0) setShowVenueSuggestions(true); }} placeholder="Search venue..." leftIcon={<Search className="w-4 h-4" />} />
+                      {isVenueSearching && <div className="absolute right-3 top-[38px] animate-spin h-4 w-4 border-2 border-primary-500 rounded-full border-t-transparent"></div>}
+                      {showVenueSuggestions && venueSearchQuery.length > 1 && (
+                        <div className="absolute z-10 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg mt-1 max-h-60 overflow-y-auto">
+                          {venueSuggestions.map(v => (
+                            <div key={v.id} className="px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer text-sm" onClick={() => selectVenue(v)}>
+                              <p className="font-medium">{v.name}</p>
+                              <p className="text-xs text-gray-500">{v.address}</p>
+                            </div>
+                          ))}
+                          <div className="px-4 py-2 hover:bg-primary-50 cursor-pointer text-sm text-primary-600 font-medium flex items-center gap-2" onClick={openCreateVenueForQuery}>
+                            <Plus className="w-4 h-4" /> Create "{venueSearchQuery}"
+                          </div>
+                        </div>
+                      )}
+                      <SourceFieldOptions sources={sources} field="venue_name" onSelect={(v) => handleSourceSelect('venue_name', v)} currentValue={formData.venue_name} />
+                    </div>
+                  )}
+                </div>
+              </div>
+            </FormSection>
+
+            {/* Media */}
+            <FormSection
+              title="Media & Links"
+              icon={<ImageIcon className="w-4 h-4" />}
+              sources={uniqueSources}
+              onReset={(source) => resetFields(source, ['flyer_front', 'content_url', 'ticket_url'])}
+            >
+              <div className="space-y-4 pt-4">
+                <div>
+                  <Input label="Flyer URL" value={formData.flyer_front || ''} onChange={(e) => setFormData({ ...formData, flyer_front: e.target.value })} />
+                  <SourceFieldOptions sources={sources} field="flyer_front" onSelect={(v) => handleSourceSelect('flyer_front', v)} currentValue={formData.flyer_front} />
+                </div>
+                {formData.flyer_front && (
+                  <div className="relative aspect-video rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                    <img src={formData.flyer_front} alt="Preview" className="w-full h-full object-contain" onError={(e) => (e.currentTarget.style.display = 'none')} />
+                  </div>
+                )}
+                <div>
+                  <Input label="Content URL" value={formData.content_url || ''} onChange={(e) => setFormData({ ...formData, content_url: e.target.value })} leftIcon={<LinkIcon className="w-4 h-4" />} />
+                  <SourceFieldOptions sources={sources} field="content_url" onSelect={(v) => handleSourceSelect('content_url', v)} currentValue={formData.content_url} />
+                </div>
+                <div>
+                  <Input label="Ticket URL" value={formData.ticket_url || ''} onChange={(e) => setFormData({ ...formData, ticket_url: e.target.value })} leftIcon={<Ticket className="w-4 h-4" />} />
+                  <SourceFieldOptions sources={sources} field="ticket_url" onSelect={(v) => handleSourceSelect('ticket_url', v)} currentValue={formData.ticket_url} />
+                </div>
+              </div>
+            </FormSection>
+
+            {/* Description */}
+            <FormSection
+              title="Description"
+              sources={uniqueSources}
+              onReset={(source) => resetFields(source, ['description'])}
+            >
+              <div className="pt-4">
+                <textarea
+                  value={formData.description || ''}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  rows={6}
+                  className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 dark:text-white"
+                />
+                <SourceFieldOptions sources={sources} field="description" onSelect={(v) => handleSourceSelect('description', v)} currentValue={formData.description} />
+              </div>
+            </FormSection>
 
           </div>
+        )}
+      </FormLayout>
 
+      {showConfirmDelete && (
+        <Modal isOpen={showConfirmDelete} onClose={cancelDelete} title="Confirm Deletion">
+          <div className="p-6">
+            <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">Delete Event?</h3>
+            <p className="text-gray-500 dark:text-gray-400 mb-4">Are you sure you want to delete <span className="font-semibold">{formData.title}</span>? This action cannot be undone.</p>
 
-          {/* Media & Links */}
-          <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-gray-800">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 flex items-center gap-2">
-                <ImageIcon className="w-4 h-4" /> Media & Links
-              </h3>
-              <ResetSectionButton
-                sources={uniqueSources}
-                onReset={(source) => resetFields(source, ['flyer_front', 'content_url', 'ticket_url'])}
-              />
-            </div>
-
-            <div>
-              <Input
-                label="Flyer URL"
-                value={formData.flyer_front || ''}
-                onChange={(e) => setFormData({ ...formData, flyer_front: e.target.value })}
-              />
-              <SourceFieldOptions
-                sources={initialData?.source_references}
-                field="flyer_front"
-                currentValue={formData.flyer_front}
-                onSelect={(val) => setFormData({ ...formData, flyer_front: val })}
-              />
-            </div>
-
-            {formData.flyer_front && (
-              <div className="relative aspect-video rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
-                <img
-                  src={formData.flyer_front}
-                  alt="Flyer preview"
-                  className="w-full h-full object-contain"
-                  onError={(e) => (e.currentTarget.style.display = 'none')}
-                />
+            {usageCount !== null && usageCount > 0 && (
+              <div className="mb-6 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-4 rounded-md border border-red-200 dark:border-red-800">
+                <div className="flex items-start gap-3">
+                  <Trash2 className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-medium">Warning: Related Data</p>
+                    <p className="text-sm mt-1">This event might be referenced in other systems.</p>
+                  </div>
+                </div>
               </div>
             )}
 
-            <div>
-              <Input
-                label="Content URL"
-                value={formData.content_url || ''}
-                onChange={(e) => setFormData({ ...formData, content_url: e.target.value })}
-                leftIcon={<LinkIcon className="w-4 h-4" />}
-              />
-              <SourceFieldOptions
-                sources={initialData?.source_references}
-                field="content_url"
-                currentValue={formData.content_url}
-                onSelect={(val) => setFormData({ ...formData, content_url: val })}
-              />
+            <div className="flex justify-end gap-3">
+              <Button variant="secondary" onClick={cancelDelete}>Cancel</Button>
+              <Button variant="danger" onClick={performDelete} isLoading={isDeleting}>Delete Event</Button>
             </div>
-
-            <Input
-              label="Ticket URL"
-              value={formData.ticket_url || ''}
-              onChange={(e) => setFormData({ ...formData, ticket_url: e.target.value })}
-              leftIcon={<Ticket className="w-4 h-4" />}
-            />
-            <SourceFieldOptions
-              sources={initialData?.source_references}
-              field="ticket_url"
-              currentValue={formData.ticket_url}
-              onSelect={(val) => setFormData({ ...formData, ticket_url: val })}
-            />
           </div>
+        </Modal>
+      )}
 
-          {/* Description */}
-          <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-gray-800">
-            <div className="flex items-center justify-between">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Description
-              </label>
-              <ResetSectionButton
-                sources={uniqueSources}
-                onReset={(source) => resetFields(source, ['description'])}
-              />
-            </div>
-            <textarea
-              value={formData.description || ''}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              rows={6}
-              className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 dark:text-white"
-            />
-            <SourceFieldOptions
-              sources={initialData?.source_references}
-              field="description"
-              currentValue={formData.description}
-              onSelect={(val) => setFormData({ ...formData, description: val })}
-            />
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/50 flex justify-end gap-3">
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={onCancel}
-            disabled={isLoading}
-          >
-            Cancel
-          </Button>
-          <Button
-            type="submit"
-            variant="primary"
-            isLoading={isLoading}
-          >
-            <Save className="w-4 h-4 mr-2" />
-            Save Changes
-          </Button>
-        </div>
-      </form>
-
-    </div>
+      {/* Artist Creation Modal */}
+      {isArtistModalOpen && (
+        <Modal isOpen={isArtistModalOpen} onClose={() => setIsArtistModalOpen(false)} title="Create New Artist" noPadding>
+          <ArtistForm
+            initialData={{ name: artistModalQuery }}
+            onSubmit={handleCreateArtist}
+            onCancel={() => setIsArtistModalOpen(false)}
+            isModal
+          />
+        </Modal>
+      )}
+    </>
   );
 }

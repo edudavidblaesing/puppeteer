@@ -42,6 +42,15 @@ const getMissingArtists = async (req, res) => {
     }
 };
 
+const getArtistUsage = async (req, res) => {
+    try {
+        const usage = await artistService.getUsage(req.params.id);
+        res.json({ usage });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
 const createArtist = async (req, res) => {
     try {
         const artist = await artistService.create(req.body);
@@ -51,9 +60,18 @@ const createArtist = async (req, res) => {
     }
 };
 
+const getArtistHistory = async (req, res) => {
+    try {
+        const history = await artistService.getHistory(req.params.id);
+        res.json(history);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
 const updateArtist = async (req, res) => {
     try {
-        const artist = await artistService.update(req.params.id, req.body);
+        const artist = await artistService.update(req.params.id, req.body, req.user);
         if (!artist) return res.status(404).json({ error: 'Artist not found' });
         res.json({ success: true, artist });
     } catch (error) {
@@ -63,12 +81,31 @@ const updateArtist = async (req, res) => {
 
 const deleteArtist = async (req, res) => {
     try {
-        const success = await artistService.delete(req.params.id);
+        const success = await artistService.delete(req.params.id, req.user);
         if (!success) return res.status(404).json({ error: 'Artist not found' });
         res.json({ success: true, deleted: req.params.id });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
+};
+
+// ... other methods ...
+
+module.exports = {
+    listArtists,
+    getArtist,
+    getMissingArtists,
+    createArtist,
+    updateArtist,
+    deleteArtist,
+    deleteArtists,
+    bulkDeleteArtists,
+    matchArtists,
+    enrichArtist,
+    enrichArtists,
+    searchArtists,
+    getArtistUsage,
+    getArtistHistory
 };
 
 const deleteArtists = async (req, res) => {
@@ -144,5 +181,6 @@ module.exports = {
     matchArtists,
     enrichArtist,
     enrichArtists,
-    searchArtists
+    searchArtists,
+    getArtistUsage
 };

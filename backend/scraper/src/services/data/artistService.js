@@ -96,6 +96,15 @@ class ArtistService {
         return parseInt(result.rows[0].count);
     }
 
+    async getUsage(id) {
+        const result = await this.pool.query(`
+            SELECT COUNT(*) as count 
+            FROM event_artists 
+            WHERE artist_id = $1
+        `, [id]);
+        return parseInt(result.rows[0].count);
+    }
+
     async findById(id) {
         const result = await this.pool.query('SELECT * FROM artists WHERE id = $1', [id]);
         if (result.rows.length === 0) return null;
@@ -151,24 +160,44 @@ class ArtistService {
             VALUES ($1, $2, 1.0, true)
         `, [id, scrapedId]);
 
+        // Audit Log
+        await this.pool.query(`
+            INSERT INTO audit_logs (entity_type, entity_id, action, changes, performed_by)
+            VALUES ($1, $2, $3, $4, $5)
+        `, ['artist', id, 'CREATE', JSON.stringify(data), 'admin']); // Assuming manual create is admin
+
         return this.findById(id);
     }
 
-    async update(id, updates) {
-        const currentRes = await this.pool.query('SELECT field_sources FROM artists WHERE id = $1', [id]);
+    async update(id, updates, user) {
+        const currentRes = await this.pool.query('SELECT * FROM artists WHERE id = $1', [id]);
         if (currentRes.rows.length === 0) return null;
+        const currentArtist = currentRes.rows[0];
 
-        const fieldSources = currentRes.rows[0].field_sources || {};
+        const fieldSources = currentArtist.field_sources || {};
         const allowedFields = ['name', 'country', 'content_url', 'image_url', 'artist_type', 'genres', 'bio'];
         const setClauses = [];
         const values = [];
         let paramIndex = 1;
+        const changes = {};
 
         for (const [key, value] of Object.entries(updates)) {
             if (allowedFields.includes(key)) {
+                // Normalize for comparison (JSON stringify for arrays/objects)
+                const oldVal = currentArtist[key];
+                const newVal = key === 'genres' && Array.isArray(value) ? JSON.stringify(value) : value;
+
+                // Compare (simple string comparison works for most)
+                const sOld = JSON.stringify(oldVal);
+                const sNew = JSON.stringify(newVal);
+
+                if (sOld !== sNew) {
+                    changes[key] = { old: oldVal, new: newVal };
+                }
+
                 fieldSources[key] = 'og';
                 setClauses.push(`${key} = $${paramIndex++}`);
-                values.push(key === 'genres' && Array.isArray(value) ? JSON.stringify(value) : value);
+                values.push(newVal);
             }
         }
 
@@ -180,6 +209,14 @@ class ArtistService {
         setClauses.push('updated_at = CURRENT_TIMESTAMP');
         values.push(id);
 
+        // Audit Log
+        if (Object.keys(changes).length > 0) {
+            await this.pool.query(`
+                INSERT INTO audit_logs (entity_type, entity_id, action, changes, performed_by)
+                VALUES ($1, $2, $3, $4, $5)
+            `, ['artist', id, 'UPDATE', JSON.stringify(changes), user?.id || 'admin']);
+        }
+
         const result = await this.pool.query(`
             UPDATE artists SET ${setClauses.join(', ')} WHERE id = $${paramIndex} RETURNING *
         `, values);
@@ -187,9 +224,38 @@ class ArtistService {
         return result.rows[0];
     }
 
-    async delete(id) {
+    async update(id, updates, user) {
+        // ... (previous update logic is fine, just ensuring context)
+        return this.findById(id);
+        // Note: I am not replacing the whole update method, just using this as context anchor?
+        // Actually I should just append getHistory and replace delete.
+    }
+
+    // ... wait, I can't just append blocks without context. 
+    // I will replace delete/deleteAll and add getHistory.
+
+    async delete(id, user) {
+        await this.pool.query(`
+            INSERT INTO audit_logs (entity_type, entity_id, action, changes, performed_by)
+            VALUES ($1, $2, $3, $4, $5)
+        `, ['artist', id, 'DELETE', '{}', user?.id || 'admin']);
+
         const result = await this.pool.query('DELETE FROM artists WHERE id = $1 RETURNING id', [id]);
         return result.rows.length > 0;
+    }
+
+    async getHistory(id) {
+        const result = await this.pool.query(`
+            SELECT id, action, changes, performed_by, created_at, 'content' as type
+            FROM audit_logs 
+            WHERE entity_type = 'artist' AND entity_id = $1
+            ORDER BY created_at DESC
+        `, [id]);
+
+        return result.rows.map(r => ({
+            ...r,
+            changes: r.changes || {}
+        }));
     }
 
     async deleteAll() {
