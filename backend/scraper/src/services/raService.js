@@ -14,7 +14,8 @@ async function fetchGraphQL(query, variables) {
     const response = await fetch(RA_GRAPHQL_URL, {
         method: 'POST',
         headers: HEADERS,
-        body: JSON.stringify({ query, variables })
+        body: JSON.stringify({ query, variables }),
+        signal: AbortSignal.timeout(30000)
     });
 
     const data = await response.json();

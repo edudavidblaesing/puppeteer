@@ -101,7 +101,8 @@ async function geocodeAddress(address, city, country) {
                 {
                     headers: {
                         'User-Agent': 'SocialEventsScraper/1.0 (admin@socialevents.com)'
-                    }
+                    },
+                    signal: AbortSignal.timeout(10000) // 10s timeout
                 }
             );
 

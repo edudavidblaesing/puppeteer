@@ -82,16 +82,7 @@ const deleteOrganizer = async (req, res) => {
 
 // ...
 
-module.exports = {
-    listOrganizers,
-    getOrganizer,
-    createOrganizer,
-    updateOrganizer,
-    deleteOrganizer,
-    matchOrganizers,
-    getOrganizerUsage,
-    getOrganizerHistory
-};
+
 
 const matchOrganizers = async (req, res) => {
     try {
@@ -110,5 +101,6 @@ module.exports = {
     updateOrganizer,
     deleteOrganizer,
     matchOrganizers,
-    getOrganizerUsage
+    getOrganizerUsage,
+    getOrganizerHistory
 };

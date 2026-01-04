@@ -139,7 +139,7 @@ class ArtistService {
         return artist;
     }
 
-    async create(data) {
+    async create(data, user) {
         const { name, country, genres, image_url, content_url, artist_type, bio } = data;
         const id = uuidv4();
 
@@ -161,10 +161,16 @@ class ArtistService {
         `, [id, scrapedId]);
 
         // Audit Log
+        const auditChanges = {};
+        for (const [key, value] of Object.entries(data)) {
+            if (value !== undefined && value !== null && value !== '') {
+                auditChanges[key] = { old: null, new: value };
+            }
+        }
         await this.pool.query(`
             INSERT INTO audit_logs (entity_type, entity_id, action, changes, performed_by)
             VALUES ($1, $2, $3, $4, $5)
-        `, ['artist', id, 'CREATE', JSON.stringify(data), 'admin']); // Assuming manual create is admin
+        `, ['artist', id, 'CREATE', JSON.stringify(auditChanges), user?.id || 'admin']);
 
         return this.findById(id);
     }
@@ -246,10 +252,13 @@ class ArtistService {
 
     async getHistory(id) {
         const result = await this.pool.query(`
-            SELECT id, action, changes, performed_by, created_at, 'content' as type
-            FROM audit_logs 
-            WHERE entity_type = 'artist' AND entity_id = $1
-            ORDER BY created_at DESC
+            SELECT al.id, al.action, al.changes, 
+                   COALESCE(u.username, al.performed_by) as performed_by, 
+                   al.created_at, 'content' as type
+            FROM audit_logs al
+            LEFT JOIN admin_users u ON u.id::text = al.performed_by
+            WHERE al.entity_type = 'artist' AND al.entity_id = $1::text
+            ORDER BY al.created_at DESC
         `, [id]);
 
         return result.rows.map(r => ({

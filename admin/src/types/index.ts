@@ -39,6 +39,7 @@ export interface SourceReference {
   title?: string;
   date?: string;
   start_time?: string;
+  end_date?: string;
   end_time?: string;
   content_url?: string;
   flyer_front?: string;
@@ -91,6 +92,7 @@ export interface Event {
   title: string;
   date: string;
   start_time: string | null;
+  end_date: string | null;
   end_time: string | null;
   content_url: string | null;
   flyer_front: string | null;

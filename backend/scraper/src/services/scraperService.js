@@ -123,7 +123,7 @@ async function scrapeTM(city, options = {}) {
     const url = `https://app.ticketmaster.com/discovery/v2/events.json?${params}`;
     console.log(`Fetching Ticketmaster: ${url}`);
 
-    const response = await fetch(url);
+    const response = await fetch(url, { signal: AbortSignal.timeout(30000) });
     if (!response.ok) {
         const error = await response.text();
         throw new Error(`Ticketmaster API error: ${response.status} - ${error}`);

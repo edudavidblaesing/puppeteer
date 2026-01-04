@@ -391,11 +391,11 @@ export default function EventMap({
           bgColor = 'bg-neutral-100 dark:bg-neutral-800'; // Drafts gray/neutral
           borderColor = 'border-neutral-400';
         } else if (statusCounts.ready > 0) {
-          bgColor = 'bg-lime-50 dark:bg-lime-900/30';
-          borderColor = 'border-lime-500';
+          bgColor = 'bg-blue-50 dark:bg-blue-900/30';
+          borderColor = 'border-blue-500';
         } else if (statusCounts.published > 0) {
           bgColor = 'bg-white dark:bg-gray-900';
-          borderColor = 'border-emerald-500';
+          borderColor = 'border-green-500';
         } else if (statusCounts.canceled > 0) {
           bgColor = 'bg-red-50 dark:bg-red-900/30';
           borderColor = 'border-red-500';
@@ -448,8 +448,8 @@ export default function EventMap({
               ${data.events.map((event, idx) => {
             let statusColor = 'bg-gray-50 border-gray-200';
             const s = event.status;
-            if (s === 'PUBLISHED') statusColor = 'bg-emerald-50 border-emerald-200';
-            else if (s === 'READY_TO_PUBLISH') statusColor = 'bg-lime-50 border-lime-200';
+            if (s === 'PUBLISHED') statusColor = 'bg-green-50 border-green-200';
+            else if (s === 'READY_TO_PUBLISH') statusColor = 'bg-blue-50 border-blue-200';
             else if (s === 'APPROVED_PENDING_DETAILS') statusColor = 'bg-amber-50 border-amber-200';
             else if (s === 'SCRAPED_DRAFT' || s === 'MANUAL_DRAFT') statusColor = 'bg-neutral-50 border-neutral-200';
             else if (s === 'CANCELED') statusColor = 'bg-red-50 border-red-200';
@@ -653,11 +653,11 @@ export default function EventMap({
               <span className="text-xs text-gray-600 dark:text-gray-300">Needs Details</span>
             </div>
             <div className="flex items-center">
-              <div className="w-3 h-3 rounded bg-lime-300 mr-2 border border-lime-500"></div>
+              <div className="w-3 h-3 rounded bg-blue-300 mr-2 border border-blue-500"></div>
               <span className="text-xs text-gray-600 dark:text-gray-300">Ready</span>
             </div>
             <div className="flex items-center">
-              <div className="w-3 h-3 rounded bg-white mr-2 border border-emerald-500"></div>
+              <div className="w-3 h-3 rounded bg-white mr-2 border border-green-500"></div>
               <span className="text-xs text-gray-600 dark:text-gray-300">Published</span>
             </div>
             <div className="flex items-center">

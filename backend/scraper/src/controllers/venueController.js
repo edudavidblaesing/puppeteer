@@ -217,7 +217,7 @@ const getVenueUsage = async (req, res) => {
 
 const createVenue = async (req, res) => {
     try {
-        const venue = await venueService.create(req.body);
+        const venue = await venueService.create(req.body, req.user);
         res.json({ success: true, venue });
     } catch (error) {
         console.error('Error creating venue:', error);
@@ -257,27 +257,7 @@ const deleteVenue = async (req, res) => {
 
 // ...
 
-module.exports = {
-    listVenues,
-    getVenue,
-    getMissingVenues,
-    createVenue,
-    updateVenue,
-    deleteVenue,
-    deleteVenues,
-    bulkDeleteVenues,
-    geocodeVenues,
-    geocodeAllVenues,
-    getGeocodingStatus,
-    testGeocode,
-    geocodeVenue,
-    matchVenues,
-    syncFromEvents,
-    linkEvents,
-    enrichVenue,
-    getVenueUsage,
-    getVenueHistory
-};
+
 
 const deleteVenues = async (req, res) => {
     try {
@@ -323,5 +303,6 @@ module.exports = {
     syncFromEvents,
     linkEvents,
     enrichVenue,
-    getVenueUsage
+    getVenueUsage,
+    getVenueHistory
 };

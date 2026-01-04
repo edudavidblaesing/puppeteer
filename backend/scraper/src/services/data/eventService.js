@@ -301,7 +301,7 @@ class EventService {
         return event;
     }
 
-    async create(data, artistsList) {
+    async create(data, artistsList, user) {
         const client = await pool.connect();
         try {
             await client.query('BEGIN');
@@ -341,6 +341,18 @@ class EventService {
                 await this.syncEventArtists(client, unifiedId, artistsList);
             }
 
+            // Audit Log
+            const auditChanges = {};
+            for (const [key, value] of Object.entries(data)) {
+                if (value !== undefined && value !== null && value !== '') {
+                    auditChanges[key] = { old: null, new: value };
+                }
+            }
+            await client.query(`
+                INSERT INTO audit_logs (entity_type, entity_id, action, changes, performed_by)
+                VALUES ($1, $2, $3, $4, $5)
+            `, ['event', unifiedId, 'CREATE', JSON.stringify(auditChanges), user?.id || 'admin']);
+
             await client.query('COMMIT');
             return result.rows[0];
         } catch (error) {
@@ -362,17 +374,24 @@ class EventService {
             const fieldSources = currentEvent.field_sources || {};
 
             const changes = {};
+            const setClauses = [];
+            const values = [];
+            let paramIndex = 1;
 
             // Track status change if any
             if (updates.status && updates.status !== currentEvent.status) {
-                // We rely on event_state_history for this, but could log here too.
-                // Let's stick to content changes here to avoid redundancy with state machine logs
+                // We rely on event_state_history for this
             }
 
             // Track content changes
-            const allowedFields = ['title', 'date', 'start_time', 'end_time', 'description', 'content_url', 'flyer_front', 'venue_name', 'venue_address', 'venue_city', 'venue_country', 'ticket_url', 'is_published', 'status', 'event_type'];
+            const allowedFields = ['title', 'date', 'start_time', 'end_date', 'end_time', 'description', 'content_url', 'flyer_front', 'venue_id', 'venue_name', 'venue_address', 'venue_city', 'venue_country', 'ticket_url', 'is_published', 'status', 'event_type'];
             for (const [key, value] of Object.entries(updates)) {
                 if (allowedFields.includes(key)) {
+                    // Add to update query
+                    setClauses.push(`${key} = $${paramIndex++}`);
+                    values.push(value);
+
+                    // Normalize for comparison
                     // Normalize for comparison
                     let oldVal = currentEvent[key];
                     let newVal = value;
@@ -424,8 +443,8 @@ class EventService {
                 if (currentArtistIds !== newArtistIds) {
                     await this.syncEventArtists(client, id, updates.artists_list);
                     changes['artists_list'] = {
-                        old: `${(currentEvent.artists_list || []).length} artists`,
-                        new: `${updates.artists_list.length} artists`
+                        old: (currentEvent.artists_list || []).map(a => a.name).filter(Boolean).join(', '),
+                        new: updates.artists_list.map(a => a.name).filter(Boolean).join(', ')
                     };
                 }
             }
@@ -463,10 +482,13 @@ class EventService {
     async getHistory(id) {
         // Fetch content changes
         const auditLogs = await pool.query(`
-            SELECT id, action, changes, performed_by, created_at, 'content' as type
-            FROM audit_logs 
-            WHERE entity_type = 'event' AND entity_id = $1
-            ORDER BY created_at DESC
+            SELECT al.id, al.action, al.changes, 
+                   COALESCE(u.username, al.performed_by) as performed_by, 
+                   al.created_at, 'content' as type
+            FROM audit_logs al
+            LEFT JOIN admin_users u ON u.id::text = al.performed_by
+            WHERE al.entity_type = 'event' AND al.entity_id = $1::text
+            ORDER BY al.created_at DESC
         `, [id]);
 
         // Fetch state history

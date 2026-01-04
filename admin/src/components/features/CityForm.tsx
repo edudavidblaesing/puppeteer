@@ -20,7 +20,7 @@ interface CityFormProps {
   initialData?: City;
   onSubmit: (data: Partial<City>) => Promise<void>;
   onDelete?: (id: string) => Promise<void>;
-  onCancel: () => void;
+  onCancel: (force?: boolean) => void;
   isLoading?: boolean;
   isModal?: boolean;
   isPanel?: boolean;
@@ -247,13 +247,13 @@ export function CityForm({ initialData, onSubmit, onDelete, onCancel, isLoading 
     } catch (err) { }
 
     await onSubmit(formData);
-    onCancel();
+    onCancel(true);
   };
 
   const { promptBeforeAction, modalElement } = useUnsavedChanges({
     isLinkDirty: isDirty,
     onSave: handleSave,
-    onDiscard: onCancel
+    onDiscard: () => onCancel()
   });
 
   const { handleDeleteClick, confirmDelete, cancelDelete, showConfirm: showConfirmDelete, usageCount, isDeleting } = useDeleteWithUsage({
@@ -262,7 +262,7 @@ export function CityForm({ initialData, onSubmit, onDelete, onCancel, isLoading 
       if (onDelete) await onDelete(id);
     },
     onSuccess: () => {
-      onCancel();
+      onCancel(true);
       success('City deleted successfully');
     },
     onError: (err) => showError(err.message)

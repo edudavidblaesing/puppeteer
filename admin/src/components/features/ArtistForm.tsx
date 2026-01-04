@@ -212,7 +212,7 @@ export function ArtistForm({
     try {
       if (!initialData?.id && formData.name) {
         const existingResult = await fetchArtists({ search: formData.name });
-        const candidates = (existingResult as any).data || [];
+        const candidates = Array.isArray(existingResult) ? existingResult : (existingResult as any).data || [];
         const isDuplicate = candidates.some((a: Artist) => a.name.toLowerCase() === formData.name?.toLowerCase());
         if (isDuplicate) {
           showError('An artist with this name already exists.');
@@ -220,7 +220,16 @@ export function ArtistForm({
         }
       }
       await onSubmit(formData);
+      success('Artist saved successfully');
+      // Reset dirty state logic if necessary, though onCancel(true) should handle closing.
+      // But if parent keeps it open, we should reset baseline.
+      if (initialData?.id) {
+        setBaselineData({ ...formData });
+      }
       onCancel(true);
+    } catch (e: any) {
+      console.error(e);
+      showError(e.message || 'Failed to save artist');
     } finally {
       setIsSubmitting(false);
     }

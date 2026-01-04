@@ -158,10 +158,17 @@ class OrganizerService {
         `, [id, name, description, image_url, finalWebsite]);
 
         // Audit Log
+        const auditChanges = {};
+        const initialData = { name, description, image_url, website: finalWebsite };
+        for (const [key, value] of Object.entries(initialData)) {
+            if (value !== undefined && value !== null && value !== '') {
+                auditChanges[key] = { old: null, new: value };
+            }
+        }
         await this.pool.query(`
             INSERT INTO audit_logs (entity_type, entity_id, action, changes, performed_by)
             VALUES ($1, $2, $3, $4, $5)
-        `, ['organizer', id, 'CREATE', JSON.stringify({ name, description, image_url, website: finalWebsite }), 'admin']);
+        `, ['organizer', id, 'CREATE', JSON.stringify(auditChanges), 'admin']);
 
         return this.findById(id);
     }
@@ -185,10 +192,14 @@ class OrganizerService {
         }
 
         for (const [key, value] of Object.entries(updates)) {
-            if (allowedFields.includes(key)) {
+            if (allowedFields.includes(key) && key in updates) {
                 // Diff Logic
                 const oldVal = currentOrganizer[key];
                 const newVal = value;
+
+                // Skip if both are empty/null to avoid ghosting
+                if (!oldVal && !newVal) continue;
+
                 // Simple string comparison usually sufficient
                 if (String(oldVal) !== String(newVal)) {
                     changes[key] = { old: oldVal, new: newVal };
@@ -233,10 +244,13 @@ class OrganizerService {
 
     async getHistory(id) {
         const result = await this.pool.query(`
-            SELECT id, action, changes, performed_by, created_at, 'content' as type
-            FROM audit_logs 
-            WHERE entity_type = 'organizer' AND entity_id = $1
-            ORDER BY created_at DESC
+            SELECT al.id, al.action, al.changes, 
+                   COALESCE(u.username, al.performed_by) as performed_by, 
+                   al.created_at, 'content' as type
+            FROM audit_logs al
+            LEFT JOIN admin_users u ON u.id::text = al.performed_by
+            WHERE al.entity_type = 'organizer' AND al.entity_id = $1::text
+            ORDER BY al.created_at DESC
         `, [id]);
 
         return result.rows.map(r => ({

@@ -86,7 +86,7 @@ async function getMapEvents(req, res) {
 async function createEvent(req, res) {
     try {
         const { artists_list, ...eventData } = req.body;
-        const newEvent = await eventService.create(eventData, artists_list);
+        const newEvent = await eventService.create(eventData, artists_list, req.user);
         res.json(newEvent);
     } catch (error) {
         console.error('Create event error:', error);

@@ -53,7 +53,7 @@ const getArtistUsage = async (req, res) => {
 
 const createArtist = async (req, res) => {
     try {
-        const artist = await artistService.create(req.body);
+        const artist = await artistService.create(req.body, req.user);
         res.json({ success: true, artist });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -91,22 +91,7 @@ const deleteArtist = async (req, res) => {
 
 // ... other methods ...
 
-module.exports = {
-    listArtists,
-    getArtist,
-    getMissingArtists,
-    createArtist,
-    updateArtist,
-    deleteArtist,
-    deleteArtists,
-    bulkDeleteArtists,
-    matchArtists,
-    enrichArtist,
-    enrichArtists,
-    searchArtists,
-    getArtistUsage,
-    getArtistHistory
-};
+
 
 const deleteArtists = async (req, res) => {
     try {
@@ -182,5 +167,6 @@ module.exports = {
     enrichArtist,
     enrichArtists,
     searchArtists,
-    getArtistUsage
+    getArtistUsage,
+    getArtistHistory
 };

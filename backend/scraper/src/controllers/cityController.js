@@ -240,7 +240,7 @@ exports.updateCity = async (req, res) => {
             }
             // Note: Deep diffing configs is harder, we'll just log that configs were updated genericly if needed, 
             // or rely on top level flags. For now let's just log top level changes.
-            if (source_configs.length > 0) changes['source_configs'] = { old: 'updated', new: 'updated' };
+            if (source_configs.length > 0) changes['source_configs'] = 'Modified';
         }
 
         // Audit Log
@@ -283,10 +283,13 @@ exports.getCityHistory = async (req, res) => {
     const { id } = req.params;
     try {
         const result = await pool.query(`
-            SELECT id, action, changes, performed_by, created_at, 'content' as type
-            FROM audit_logs 
-            WHERE entity_type = 'city' AND entity_id = $1
-            ORDER BY created_at DESC
+            SELECT al.id, al.action, al.changes, 
+                   COALESCE(u.username, al.performed_by) as performed_by, 
+                   al.created_at, 'content' as type
+            FROM audit_logs al
+            LEFT JOIN admin_users u ON u.id::text = al.performed_by
+            WHERE al.entity_type = 'city' AND al.entity_id = $1::text
+            ORDER BY al.created_at DESC
         `, [id]);
 
         const history = result.rows.map(r => ({

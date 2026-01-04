@@ -4,6 +4,7 @@ const eventBase = {
     title: z.string().min(1, "Title is required").trim(),
     date: z.string().optional().nullable().transform(val => val === '' ? null : val), // Allow empty string as null
     start_time: z.string().optional().nullable(),
+    end_date: z.string().optional().nullable(),
     end_time: z.string().optional().nullable(),
     venue_id: z.string().uuid().optional().nullable(),
     venue_name: z.string().optional().nullable(),

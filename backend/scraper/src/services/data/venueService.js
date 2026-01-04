@@ -196,7 +196,7 @@ class VenueService {
         return venue;
     }
 
-    async create(data) {
+    async create(data, user) {
         let { name, address, city, country, content_url, latitude, longitude, capacity, venue_type, email, phone } = data;
 
         if ((!latitude || !longitude) && address) {
@@ -237,10 +237,16 @@ class VenueService {
         }
 
         // Audit Log
+        const auditChanges = {};
+        for (const [key, value] of Object.entries(data)) {
+            if (value !== undefined && value !== null && value !== '') {
+                auditChanges[key] = { old: null, new: value };
+            }
+        }
         await this.pool.query(`
-            INSERT INTO audit_logs (entity_type, entity_id, action, changes, performed_by)
-            VALUES ($1, $2, $3, $4, $5)
-        `, ['venue', venueId, 'CREATE', JSON.stringify(data), 'admin']);
+            INSERT INTO audit_logs(entity_type, entity_id, action, changes, performed_by)
+            VALUES($1, $2, $3, $4, $5)
+        `, ['venue', venueId, 'CREATE', JSON.stringify(auditChanges), user?.id || 'admin']);
 
         return this.findById(venueId);
     }
@@ -270,14 +276,14 @@ class VenueService {
                 }
 
                 fieldSources[key] = 'og';
-                setClauses.push(`${key} = $${paramIndex++}`);
+                setClauses.push(`${key} = $${paramIndex++} `);
                 values.push(value);
             }
         }
 
         if (setClauses.length === 0) return await this.findById(id);
 
-        setClauses.push(`field_sources = $${paramIndex++}::jsonb`);
+        setClauses.push(`field_sources = $${paramIndex++}:: jsonb`);
         values.push(JSON.stringify(fieldSources));
 
         setClauses.push('updated_at = CURRENT_TIMESTAMP');
@@ -286,34 +292,37 @@ class VenueService {
         // Audit Log
         if (Object.keys(changes).length > 0) {
             await this.pool.query(`
-                INSERT INTO audit_logs (entity_type, entity_id, action, changes, performed_by)
-                VALUES ($1, $2, $3, $4, $5)
+                INSERT INTO audit_logs(entity_type, entity_id, action, changes, performed_by)
+        VALUES($1, $2, $3, $4, $5)
             `, ['venue', id, 'UPDATE', JSON.stringify(changes), user?.id || 'admin']);
         }
 
         const result = await this.pool.query(`
             UPDATE venues SET ${setClauses.join(', ')} WHERE id = $${paramIndex} RETURNING *
-        `, values);
+            `, values);
 
         return result.rows[0];
     }
 
     async delete(id, user) {
         await this.pool.query(`
-            INSERT INTO audit_logs (entity_type, entity_id, action, changes, performed_by)
-            VALUES ($1, $2, $3, $4, $5)
-        `, ['venue', id, 'DELETE', '{}', user?.id || 'admin']);
+            INSERT INTO audit_logs(entity_type, entity_id, action, changes, performed_by)
+        VALUES($1, $2, $3, $4, $5)
+            `, ['venue', id, 'DELETE', '{}', user?.id || 'admin']);
         const result = await this.pool.query('DELETE FROM venues WHERE id = $1 RETURNING id', [id]);
         return result.rows.length > 0;
     }
 
     async getHistory(id) {
         const result = await this.pool.query(`
-            SELECT id, action, changes, performed_by, created_at, 'content' as type
-            FROM audit_logs 
-            WHERE entity_type = 'venue' AND entity_id = $1
-            ORDER BY created_at DESC
-        `, [id]);
+            SELECT al.id, al.action, al.changes,
+            COALESCE(u.username, al.performed_by) as performed_by,
+            al.created_at, 'content' as type
+            FROM audit_logs al
+            LEFT JOIN admin_users u ON u.id:: text = al.performed_by
+            WHERE al.entity_type = 'venue' AND al.entity_id = $1:: text
+            ORDER BY al.created_at DESC
+            `, [id]);
 
         return result.rows.map(r => ({
             ...r,
@@ -342,7 +351,7 @@ class VenueService {
             WHERE e.venue_id IS NOT NULL 
             AND v.id IS NULL
             ORDER BY e.venue_name
-        `);
+            `);
         return result.rows;
     }
 
@@ -350,10 +359,10 @@ class VenueService {
         const venues = await this.pool.query(`
             SELECT id, name, address, city, country
             FROM venues
-            WHERE (latitude IS NULL OR longitude IS NULL)
-            AND (address IS NOT NULL OR city IS NOT NULL)
+        WHERE(latitude IS NULL OR longitude IS NULL)
+        AND(address IS NOT NULL OR city IS NOT NULL)
             LIMIT $1
-        `, [limit]);
+            `, [limit]);
 
         let geocoded = 0;
         let failed = 0;
@@ -367,7 +376,7 @@ class VenueService {
                         UPDATE venues 
                         SET latitude = $1, longitude = $2, updated_at = CURRENT_TIMESTAMP
                         WHERE id = $3
-                    `, [coords.latitude, coords.longitude, venue.id]);
+            `, [coords.latitude, coords.longitude, venue.id]);
                     geocoded++;
                 } else {
                     failed++;
@@ -375,7 +384,7 @@ class VenueService {
                 }
             } catch (e) {
                 failed++;
-                errors.push(`Error for ${venue.name}: ${e.message}`);
+                errors.push(`Error for ${venue.name}: ${e.message} `);
             }
             // Simple delay handled by caller or assumed acceptable for small batches
         }
@@ -388,9 +397,9 @@ class VenueService {
         const result = await this.pool.query(`
             SELECT COUNT(*) as count
             FROM venues
-            WHERE (latitude IS NULL OR longitude IS NULL)
-            AND (address IS NOT NULL OR city IS NOT NULL)
-        `);
+        WHERE(latitude IS NULL OR longitude IS NULL)
+        AND(address IS NOT NULL OR city IS NOT NULL)
+            `);
         return parseInt(result.rows[0].count);
     }
 
@@ -411,19 +420,19 @@ class VenueService {
 
     async syncFromEvents() {
         const missingVenues = await this.pool.query(`
-            SELECT DISTINCT 
-                e.venue_name, e.venue_address, e.venue_city, e.venue_country,
-                COUNT(*) as event_count
+            SELECT DISTINCT
+        e.venue_name, e.venue_address, e.venue_city, e.venue_country,
+            COUNT(*) as event_count
             FROM events e
             WHERE e.venue_name IS NOT NULL AND e.venue_name != ''
-            AND NOT EXISTS (
+            AND NOT EXISTS(
                 SELECT 1 FROM venues v 
                 WHERE LOWER(v.name) = LOWER(e.venue_name) 
                 AND LOWER(v.city) = LOWER(e.venue_city)
             )
             GROUP BY e.venue_name, e.venue_address, e.venue_city, e.venue_country
             ORDER BY COUNT(*) DESC
-        `);
+            `);
 
         let created = 0;
         const results = [];
@@ -444,14 +453,23 @@ class VenueService {
                 }
 
                 await this.pool.query(`
-                    INSERT INTO venues (id, name, address, city, country, latitude, longitude, created_at, updated_at)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    INSERT INTO venues(id, name, address, city, country, latitude, longitude, created_at, updated_at)
+                    VALUES($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 `, [venueId, venue.venue_name, venue.venue_address, venue.venue_city, venue.venue_country, latitude, longitude]);
+
+                await this.pool.query(`
+                    INSERT INTO audit_logs (entity_type, entity_id, action, changes, performed_by)
+                    VALUES ($1, $2, $3, $4, 'system')
+                `, ['venue', venueId, 'CREATE', JSON.stringify({
+                    name: { old: null, new: venue.venue_name },
+                    city: { old: null, new: venue.venue_city },
+                    address: { old: null, new: venue.venue_address }
+                })]);
 
                 created++;
                 results.push({ name: venue.venue_name, city: venue.venue_city, geocoded: !!(latitude && longitude) });
             } catch (e) {
-                console.error(`Error creating venue ${venue.venue_name}`, e);
+                console.error(`Error creating venue ${venue.venue_name} `, e);
             }
         }
         return { found: missingVenues.rows.length, created, results };
@@ -460,22 +478,22 @@ class VenueService {
     async linkEvents() {
         // Create missing venues first (simplified sync)
         await this.pool.query(`
-            INSERT INTO venues (id, name, address, city, country, created_at, updated_at)
-            SELECT 
-                gen_random_uuid(), e.venue_name, e.venue_address, e.venue_city, e.venue_country,
-                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-            FROM (
-                SELECT DISTINCT ON (LOWER(venue_name), LOWER(venue_city))
+            INSERT INTO venues(id, name, address, city, country, created_at, updated_at)
+        SELECT
+        gen_random_uuid(), e.venue_name, e.venue_address, e.venue_city, e.venue_country,
+            CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        FROM(
+            SELECT DISTINCT ON(LOWER(venue_name), LOWER(venue_city))
                     venue_name, venue_address, venue_city, venue_country
                 FROM events
                 WHERE venue_name IS NOT NULL AND venue_name != ''
-            ) e
-            WHERE NOT EXISTS (
-                SELECT 1 FROM venues v 
+        ) e
+            WHERE NOT EXISTS(
+            SELECT 1 FROM venues v 
                 WHERE LOWER(v.name) = LOWER(e.venue_name) 
                 AND LOWER(v.city) = LOWER(e.venue_city)
-            )
-       `);
+        )
+            `);
 
         const linkResult = await this.pool.query(`
             UPDATE events e
@@ -485,7 +503,7 @@ class VenueService {
             AND LOWER(e.venue_name) = LOWER(v.name)
             AND LOWER(e.venue_city) = LOWER(v.city)
             RETURNING e.id
-       `);
+            `);
         return linkResult.rowCount;
     }
 

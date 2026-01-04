@@ -113,6 +113,7 @@ export function EventForm({
   });
 
   const [endDate, setEndDate] = useState(() => {
+    if (initialData?.end_date) return initialData.end_date.split('T')[0];
     if (initialData?.end_time && initialData.end_time.includes('T')) {
       return initialData.end_time.split('T')[0];
     }
@@ -199,6 +200,7 @@ export function EventForm({
       ...formData,
       status: formData.status, // Ensure status is explicitly included
       start_time: finalStartTime,
+      end_date: endDate || null,
       end_time: finalEndTime,
       artists_list: selectedArtists
     };
@@ -367,6 +369,9 @@ export function EventForm({
           // @ts-ignore
           newFormData[field] = val;
           if (typeof val === 'string') setVenueSearchQuery(val);
+        } else if (field === 'end_date') {
+          const d = val instanceof Date ? val.toISOString().split('T')[0] : (typeof val === 'string' ? val.split('T')[0] : '');
+          setEndDate(d);
         } else {
           // @ts-ignore
           newFormData[field] = val;
@@ -380,7 +385,7 @@ export function EventForm({
 
   const handleResetToSource = (sourceCode: string) => {
     resetFields(sourceCode, [
-      'title', 'date', 'start_time', 'end_time', 'description',
+      'title', 'date', 'start_time', 'end_date', 'end_time', 'description',
       'venue_name', 'venue_address', 'venue_city', 'venue_country',
       'latitude', 'longitude',
       'content_url', 'flyer_front', 'ticket_url', 'event_type'
@@ -400,6 +405,10 @@ export function EventForm({
         }
       }
       setFormData(prev => ({ ...prev, [field]: timeVal }));
+      setFormData(prev => ({ ...prev, [field]: timeVal }));
+    } else if (field === 'end_date') {
+      const d = typeof value === 'string' ? value.split('T')[0] : '';
+      setEndDate(d);
     } else {
       setFormData(prev => ({ ...prev, [field]: value }));
     }
@@ -429,10 +438,10 @@ export function EventForm({
     setFormData(prev => ({
       ...prev,
       venue_id: null,
-      venue_name: formData.venue_name,
-      venue_address: null,
-      venue_city: null,
-      venue_country: null,
+      venue_name: '',
+      venue_address: '',
+      venue_city: '',
+      venue_country: '',
       latitude: null,
       longitude: null
     }));
@@ -667,7 +676,8 @@ export function EventForm({
             <FormSection
               title="Basic Info"
               sources={uniqueSources}
-              onReset={(source) => resetFields(source, ['title', 'event_type', 'date', 'start_time', 'end_time'])}
+
+              onReset={(source) => resetFields(source, ['title', 'event_type', 'date', 'start_time', 'end_date', 'end_time'])}
             >
               <div className="space-y-4 pt-4">
                 <div>
@@ -713,7 +723,7 @@ export function EventForm({
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <Input label="End Date (Optional)" type="date" value={endDate || ''} onChange={(e) => setEndDate(e.target.value)} placeholder="Same as start date" />
-                    <SourceFieldOptions sources={sources} field="end_time" label="End Date" onSelect={(v) => handleSourceSelect('end_time', v)} currentValue={endDate} />
+                    <SourceFieldOptions sources={sources} field="end_date" label="End Date" onSelect={(v) => handleSourceSelect('end_date', v)} currentValue={endDate} />
                   </div>
                   <div>
                     <Input label="End Time" type="time" value={formData.end_time || ''} onChange={(e) => setFormData({ ...formData, end_time: e.target.value })} />

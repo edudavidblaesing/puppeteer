@@ -69,9 +69,9 @@ import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 
 // Source Filter Map
 const SOURCE_FILTER_MAP: Record<string, string> = {
-  'ticketmaster': 'Ticketmaster',
-  'resident_advisor': 'Resident Advisor',
-  'facebook': 'Facebook',
+  'tm': 'Ticketmaster',
+  'ra': 'Resident Advisor',
+  'fb': 'Facebook',
   'manual': 'Manual / Original',
   'dice': 'Dice',
   'eventbrite': 'Eventbrite',
@@ -379,7 +379,8 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
             timeFilter
           }),
           fetchCities().catch(() => []),
-          Promise.resolve(['ticketmaster', 'resident_advisor', 'facebook', 'manual'])
+          fetchCities().catch(() => []),
+          Promise.resolve(['tm', 'ra', 'fb', 'manual'])
         ]);
         setEvents(eventsRes.data || []);
         setTotal(eventsRes.total || 0);
@@ -393,7 +394,7 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
         });
         setArtists(res.data || []);
         setTotal(res.total || 0);
-        setSources(['ticketmaster', 'resident_advisor', 'facebook', 'manual']);
+        setSources(['tm', 'ra', 'fb', 'manual']);
       }
       else if (activeTab === 'venues') {
         const res = await fetchAdminVenues({
@@ -403,13 +404,13 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
         });
         setVenues(res.data || []);
         setTotal(res.total || 0);
-        setSources(['ticketmaster', 'resident_advisor', 'facebook', 'manual']);
+        setSources(['tm', 'ra', 'fb', 'manual']);
       }
       else if (activeTab === 'organizers') {
         const res = await fetchOrganizers({ ...commonParams });
         setOrganizers(res.data || []);
         setTotal(res.total || 0);
-        setSources(['ticketmaster', 'resident_advisor', 'facebook', 'manual']);
+        setSources(['tm', 'ra', 'fb', 'manual']);
       }
       else if (activeTab === 'cities') {
         const res = await fetchAdminCities({ ...commonParams }); // City controller supports source
@@ -433,6 +434,49 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
       loadListData();
     }
   }, [activeTab, loadOverviewData, loadListData]);
+
+  // Sync current view with list data (prevent stale state on quick actions)
+  useEffect(() => {
+    if (!currentView || !currentView.id) return;
+
+    let list: any[] = [];
+    if (activeTab === 'events' && currentView.type === 'event') list = events;
+    else if (activeTab === 'venues' && currentView.type === 'venue') list = venues;
+    else if (activeTab === 'artists' && currentView.type === 'artist') list = artists;
+    else if (activeTab === 'organizers' && currentView.type === 'organizer') list = organizers;
+    else if (activeTab === 'cities' && currentView.type === 'city') list = adminCities;
+    else return;
+
+    if (list.length > 0) {
+      const updatedItem = list.find(item => String(item.id) === String(currentView.id));
+      // Only update if data actually changed to avoid infinite loops
+      if (updatedItem) {
+        if (JSON.stringify(updatedItem) !== JSON.stringify(currentView.data)) {
+          setNavigationStack(prev => {
+            const newStack = [...prev];
+            if (newStack.length > 0) {
+              newStack[newStack.length - 1] = { ...newStack[newStack.length - 1], data: updatedItem };
+            }
+            return newStack;
+          });
+        }
+      } else if (activeTab === 'events' && currentView.type === 'event') {
+        // Item might have moved out of the filtered list (e.g. status change), so fetch it directly
+        fetchEvent(currentView.id).then(latest => {
+          if (latest && JSON.stringify(latest) !== JSON.stringify(currentView.data)) {
+            setNavigationStack(prev => {
+              const newStack = [...prev];
+              if (newStack.length > 0 && newStack[newStack.length - 1].id === latest.id) {
+                newStack[newStack.length - 1] = { ...newStack[newStack.length - 1], data: latest };
+              }
+              return newStack;
+            });
+          }
+        }).catch(err => console.error('Failed to sync current view', err));
+      }
+    }
+  }, [events, venues, artists, organizers, adminCities, activeTab, currentView]); // omitted currentView.data to avoid rapid cycles, relying on list updates
+
 
   // Deep linking logic
   useEffect(() => {
@@ -608,9 +652,9 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
                   } else if (s === 'APPROVED_PENDING_DETAILS') {
                     badge = { text: 'NEEDS REVIEW', color: 'bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-900/20 dark:text-yellow-400 dark:border-yellow-800' };
                   } else if (s === 'READY_TO_PUBLISH') {
-                    badge = { text: 'READY', color: 'bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-900/20 dark:text-teal-400 dark:border-teal-800' };
+                    badge = { text: 'READY', color: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800' };
                   } else if (s === 'PUBLISHED') {
-                    badge = { text: 'PUBLISHED', color: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800' };
+                    badge = { text: 'PUBLISHED', color: 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800' };
                     // Live Check enhancement
                     if (start && end) {
                       if (now >= start && now <= end) {
@@ -853,6 +897,17 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
                     <option value="">City: All</option>
                     {cities.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
                   </select>
+
+                  <select
+                    value={sourceFilter}
+                    onChange={e => setSourceFilter(e.target.value)}
+                    className="text-xs border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded px-2 py-1 max-w-[100px]"
+                  >
+                    <option value="">Source: All</option>
+                    {sources.map(s => (
+                      <option key={s} value={s}>{SOURCE_FILTER_MAP[s] || s}</option>
+                    ))}
+                  </select>
                 </div>
               )}
 
@@ -869,7 +924,6 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
                     {cities.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
                   </select>
 
-                  {/* Type Filter */}
                   <select
                     value={venueTypeFilter}
                     onChange={e => setVenueTypeFilter(e.target.value)}
@@ -881,6 +935,17 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
                     <option value="concert_hall">Concert Hall</option>
                     <option value="festival">Festival</option>
                     <option value="other">Other</option>
+                  </select>
+
+                  <select
+                    value={sourceFilter}
+                    onChange={e => setSourceFilter(e.target.value)}
+                    className="text-xs border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded px-2 py-1 max-w-[100px]"
+                  >
+                    <option value="">Source: All</option>
+                    {sources.map(s => (
+                      <option key={s} value={s}>{SOURCE_FILTER_MAP[s] || s}</option>
+                    ))}
                   </select>
                 </div>
               )}
@@ -909,27 +974,23 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
                       <option value="inactive">Inactive Only</option>
                     </select>
                   )}
-                </div>
-              )}
 
-              {/* Source Filter (Global for List) - Hidden for Cities */}
-              {activeTab !== 'cities' && (
-                <div className="px-2 py-1 bg-gray-50 dark:bg-gray-900 border-b dark:border-gray-800 flex items-center">
-                  <div className="relative flex items-center w-full">
-                    <SourceIcon sourceCode={sourceFilter || 'og'} className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 pointer-events-none opacity-50" showTooltip={false} />
+                  {activeTab !== 'cities' && (
                     <select
                       value={sourceFilter}
                       onChange={e => setSourceFilter(e.target.value)}
-                      className="w-full text-xs border-none bg-transparent pl-6 pr-2 py-1 focus:ring-0"
+                      className="text-xs border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded px-2 py-1 max-w-[100px]"
                     >
-                      <option value="">Source: All Sources</option>
+                      <option value="">Source: All</option>
                       {sources.map(s => (
                         <option key={s} value={s}>{SOURCE_FILTER_MAP[s] || s}</option>
                       ))}
                     </select>
-                  </div>
+                  )}
                 </div>
               )}
+
+
 
               {/* Scrollable List */}
               <div className="flex-1 overflow-y-auto">

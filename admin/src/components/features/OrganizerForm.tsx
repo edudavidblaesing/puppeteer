@@ -142,7 +142,11 @@ export function OrganizerForm({
       } catch (err) { }
     }
     await onSubmit(formData);
-    onCancel(true);
+    success('Organizer saved successfully');
+
+    // Reset dirty state by updating baseline
+    setBaselineData({ ...formData });
+    setFetchedData(prev => ({ ...prev, ...formData } as Organizer)); // Update fetch cache if relevant
   };
 
   const { promptBeforeAction, modalElement } = useUnsavedChanges({

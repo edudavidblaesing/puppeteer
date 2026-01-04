@@ -94,7 +94,7 @@ export default function HistoryPanel({ entityId, entityType }: HistoryPanelProps
 
                             <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">
                                 {item.performed_by === 'system' || item.performed_by === 'scraper' ? <Globe className="w-3 h-3" /> : <User className="w-3 h-3" />}
-                                <span>{item.performed_by}</span>
+                                <span>{item.performed_by === '1' ? 'Admin' : item.performed_by}</span>
                             </div>
                         </div>
 
@@ -110,17 +110,32 @@ export default function HistoryPanel({ entityId, entityType }: HistoryPanelProps
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {Object.entries(item.changes).map(([field, delta]: [string, any]) => (
-                                            <tr key={field} className="border-b border-gray-100 dark:border-gray-800 last:border-0">
-                                                <td className="py-2 text-gray-600 dark:text-gray-400 font-medium">{field}</td>
-                                                <td className="py-2 text-red-600 dark:text-red-400 line-through text-xs break-all pr-2">
-                                                    {typeof delta.old === 'object' ? JSON.stringify(delta.old) : String(delta.old)}
-                                                </td>
-                                                <td className="py-2 text-emerald-600 dark:text-emerald-400 text-xs break-all">
-                                                    {typeof delta.new === 'object' ? JSON.stringify(delta.new) : String(delta.new)}
-                                                </td>
-                                            </tr>
-                                        ))}
+                                        {Object.entries(item.changes).map(([field, delta]: [string, any]) => {
+                                            let oldValue = '-';
+                                            let newValue = '-';
+
+                                            if (item.action === 'CREATE') {
+                                                newValue = typeof delta === 'object' ? JSON.stringify(delta) : String(delta);
+                                            } else if (delta && typeof delta === 'object' && ('old' in delta || 'new' in delta)) {
+                                                oldValue = typeof delta.old === 'object' ? JSON.stringify(delta.old) : (delta.old === undefined || delta.old === null ? '-' : String(delta.old));
+                                                newValue = typeof delta.new === 'object' ? JSON.stringify(delta.new) : (delta.new === undefined || delta.new === null ? '-' : String(delta.new));
+                                            } else {
+                                                // Fallback for simple key-value (assumed new value)
+                                                newValue = typeof delta === 'object' ? JSON.stringify(delta) : String(delta);
+                                            }
+
+                                            return (
+                                                <tr key={field} className="border-b border-gray-100 dark:border-gray-800 last:border-0">
+                                                    <td className="py-2 text-gray-600 dark:text-gray-400 font-medium">{field}</td>
+                                                    <td className="py-2 text-red-600 dark:text-red-400 text-xs break-all pr-2">
+                                                        {oldValue !== '-' ? <span className="line-through">{oldValue}</span> : '-'}
+                                                    </td>
+                                                    <td className="py-2 text-emerald-600 dark:text-emerald-400 text-xs break-all">
+                                                        {newValue}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
                                     </tbody>
                                 </table>
                             ) : (

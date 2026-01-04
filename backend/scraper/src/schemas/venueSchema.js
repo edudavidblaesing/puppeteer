@@ -18,9 +18,9 @@ const venueSchema = z.object({
     country: z.string().optional().nullable(),
     blurb: z.string().optional().nullable(),
     content_url: z.preprocess(processUrl, z.string().url().optional().nullable().or(z.literal(''))),
-    latitude: z.number().optional().nullable(),
-    longitude: z.number().optional().nullable(),
-    capacity: z.number().int().positive().optional().nullable(),
+    latitude: z.coerce.number().optional().nullable(),
+    longitude: z.coerce.number().optional().nullable(),
+    capacity: z.coerce.number().int().positive().optional().nullable(),
     venue_type: z.string().optional().nullable(),
     email: z.string().email().optional().nullable().or(z.literal('')),
     phone: z.string().optional().nullable()

@@ -158,6 +158,23 @@ title = COALESCE($1, title),
             WHERE event_id = $1 AND scraped_event_id = ANY($2:: int[])
     `, [eventId, contributingScrapedIds]);
     }
+
+    // Audit Log for System Update
+    // Calculate simple diff for major fields to avoid noise
+    const changes = {};
+    const auditableFields = ['title', 'date', 'start_time', 'venue_name'];
+    auditableFields.forEach(field => {
+        if (current[field] != merged[field]) { // loose comparison for dates/nulls
+            changes[field] = { old: current[field], new: merged[field] };
+        }
+    });
+
+    if (Object.keys(changes).length > 0) {
+        await pool.query(`
+            INSERT INTO audit_logs (entity_type, entity_id, action, changes, performed_by)
+            VALUES ($1, $2, $3, $4, $5)
+        `, ['event', eventId, 'SYSTEM_UPDATE', JSON.stringify(changes), 'system']);
+    }
 }
 
 // Find or create venue and return venue_id
@@ -397,18 +414,32 @@ async function linkOrganizersToEvent(eventId, organizers, sourceCode = null) {
 
 // Helper: Auto-reject past events
 async function autoRejectPastEvents() {
-    const result = await pool.query(`
-        UPDATE events
-SET
-is_published = false,
-    publish_status = 'rejected'
-WHERE
-date < CURRENT_DATE
-            AND publish_status = 'pending'
-            AND is_published = false
-        RETURNING id
+    // Find candidates first
+    const candidates = await pool.query(`
+        SELECT id, title, date FROM events
+        WHERE date < CURRENT_DATE
+        AND publish_status = 'pending'
+        AND is_published = false
     `);
-    return { rejected: result.rows.length };
+
+    let rejectedCount = 0;
+    for (const event of candidates.rows) {
+        await pool.query(`
+            UPDATE events
+            SET is_published = false, publish_status = 'rejected'
+            WHERE id = $1
+        `, [event.id]);
+
+        // Audit Log
+        await pool.query(`
+            INSERT INTO audit_logs (entity_type, entity_id, action, changes, performed_by)
+            VALUES ($1, $2, $3, $4, $5)
+        `, ['event', event.id, 'AUTO_REJECTION', JSON.stringify({ reason: 'Past event' }), 'system']);
+
+        rejectedCount++;
+    }
+
+    return { rejected: rejectedCount };
 }
 
 // Match scraped events to main events or create new ones
@@ -744,6 +775,12 @@ VALUES($1, $2, $3)
 VALUES($1, $2, 1.0)
                         ON CONFLICT(event_id, scraped_event_id) DO NOTHING
                     `, [eventId, scraped.id]);
+
+                    // Audit Log for Creation
+                    await pool.query(`
+                        INSERT INTO audit_logs (entity_type, entity_id, action, changes, performed_by)
+                        VALUES ($1, $2, $3, $4, $5)
+                    `, ['event', eventId, 'CREATE', JSON.stringify({ title: scraped.title, source: scraped.source_code }), 'system']);
 
                     created++;
                     results.push({

@@ -25,7 +25,7 @@ interface VenueFormProps {
   initialData?: Partial<Venue>;
   onSubmit: (data: Partial<Venue>) => Promise<void>;
   onDelete?: (id: string) => Promise<void>;
-  onCancel: () => void;
+  onCancel: (force?: boolean) => void;
   isLoading?: boolean;
   isModal?: boolean;
   onNavigate?: (type: 'event' | 'venue' | 'artist', id?: string, data?: any) => void;
@@ -150,7 +150,7 @@ export function VenueForm({
           search: formData.name,
           city: formData.city || undefined
         });
-        const candidates = (existingResult as any).data || [];
+        const candidates = Array.isArray(existingResult) ? existingResult : (existingResult as any).data || [];
         const isDuplicate = candidates.some((v: Venue) =>
           v.name.toLowerCase() === formData.name?.toLowerCase() &&
           (!formData.city || v.city?.toLowerCase() === formData.city.toLowerCase())
@@ -165,8 +165,17 @@ export function VenueForm({
       }
     }
 
-    await onSubmit(formData);
-    onCancel(); // Close after save
+    try {
+      await onSubmit(formData);
+      // Reset dirty state by syncing fetchedData to current form
+      if (initialData?.id || fetchedData) {
+        setFetchedData(prev => ({ ...prev, ...formData }));
+      }
+      onCancel(true); // Close after save
+    } catch (e: any) {
+      console.error(e);
+      showError(e.message || 'Failed to save venue');
+    }
   };
 
   const { promptBeforeAction, modalElement } = useUnsavedChanges({
