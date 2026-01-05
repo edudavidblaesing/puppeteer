@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react';
 import * as api from '@/lib/api';
 
 export interface DeleteWithUsageOptions {
-    entityType: 'venues' | 'artists' | 'organizers' | 'cities' | 'events';
+    entityType: 'venues' | 'artists' | 'organizers' | 'cities' | 'events' | 'guest-users';
     onDelete: (id: string) => Promise<void>;
     onSuccess?: () => void;
     onError?: (error: Error) => void;

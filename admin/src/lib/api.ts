@@ -1,4 +1,4 @@
-import type { Event, Organizer, Venue, City } from '@/types';
+import type { Event, Organizer, Venue, City, GuestUser } from '@/types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3007';
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'your-secure-api-key-here';
@@ -728,6 +728,69 @@ export async function resetDatabase() {
 export async function deleteOrganizer(id: string) {
   return request(`/db/organizers/${id}`, {
     method: 'DELETE',
+  });
+}
+
+
+// ============== Guest Users API ==============
+
+export async function fetchGuestUsers(params?: { search?: string; limit?: number; offset?: number; sort?: string; order?: string }) {
+  const searchParams = new URLSearchParams();
+  if (params?.search) searchParams.set('search', params.search);
+  if (params?.limit) searchParams.set('limit', params.limit.toString());
+  if (params?.offset) searchParams.set('offset', params.offset.toString());
+  if (params?.sort) searchParams.set('sort', params.sort);
+  if (params?.order) searchParams.set('order', params.order);
+
+  return request(`/db/guest-users?${searchParams}`);
+}
+
+export async function createGuestUser(data: Partial<GuestUser>) {
+  return request(`/db/guest-users`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function fetchGuestUser(id: string) {
+  return request(`/db/guest-users/${id}`);
+}
+
+export async function updateGuestUser(id: string, data: Partial<GuestUser>) {
+  return request(`/db/guest-users/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteGuestUser(id: string) {
+  return request(`/db/guest-users/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+// ============== Moderation API ==============
+
+export async function fetchReports(params?: { status?: string; limit?: number; offset?: number }) {
+  const searchParams = new URLSearchParams();
+  if (params?.status) searchParams.set('status', params.status);
+  if (params?.limit) searchParams.set('limit', params.limit.toString());
+  if (params?.offset) searchParams.set('offset', params.offset.toString());
+
+  return request(`/db/moderation/reports?${searchParams}`);
+}
+
+export async function resolveReport(id: string, status: 'resolved' | 'dismissed', admin_notes: string) {
+  return request(`/db/moderation/reports/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status, admin_notes })
+  });
+}
+
+export async function deleteReportedContent(id: string, deleteContent: boolean) {
+  return request(`/db/moderation/reports/${id}/action`, {
+    method: 'POST',
+    body: JSON.stringify({ delete_content: deleteContent })
   });
 }
 

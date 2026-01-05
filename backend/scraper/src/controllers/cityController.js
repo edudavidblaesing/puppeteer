@@ -306,7 +306,7 @@ exports.getCityHistory = async (req, res) => {
 exports.getCitiesDropdown = async (req, res) => {
     try {
         const { country } = req.query;
-        let query = 'SELECT id, name, country FROM cities WHERE is_active = true';
+        let query = 'SELECT id, name, country, latitude, longitude FROM cities WHERE is_active = true';
         const params = [];
         if (country) {
             query += ' AND country = $1';

@@ -33,7 +33,8 @@ import {
   Layers,
   LayoutDashboard,
   PanelLeft,
-  ChevronsUpDown
+  ChevronsUpDown,
+  Shield
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { ActivityChart } from '@/components/dashboard/ActivityChart';
@@ -47,6 +48,8 @@ import { VenueForm } from '@/components/features/VenueForm';
 import { ArtistForm } from '@/components/features/ArtistForm';
 import { CityForm } from '@/components/features/CityForm';
 import { OrganizerForm } from '@/components/features/OrganizerForm';
+import { GuestUserForm } from '@/components/features/GuestUserForm';
+import { ReportDetail } from '@/components/features/ReportDetail';
 import { DashboardSearch } from '@/components/DashboardSearch';
 
 import {
@@ -58,9 +61,11 @@ import {
   createArtist, updateArtist, deleteArtist,
   createOrganizer, updateOrganizer, deleteOrganizer,
   createCity, updateCity, deleteCity,
-  searchArtists, checkHealth, fetchCountries
+  searchArtists, checkHealth, fetchCountries,
+  fetchGuestUsers, fetchGuestUser, updateGuestUser, createGuestUser, deleteGuestUser,
+  fetchReports
 } from '@/lib/api';
-import { Event, Stats, City, Venue, Artist, Organizer, getEventTiming } from '@/types';
+import { Event, Stats, City, Venue, Artist, Organizer, GuestUser, getEventTiming } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { GlobalSearch } from '@/components/GlobalSearch';
 import { useKeyboardNavigation } from '@/hooks/useKeyboardNavigation';
@@ -81,8 +86,8 @@ const SOURCE_FILTER_MAP: Record<string, string> = {
 // Dynamic import for Map
 const EventMap = dynamic(() => import('@/components/EventMap'), { ssr: false });
 
-export type ActiveTab = 'overview' | 'events' | 'artists' | 'venues' | 'cities' | 'organizers';
-export type ViewType = 'event' | 'venue' | 'artist' | 'organizer' | 'city';
+export type ActiveTab = 'overview' | 'events' | 'artists' | 'venues' | 'cities' | 'organizers' | 'users' | 'moderation';
+export type ViewType = 'event' | 'venue' | 'artist' | 'organizer' | 'city' | 'user' | 'report';
 
 export interface HistoryItem {
   type: ViewType;
@@ -127,6 +132,8 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
   const [venues, setVenues] = useState<Venue[]>([]);
   const [organizers, setOrganizers] = useState<Organizer[]>([]);
   const [adminCities, setAdminCities] = useState<City[]>([]);
+  const [guestUsers, setGuestUsers] = useState<GuestUser[]>([]);
+  const [reports, setReports] = useState<any[]>([]);
 
   // Pagination & Filters
   const [page, setPage] = useState(1);
@@ -248,7 +255,8 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
       const list = activeTab === 'events' ? events :
         activeTab === 'venues' ? venues :
           activeTab === 'artists' ? artists :
-            activeTab === 'organizers' ? organizers : adminCities;
+            activeTab === 'organizers' ? organizers :
+              activeTab === 'users' ? guestUsers : adminCities;
       setSelectedIndex(i => Math.min(list.length - 1, i + 1));
     },
     onEnter: () => {
@@ -256,7 +264,8 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
         const list = activeTab === 'events' ? events :
           activeTab === 'venues' ? venues :
             activeTab === 'artists' ? artists :
-              activeTab === 'organizers' ? organizers : adminCities;
+              activeTab === 'moderation' ? reports :
+                activeTab === 'organizers' ? organizers : adminCities;
         const item = list[selectedIndex];
         if (item) {
           // Use switchToView for single active item
@@ -287,7 +296,9 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
         const list = activeTab === 'events' ? events :
           activeTab === 'venues' ? venues :
             activeTab === 'artists' ? artists :
-              activeTab === 'organizers' ? organizers : adminCities;
+              activeTab === 'organizers' ? organizers :
+                activeTab === 'moderation' ? reports :
+                  activeTab === 'users' ? guestUsers : adminCities;
         const item = list[selectedIndex];
         if (item && item.id) {
           const idStr = String(item.id);
@@ -379,7 +390,7 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
             timeFilter
           }),
           fetchCities().catch(() => []),
-          fetchCities().catch(() => []),
+          // fetchCities removed from here - was causing sources to be City[]
           Promise.resolve(['tm', 'ra', 'fb', 'manual'])
         ]);
         setEvents(eventsRes.data || []);
@@ -418,6 +429,21 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
         setTotal(res.total || 0);
         setSources([]); // No source filter for cities
       }
+      else if (activeTab === 'users') {
+        const res = await fetchGuestUsers({ ...commonParams });
+        setGuestUsers(res.data || []);
+        setTotal(res.total || 0);
+        setSources([]); // No source filter for users
+      }
+      else if (activeTab === 'moderation') {
+        const res = await fetchReports({
+          limit: pageSize,
+          offset
+        });
+        setReports(res.data || []);
+        setTotal(res.total || 0);
+        setSources([]);
+      }
     } catch (e: any) {
       console.error('List load failed', e);
       setError(e.message);
@@ -444,7 +470,10 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
     else if (activeTab === 'venues' && currentView.type === 'venue') list = venues;
     else if (activeTab === 'artists' && currentView.type === 'artist') list = artists;
     else if (activeTab === 'organizers' && currentView.type === 'organizer') list = organizers;
+    else if (activeTab === 'organizers' && currentView.type === 'organizer') list = organizers;
     else if (activeTab === 'cities' && currentView.type === 'city') list = adminCities;
+    else if (activeTab === 'users' && currentView.type === 'user') list = guestUsers;
+    else if (activeTab === 'moderation' && currentView.type === 'report') list = reports;
     else return;
 
     if (list.length > 0) {
@@ -564,8 +593,21 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
     const isSelected = currentView?.id === item.id || index === selectedIndex;
     const isChecked = selectedIds.has(item.id);
 
-    const title = item.title || item.name || 'Untitled';
-    const subtitle = item.city ? item.city : (item.venue_name || '');
+    const title = typeof item.title === 'string' ? item.title : (typeof item.name === 'string' ? item.name : 'Untitled');
+
+    // Fix: Handle item.city possibly being an object (React Error #31)
+    let subtitle = '';
+    if (typeof item.venue_name === 'string') subtitle = item.venue_name;
+
+    // Check city
+    if (item.city) {
+      if (typeof item.city === 'object' && (item.city as any).name) {
+        subtitle = String((item.city as any).name);
+      } else if (typeof item.city === 'string') {
+        subtitle = item.city;
+      }
+    }
+
     const dateFormatted = item.date ? format(new Date(item.date), 'MMM d') : null; // No year as requested
     const imageUrl = item.image_url || (item.images && item.images[0]?.url);
 
@@ -621,8 +663,8 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
             <div className="flex justify-between items-start">
               {/* Left: Title & Subtitle */}
               <div className="min-w-0 pr-2">
-                <h4 className="font-medium text-gray-900 dark:text-gray-100 truncate text-sm leading-tight">{title}</h4>
-                {subtitle && (
+                <h4 className="font-medium text-gray-900 dark:text-gray-100 truncate text-sm leading-tight">{typeof title === 'string' ? title : ''}</h4>
+                {subtitle && typeof subtitle === 'string' && (
                   <div className="flex items-center text-xs text-gray-400 truncate mt-0.5">
                     {subtitle}
                   </div>
@@ -631,10 +673,7 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
 
               {/* Right: Metadata Stack (Date top, Sources bottom) */}
               <div className="flex flex-col items-end gap-1 shrink-0">
-                {/* Status Badge (Replaces Date on right, date moved to subtitle or kept if needed?) 
-                    Actually user said "label for the status should be more readable... draft: gray..." 
-                    Let's put the Status Badge HERE in the metadata stack.
-                */}
+                {/* Status Badge */}
                 {(() => {
                   const s = eventItem.status || 'MANUAL_DRAFT';
                   const isPublished = s === 'PUBLISHED';
@@ -642,8 +681,6 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
                   const now = new Date();
                   const start = eventItem.start_time ? new Date(`${item.date?.split('T')[0]}T${eventItem.start_time}`) : null;
                   const end = eventItem.end_time ? new Date(`${item.date?.split('T')[0]}T${eventItem.end_time}`) : null;
-                  // Simple live check (if date matches today and time is within range)
-                  // Note: item.date is mostly YYYY-MM-DD. 
 
                   let badge = { text: s.replace(/_/g, ' '), color: 'bg-gray-100 text-gray-600 border-gray-200' };
 
@@ -672,9 +709,7 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
                   );
                 })()}
 
-                {/* Date Badge (keep it but maybe less prominent if status is key?) -> User request implies status is important. 
-                    Let's keep date but maybe smaller or just standard.
-                */}
+                {/* Date Badge */}
                 <span className={clsx(
                   "text-[10px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-wide text-xs",
                   dateFormatted ? "bg-white dark:bg-gray-800 text-gray-500 border-transparent" : "text-red-500"
@@ -690,7 +725,7 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
             </div>
           </div>
 
-          {/* Hover Actions Overlay (Absolute Right) */}
+          {/* Hover Actions Overlay */}
           <div className="absolute right-4 top-1/2 -translate-y-1/2 hidden group-hover:flex items-center gap-1 animate-in fade-in zoom-in-95 duration-150 bg-white dark:bg-gray-950 p-1 rounded-lg border border-gray-100 dark:border-gray-800 shadow-sm z-30">
             <button className="h-7 w-7 rounded-full border border-green-200 bg-white text-green-600 hover:bg-green-50 dark:bg-gray-800 dark:border-green-900 dark:text-green-400 dark:hover:bg-green-900/30 flex items-center justify-center transition-colors" title="Approve"
               onClick={(e) => { e.stopPropagation(); setPublishStatus([item.id], 'APPROVED_PENDING_DETAILS').then(() => loadListData()); }}
@@ -711,14 +746,43 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
     // --- GENERIC LIST ITEM (Venues, Artists, etc.) ---
     // Standardized with check-on-hover via CSS and no quick actions
 
-    const viewType = activeTab === 'cities' ? 'city' : activeTab.slice(0, -1);
-    const country = item.country;
-    // Use a different name or just use the derived value. The top-level 'subtitle' might be insufficient for generic items.
-    const genericSubtitle = item.city || item.address || item.type; // Fallback subtitle logic
+    const viewType = activeTab === 'cities' ? 'city' : activeTab === 'users' ? 'user' : activeTab.slice(0, -1);
+
+    // Defensive handling to prevent "Objects are not valid as React child" crashes
+    // Also specific handling for Guest Users
+    let titleVal = typeof item.title === 'string' ? item.title : (typeof item.name === 'string' ? item.name : 'Untitled');
+    let subtitleVal = '';
+
+    // Fix: Handle item.city possibly being an object (React Error #31)
+    // Check if item.city is present and safe
+    if (item.city) {
+      if (typeof item.city === 'object' && (item.city as any).name) {
+        subtitleVal = String((item.city as any).name);
+      } else if (typeof item.city === 'string') {
+        subtitleVal = item.city;
+      }
+    }
+    // Fallback if no city
+    if (!subtitleVal) {
+      subtitleVal = item.address || item.type || '';
+    }
+
+    let countryVal = typeof item.country === 'string' ? item.country : '';
+
+    if (activeTab === 'users') {
+      titleVal = item.username || item.email || 'Guest User';
+      subtitleVal = item.full_name || (item.username ? item.email : '') || '';
+      countryVal = ''; // Users don't have country
+    }
+
+    if (activeTab === 'moderation') {
+      titleVal = `Report #${String(item.id).substring(0, 8)}`;
+      subtitleVal = `${item.reason} - ${item.status}`;
+      countryVal = '';
+    }
 
     return (
       <div
-
         key={item.id || index}
         ref={el => { itemRefs.current[index] = el; }}
         className={clsx(
@@ -726,7 +790,7 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
           isSelected ? "bg-primary-50 dark:bg-primary-900/20" : "",
           index === selectedIndex ? "ring-2 ring-inset ring-primary-500 z-10" : ""
         )}
-        onClick={() => switchToView(viewType as any, String(item.id), item, title)}
+        onClick={() => switchToView(viewType as any, String(item.id), item, titleVal)}
       >
         {/* Standardized Image with Overlay Checkbox (w-12 h-12 to match Events) */}
         <div className="relative w-12 h-12 flex-shrink-0 group/image cursor-pointer" onClick={toggleSelection}>
@@ -748,12 +812,14 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
             isChecked && "opacity-60"
           )}>
             {imageUrl ? (
-              <img src={imageUrl} alt={title} className="w-full h-full object-cover" />
+              <img src={imageUrl} alt={titleVal} className="w-full h-full object-cover" />
             ) : (
               activeTab === 'artists' ? <Users className="w-5 h-5" /> :
                 activeTab === 'venues' ? <Building2 className="w-5 h-5" /> :
                   activeTab === 'cities' ? <MapPin className="w-5 h-5" /> :
-                    <Briefcase className="w-5 h-5" /> // Organizers
+                    activeTab === 'users' ? <Users className="w-5 h-5" /> :
+                      activeTab === 'moderation' ? <Shield className="w-5 h-5" /> :
+                        <Briefcase className="w-5 h-5" /> // Organizers
             )}
           </div>
         </div>
@@ -763,11 +829,11 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
           <div className="flex justify-between items-start">
             {/* Left: Title & Subtitle */}
             <div className="min-w-0 pr-2">
-              <h4 className="font-medium text-gray-900 dark:text-gray-100 truncate text-sm leading-tight">{title}</h4>
+              <h4 className="font-medium text-gray-900 dark:text-gray-100 truncate text-sm leading-tight">{titleVal}</h4>
               <div className="flex items-center text-xs text-gray-400 truncate mt-0.5">
-                {country && <span className="uppercase font-medium text-gray-400">{country}</span>}
-                {country && genericSubtitle && <span className="text-gray-300 mx-1">•</span>}
-                {genericSubtitle && <span className="truncate">{genericSubtitle}</span>}
+                {countryVal && <span className="uppercase font-medium text-gray-400">{countryVal}</span>}
+                {countryVal && subtitleVal && <span className="text-gray-300 mx-1">•</span>}
+                {subtitleVal && <span className="truncate">{subtitleVal}</span>}
               </div>
             </div>
 
@@ -1000,7 +1066,9 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
                   (activeTab === 'events' ? events :
                     activeTab === 'venues' ? venues :
                       activeTab === 'artists' ? artists :
-                        activeTab === 'organizers' ? organizers : adminCities
+                        activeTab === 'organizers' ? organizers :
+                          activeTab === 'moderation' ? reports :
+                            activeTab === 'users' ? guestUsers : adminCities
                   ).map((item, index) => renderListItem(item, index))
                 )}
               </div>
@@ -1190,6 +1258,33 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
                         id={currentView.id}
                         isPanel={true}
                         onDirtyChange={setIsFormDirty}
+                      />
+                    )}
+                    {currentView.type === 'user' && (
+                      <GuestUserForm
+                        key={currentView.id || 'new-user'}
+                        initialData={currentView.data}
+                        onSubmit={async (data) => {
+                          if (currentView.id) await updateGuestUser(currentView.id, data as any);
+                          else await createGuestUser(data);
+                          loadListData();
+                          setIsFormDirty(false);
+                          popView(true);
+                        }}
+                        onDelete={handleDelete}
+                        onCancel={popView}
+                        isModal={false}
+                        id={currentView.id}
+                        isPanel={true}
+                        onDirtyChange={setIsFormDirty}
+                      />
+                    )}
+                    {currentView.type === 'report' && (
+                      <ReportDetail
+                        report={currentView.data}
+                        onClose={() => popView()}
+                        onUpdate={() => { loadListData(); }}
+                        isPanel={true}
                       />
                     )}
                   </div>

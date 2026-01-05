@@ -21,7 +21,9 @@ COPY package*.json ./
 COPY .puppeteerrc.cjs ./
 
 # Install deps
-RUN npm install
+# Install deps (ignore scripts to prevent hangs, skip audit)
+# We use --no-bin-links because we don't need symlinks for executables in this env often, and it can help with FS issues
+RUN npm install --ignore-scripts --no-audit --no-fund --omit=optional
 
 # Copy source
 COPY . .

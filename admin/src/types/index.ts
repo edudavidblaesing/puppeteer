@@ -299,6 +299,23 @@ export interface User {
   created_at?: string;
 }
 
+// Guest User (Mobile App)
+export interface GuestUser {
+  id: string;
+  email: string;
+  username: string;
+  full_name?: string;
+  avatar_url?: string;
+  is_verified: boolean;
+  created_at: string;
+  last_active_at?: string;
+  fcm_token?: string;
+  stats?: {
+    friends: number;
+    events: number;
+  };
+}
+
 export interface DashboardStats {
   totals: {
     events: number;

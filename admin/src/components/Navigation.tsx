@@ -13,7 +13,8 @@ import {
   LogOut,
   User,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Shield
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useAuth } from '@/contexts/AuthContext';
@@ -26,6 +27,8 @@ const mainMenuItems = [
   { href: '/venues', label: 'Venues', icon: Building2 },
   { href: '/artists', label: 'Artists', icon: Users },
   { href: '/organizers', label: 'Organizers', icon: Briefcase },
+  { href: '/users', label: 'Guest Users', icon: Users },
+  { href: '/moderation', label: 'Moderation', icon: Shield },
   { href: '/cities', label: 'Cities', icon: Globe },
 ];
 
