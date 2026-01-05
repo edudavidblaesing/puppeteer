@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../features/auth/splash_screen.dart';
 import '../features/auth/login_screen.dart';
@@ -77,24 +76,24 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           // Tab 4: Profile
           StatefulShellBranch(
             routes: [
-      GoRoute(
-        path: '/profile',
-        builder: (context, state) => const ProfileScreen(),
-      ),
-      GoRoute(
-        path: '/my-events',
-        builder: (context, state) => const MyEventsScreen(),
-      ),
-      GoRoute(
-        path: '/settings',
-        builder: (context, state) => const SettingsScreen(),
-        routes: [
-           GoRoute(
-             path: 'edit-profile',
-             builder: (context, state) => const EditProfileScreen(),
-           ),
-        ],
-      ),
+              GoRoute(
+                path: '/profile',
+                builder: (context, state) => const ProfileScreen(),
+              ),
+              GoRoute(
+                path: '/my-events',
+                builder: (context, state) => const MyEventsScreen(),
+              ),
+              GoRoute(
+                path: '/settings',
+                builder: (context, state) => const SettingsScreen(),
+                routes: [
+                  GoRoute(
+                    path: 'edit-profile',
+                    builder: (context, state) => const EditProfileScreen(),
+                  ),
+                ],
+              ),
             ],
           ),
         ],
@@ -103,16 +102,17 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/event/:id',
         builder: (context, state) {
-           final event = state.extra as dynamic; // Cast to Event
-           return EventDetailScreen(eventId: state.pathParameters['id']!, eventExtra: event);
+          final event = state.extra as dynamic; // Cast to Event
+          return EventDetailScreen(
+              eventId: state.pathParameters['id']!, eventExtra: event);
         },
       ),
       GoRoute(
         path: '/chat/:roomId',
         builder: (context, state) {
-           final roomId = state.pathParameters['roomId']!;
-           final title = state.extra as String? ?? 'Chat'; 
-           return ChatScreen(roomId: roomId, title: title);
+          final roomId = state.pathParameters['roomId']!;
+          final title = state.extra as String? ?? 'Chat';
+          return ChatScreen(roomId: roomId, title: title);
         },
       ),
     ],

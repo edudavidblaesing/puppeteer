@@ -1,5 +1,4 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../core/api_service.dart';
 import '../map/map_controller.dart';
 import '../map/models.dart';
 import 'event_repository.dart';
@@ -11,7 +10,7 @@ class EventDetailsState {
   final AsyncValue<Event?> event;
 
   EventDetailsState({
-    this.comments = const AsyncValue.loading(), 
+    this.comments = const AsyncValue.loading(),
     this.rsvpStatus = const AsyncValue.data(null),
     this.event = const AsyncValue.loading(),
   });
@@ -30,7 +29,9 @@ class EventDetailsState {
 }
 
 // Controller Family: One controller per Event ID
-final eventControllerProvider = StateNotifierProvider.family<EventController, EventDetailsState, String>((ref, eventId) {
+final eventControllerProvider =
+    StateNotifierProvider.family<EventController, EventDetailsState, String>(
+        (ref, eventId) {
   return EventController(ref.watch(eventRepositoryProvider), ref, eventId);
 });
 
@@ -39,7 +40,8 @@ class EventController extends StateNotifier<EventDetailsState> {
   final Ref _ref;
   final String _eventId;
 
-  EventController(this._repo, this._ref, this._eventId) : super(EventDetailsState()) {
+  EventController(this._repo, this._ref, this._eventId)
+      : super(EventDetailsState()) {
     loadEvent();
     loadComments();
   }
@@ -52,7 +54,7 @@ class EventController extends StateNotifier<EventDetailsState> {
     } catch (e, st) {
       // Keep old data if refresh fails
       if (state.event.value == null) {
-         state = state.copyWith(event: AsyncValue.error(e, st));
+        state = state.copyWith(event: AsyncValue.error(e, st));
       }
     }
   }
@@ -72,7 +74,7 @@ class EventController extends StateNotifier<EventDetailsState> {
       state = state.copyWith(rsvpStatus: const AsyncValue.loading());
       await _repo.rsvpEvent(_eventId, status);
       state = state.copyWith(rsvpStatus: const AsyncValue.data(null));
-      
+
       // Refresh event details to get updated status/counts
       await loadEvent();
 

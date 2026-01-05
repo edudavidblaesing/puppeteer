@@ -10,8 +10,7 @@ class AppTheme {
     colorScheme: const ColorScheme.dark(
       primary: Color(0xFF6C63FF),
       secondary: Color(0xFF03DAC6),
-      surface: Color(0xFF1E1E1E), // Slightly lighter for cards
-      background: Color(0xFF121212),
+      surface: Color(0xFF1E1E1E),
       error: Color(0xFFCF6679),
     ),
     textTheme: GoogleFonts.outfitTextTheme(ThemeData.dark().textTheme).copyWith(

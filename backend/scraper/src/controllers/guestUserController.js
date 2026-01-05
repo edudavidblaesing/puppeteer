@@ -257,7 +257,8 @@ const sendFriendRequest = async (req, res) => {
         res.json({ success: true, message: 'Request sent' });
     } catch (e) {
         console.error('SendFriendRequest Error:', e);
-        res.status(500).json({ error: e.message });
+        console.error('UserId:', userId, 'TargetUserId:', targetUserId);
+        res.status(500).json({ error: e.message, details: e.toString() });
     }
 };
 

@@ -29,7 +29,7 @@ dependencies:
   flutter_svg: ^2.0.9
   
   # Map
-  mapbox_maps_flutter: ^1.0.0 # Using v10/v11 standard
+  mapbox_maps_flutter: ^2.0.0 # Upgrading to v2 for Xcode compatibility
   
   # Storage
   shared_preferences: ^2.2.2

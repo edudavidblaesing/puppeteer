@@ -18,7 +18,7 @@ class FeedScreen extends ConsumerWidget {
         title: const Text('Discover'),
         backgroundColor: Colors.black,
         elevation: 0,
-        actions: [],
+        actions: const [],
       ),
       body: eventsAsync.when(
         data: (events) => RefreshIndicator(
@@ -32,10 +32,14 @@ class FeedScreen extends ConsumerWidget {
                 event: event,
                 onTap: () => context.push('/event/${event.id}', extra: event),
                 onLike: () {
-                  ref.read(feedControllerProvider.notifier).rsvpEvent(event.id, 'interested');
+                  ref
+                      .read(feedControllerProvider.notifier)
+                      .rsvpEvent(event.id, 'interested');
                 },
                 onRsvp: () {
-                   ref.read(feedControllerProvider.notifier).rsvpEvent(event.id, 'going');
+                  ref
+                      .read(feedControllerProvider.notifier)
+                      .rsvpEvent(event.id, 'going');
                 },
               );
             },
@@ -62,7 +66,8 @@ class FeedScreen extends ConsumerWidget {
                       height: 180,
                       decoration: const BoxDecoration(
                         color: Colors.white,
-                        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                        borderRadius:
+                            BorderRadius.vertical(top: Radius.circular(20)),
                       ),
                     ),
                     Padding(
@@ -70,11 +75,14 @@ class FeedScreen extends ConsumerWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Container(width: 200, height: 20, color: Colors.white),
+                          Container(
+                              width: 200, height: 20, color: Colors.white),
                           const SizedBox(height: 8),
-                          Container(width: 150, height: 16, color: Colors.white),
+                          Container(
+                              width: 150, height: 16, color: Colors.white),
                           const SizedBox(height: 16),
-                          Container(width: 100, height: 16, color: Colors.white),
+                          Container(
+                              width: 100, height: 16, color: Colors.white),
                         ],
                       ),
                     )
@@ -96,7 +104,8 @@ class FeedScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 16),
               ElevatedButton(
-                onPressed: () => ref.read(feedControllerProvider.notifier).refresh(),
+                onPressed: () =>
+                    ref.read(feedControllerProvider.notifier).refresh(),
                 child: const Text('Retry'),
               ),
             ],
