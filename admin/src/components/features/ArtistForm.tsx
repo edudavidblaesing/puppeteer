@@ -3,6 +3,8 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { User, Globe, Save, X, Trash2, ArrowRight, ExternalLink, Image as ImageIcon, Star } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { Select } from '@/components/ui/Select';
+import { Textarea } from '@/components/ui/Textarea';
 import { SourceFieldOptions } from '@/components/ui/SourceFieldOptions';
 import { ResetSectionButton } from '@/components/ui/ResetSectionButton';
 import { SourceIcon } from '@/components/ui/SourceIcon';
@@ -414,7 +416,7 @@ export function ArtistForm({
                 )}
 
                 <div className="relative">
-                  <Input label="Name" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required placeholder="Artist Name" />
+                  <Input label="Name" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required placeholder="Artist Name" maxLength={255} />
                 </div>
                 <SourceFieldOptions sources={initialData?.source_references} field="name" currentValue={formData.name} onSelect={(val) => setFormData({ ...formData, name: val })} />
 
@@ -430,17 +432,27 @@ export function ArtistForm({
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Type</label>
-                  <select value={formData.artist_type || ''} onChange={(e) => setFormData({ ...formData, artist_type: e.target.value })} className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 dark:text-white">
-                    <option value="">Select Type...</option>
-                    {['Individual', 'DJ', 'Group', 'Band', 'Orchestra', 'Choir', 'Producer', 'Other'].map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
+                  <Select
+                    label="Type"
+                    value={formData.artist_type || ''}
+                    onChange={(e) => setFormData({ ...formData, artist_type: e.target.value })}
+                    options={[
+                      { label: 'Select Type...', value: '' },
+                      ...['Individual', 'DJ', 'Group', 'Band', 'Orchestra', 'Choir', 'Producer', 'Other'].map(t => ({ label: t, value: t }))
+                    ]}
+                  />
                   <SourceFieldOptions sources={initialData?.source_references} field="artist_type" currentValue={formData.artist_type} onSelect={(val) => setFormData({ ...formData, artist_type: val })} />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Bio</label>
-                  <textarea value={formData.bio || ''} onChange={(e) => setFormData({ ...formData, bio: e.target.value })} rows={4} className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 dark:text-white" placeholder="Artist biography..." />
+                  <Textarea
+                    label="Bio"
+                    value={formData.bio || ''}
+                    onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
+                    rows={4}
+                    placeholder="Artist biography..."
+                    maxLength={5000}
+                  />
                   <SourceFieldOptions sources={initialData?.source_references} field="bio" currentValue={formData.bio} onSelect={(val) => setFormData({ ...formData, bio: val })} />
                 </div>
 
@@ -455,7 +467,7 @@ export function ArtistForm({
               <div className="space-y-4 pt-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <Input label="Website" value={formData.website || ''} onChange={(e) => setFormData({ ...formData, website: e.target.value })} placeholder="https://..." leftIcon={<ExternalLink className="w-4 h-4" />} />
+                    <Input label="Website" type="url" value={formData.website || ''} onChange={(e) => setFormData({ ...formData, website: e.target.value })} placeholder="https://..." leftIcon={<ExternalLink className="w-4 h-4" />} />
                     <SourceFieldOptions sources={initialData?.source_references} field="website" currentValue={formData.website} onSelect={(val) => setFormData({ ...formData, website: val })} />
                   </div>
                   {[
@@ -468,28 +480,32 @@ export function ArtistForm({
                     { label: 'Spotify', field: 'spotify_url' },
                   ].map(({ label, field }) => (
                     <div key={field}>
-                      <Input label={label} value={(formData as any)[field] || ''} onChange={(e) => setFormData({ ...formData, [field]: e.target.value })} placeholder="https://..." leftIcon={<ExternalLink className="w-4 h-4" />} />
+                      <Input label={label} type="url" value={(formData as any)[field] || ''} onChange={(e) => setFormData({ ...formData, [field]: e.target.value })} placeholder="https://..." leftIcon={<ExternalLink className="w-4 h-4" />} />
                       <SourceFieldOptions sources={initialData?.source_references} field={field as any} currentValue={(formData as any)[field]} onSelect={(val) => setFormData({ ...formData, [field]: val })} />
                     </div>
                   ))}
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Country</label>
-                  <select value={formData.country || ''} onChange={(e) => setFormData({ ...formData, country: e.target.value })} className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 dark:text-white">
-                    <option value="">Select Country...</option>
-                    {countries.map(c => <option key={c.code} value={c.code}>{c.name} ({c.code})</option>)}
-                  </select>
+                  <Select
+                    label="Country"
+                    value={formData.country || ''}
+                    onChange={(e) => setFormData({ ...formData, country: e.target.value })}
+                    options={[
+                      { label: 'Select Country...', value: '' },
+                      ...countries.map(c => ({ label: `${c.name} (${c.code})`, value: c.code }))
+                    ]}
+                  />
                   <SourceFieldOptions sources={initialData?.source_references} field="country" currentValue={formData.country} onSelect={(val) => setFormData({ ...formData, country: val })} />
                 </div>
 
                 <div>
-                  <Input label="Content URL" value={formData.content_url || ''} onChange={(e) => setFormData({ ...formData, content_url: e.target.value })} placeholder="https://..." leftIcon={<ExternalLink className="w-4 h-4" />} />
+                  <Input label="Content URL" type="url" value={formData.content_url || ''} onChange={(e) => setFormData({ ...formData, content_url: e.target.value })} placeholder="https://..." leftIcon={<ExternalLink className="w-4 h-4" />} />
                   <SourceFieldOptions sources={initialData?.source_references} field="content_url" currentValue={formData.content_url} onSelect={(val) => setFormData({ ...formData, content_url: val })} />
                 </div>
 
                 <div>
-                  <Input label="Image URL" value={formData.image_url || ''} onChange={(e) => setFormData({ ...formData, image_url: e.target.value })} placeholder="https://..." leftIcon={<ImageIcon className="w-4 h-4" />} />
+                  <Input label="Image URL" type="url" value={formData.image_url || ''} onChange={(e) => setFormData({ ...formData, image_url: e.target.value })} placeholder="https://..." leftIcon={<ImageIcon className="w-4 h-4" />} />
                   <SourceFieldOptions sources={initialData?.source_references} field="image_url" currentValue={formData.image_url} onSelect={(val) => setFormData({ ...formData, image_url: val })} />
                   {formData.image_url && (
                     <div className="mt-2 w-32 h-32 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800">

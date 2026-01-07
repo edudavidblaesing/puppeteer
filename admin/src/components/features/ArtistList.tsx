@@ -1,19 +1,27 @@
 import React from 'react';
-import clsx from 'clsx';
-import { Music, Globe, Link2, Image as ImageIcon } from 'lucide-react';
+import { Music, Link2, Globe } from 'lucide-react';
 import { SourceIcon } from '@/components/ui/SourceIcon';
 import { Artist } from '@/types';
+import { SelectableListItem } from '@/components/ui/SelectableListItem';
 
 interface ArtistListProps {
   artists: Artist[];
   isLoading: boolean;
+  selectedIds: Set<string>;
+  onSelect: (id: string) => void;
+  onSelectAll: () => void;
   onEdit: (artist: Artist) => void;
+  focusedId?: string | null;
 }
 
 export function ArtistList({
   artists,
   isLoading,
-  onEdit
+  selectedIds,
+  onSelect,
+  onSelectAll,
+  onEdit,
+  focusedId
 }: ArtistListProps) {
   if (isLoading) {
     return (
@@ -34,48 +42,32 @@ export function ArtistList({
 
   return (
     <div className="bg-white dark:bg-gray-900 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-800">
-      <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/50 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-500 dark:text-gray-400">{artists.length} artists</span>
-        </div>
-      </div>
-
       <div className="divide-y divide-gray-200 dark:divide-gray-800">
         {artists.map((artist) => (
-          <div
+          <SelectableListItem
             key={artist.id}
+            id={artist.id}
+            isActiveView={focusedId === artist.id}
+            title={artist.name}
+            imageUrl={artist.image_url}
+            imageFallback={<Music className="w-6 h-6 text-gray-400 opacity-50" />}
+            isChecked={selectedIds.has(artist.id)}
+            onToggleSelection={() => onSelect(artist.id)}
             onClick={() => onEdit(artist)}
-            className="px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-800/50 cursor-pointer transition-colors group"
-          >
-            <div className="flex items-start gap-4">
-              {/* Artist Image or Placeholder */}
-              <div className="w-12 h-12 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center flex-shrink-0 overflow-hidden border border-gray-200 dark:border-gray-700">
-                {artist.image_url ? (
-                  <img src={artist.image_url} alt={artist.name} className="w-full h-full object-cover" />
-                ) : (
-                  <Music className="w-6 h-6 text-gray-400" />
-                )}
-              </div>
-
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between mb-1">
-                  <h3 className="text-base font-medium text-gray-900 dark:text-gray-100 truncate group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
-                    {artist.name}
-                  </h3>
+            subtitle={
+              <div className="flex items-center justify-between gap-4 text-xs text-gray-500 dark:text-gray-400">
+                <div className="flex items-center gap-2">
                   {artist.country && (
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700">
+                    <span className="text-xs px-2 py-0.5 rounded border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 font-medium">
                       {artist.country}
                     </span>
                   )}
-                </div>
-
-                <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
                   {artist.content_url && (
                     <a
                       href={artist.content_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center gap-1 hover:text-primary-600 dark:hover:text-primary-400"
+                      className="flex items-center gap-1 hover:text-primary-600 dark:hover:text-primary-400 ml-2"
                       onClick={(e) => e.stopPropagation()}
                     >
                       <Link2 className="w-3 h-3" />
@@ -84,18 +76,18 @@ export function ArtistList({
                   )}
                 </div>
               </div>
-
-              <div className="text-right flex-shrink-0 self-start flex flex-col items-end gap-1">
-                <div className="flex items-center gap-1 mt-1 justify-end">
-                  {Array.from(new Set(artist.source_references?.map(s => s.source_code) || [])).map(source => (
-                    <SourceIcon key={source} sourceCode={source} className="w-4 h-4" />
-                  ))}
-                </div>
+            }
+            metaRight={
+              <div className="flex items-center gap-1 mt-1 justify-end">
+                {Array.from(new Set(artist.source_references?.map(s => s.source_code) || [])).map(source => (
+                  <SourceIcon key={source} sourceCode={source} className="w-4 h-4" />
+                ))}
               </div>
-            </div>
-          </div>
+            }
+          />
         ))}
       </div>
     </div>
   );
 }
+

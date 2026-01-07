@@ -1,0 +1,719 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e4]:
+      - generic [ref=e6]:
+        - img [ref=e8]
+        - generic [ref=e12]:
+          - generic [ref=e13]: EventHub
+          - generic [ref=e14]: Global Events Manager
+        - button [ref=e15] [cursor=pointer]:
+          - img [ref=e16]
+      - generic [ref=e18]:
+        - generic [ref=e19]:
+          - heading "Main Menu" [level=3] [ref=e20]
+          - generic [ref=e21]:
+            - link "Dashboard" [ref=e22] [cursor=pointer]:
+              - /url: /
+              - img [ref=e23]
+              - generic [ref=e28]: Dashboard
+            - link "Events" [ref=e29] [cursor=pointer]:
+              - /url: /events
+              - img [ref=e30]
+              - generic [ref=e35]: Events
+            - link "Venues" [ref=e36] [cursor=pointer]:
+              - /url: /venues
+              - img [ref=e37]
+              - generic [ref=e45]: Venues
+            - link "Artists" [ref=e46] [cursor=pointer]:
+              - /url: /artists
+              - img [ref=e47]
+              - generic [ref=e52]: Artists
+            - link "Organizers" [ref=e53] [cursor=pointer]:
+              - /url: /organizers
+              - img [ref=e54]
+              - generic [ref=e57]: Organizers
+            - link "Guest Users" [ref=e58] [cursor=pointer]:
+              - /url: /users
+              - img [ref=e59]
+              - generic [ref=e64]: Guest Users
+            - link "Moderation" [ref=e65] [cursor=pointer]:
+              - /url: /moderation
+              - img [ref=e66]
+              - generic [ref=e68]: Moderation
+            - link "Cities" [ref=e69] [cursor=pointer]:
+              - /url: /cities
+              - img [ref=e70]
+              - generic [ref=e74]: Cities
+        - generic [ref=e75]:
+          - heading "Other" [level=3] [ref=e76]
+          - generic [ref=e77]:
+            - link "Sources" [ref=e78] [cursor=pointer]:
+              - /url: /sources
+              - img [ref=e79]
+              - generic [ref=e83]: Sources
+            - link "Settings" [ref=e84] [cursor=pointer]:
+              - /url: /settings
+              - img [ref=e85]
+              - generic [ref=e88]: Settings
+      - generic [ref=e90]:
+        - img [ref=e92]
+        - generic [ref=e95]:
+          - paragraph
+          - paragraph [ref=e96]: Administrator
+        - button "Logout" [ref=e97] [cursor=pointer]:
+          - img [ref=e98]
+    - main [ref=e102]:
+      - generic [ref=e103]:
+        - generic [ref=e104]:
+          - generic [ref=e107]:
+            - button "cities" [ref=e109] [cursor=pointer]:
+              - img [ref=e110]
+              - generic [ref=e112]: cities
+            - textbox "Filter cities..." [ref=e113]
+          - button "New City" [ref=e114] [cursor=pointer]:
+            - img [ref=e115]
+            - generic [ref=e118]: New City
+        - main [ref=e119]:
+          - generic [ref=e120]:
+            - generic [ref=e121]:
+              - generic [ref=e122]:
+                - combobox [ref=e123]:
+                  - 'option "Country: All" [selected]'
+                  - option "Argentina"
+                  - option "Australia"
+                  - option "Austria"
+                  - option "Belgium"
+                  - option "Brazil"
+                  - option "Bulgaria"
+                  - option "Canada"
+                  - option "China"
+                  - option "Croatia"
+                  - option "Czech Republic"
+                  - option "Denmark"
+                  - option "Egypt"
+                  - option "Estonia"
+                  - option "Finland"
+                  - option "France"
+                  - option "Germany"
+                  - option "Greece"
+                  - option "Hungary"
+                  - option "India"
+                  - option "Ireland"
+                  - option "Israel"
+                  - option "Italy"
+                  - option "Japan"
+                  - option "Latvia"
+                  - option "Lithuania"
+                  - option "Mexico"
+                  - option "Netherlands"
+                  - option "New Zealand"
+                  - option "Norway"
+                  - option "Poland"
+                  - option "Portugal"
+                  - option "Romania"
+                  - option "Russia"
+                  - option "Serbia"
+                  - option "Slovakia"
+                  - option "Slovenia"
+                  - option "South Africa"
+                  - option "Spain"
+                  - option "Sweden"
+                  - option "Switzerland"
+                  - option "Turkey"
+                  - option "Ukraine"
+                  - option "United Arab Emirates"
+                  - option "United Kingdom"
+                  - option "United States"
+                - combobox [ref=e124]:
+                  - 'option "Active: All" [selected]'
+                  - option "Active Only"
+                  - option "Inactive Only"
+              - generic [ref=e128] [cursor=pointer]:
+                - generic [ref=e129]:
+                  - checkbox [ref=e131]
+                  - img [ref=e133]
+                - generic [ref=e137]:
+                  - heading "Berlin" [level=4] [ref=e139]
+                  - generic [ref=e142]: Inactive
+              - generic [ref=e143]:
+                - generic [ref=e144]:
+                  - generic [ref=e145]: 0 items
+                  - generic [ref=e146]:
+                    - button [disabled] [ref=e147]:
+                      - img [ref=e148]
+                    - generic [ref=e150]: "1"
+                    - button [disabled] [ref=e151]:
+                      - img [ref=e152]
+                - generic [ref=e154]:
+                  - generic [ref=e155]:
+                    - generic [ref=e156]:
+                      - generic [ref=e157]: ↑
+                      - generic [ref=e158]: ↓
+                    - generic [ref=e159]: Navigate
+                  - generic [ref=e160]:
+                    - generic [ref=e161]: Enter
+                    - generic [ref=e162]: Open
+                  - generic [ref=e163]:
+                    - generic [ref=e164]: Space
+                    - generic [ref=e165]: Select
+                  - generic [ref=e166]:
+                    - generic [ref=e167]: Esc
+                    - generic [ref=e168]: Back / Clear
+            - generic [ref=e170]:
+              - generic [ref=e171]:
+                - heading "Berlin" [level=2] [ref=e173]
+                - generic [ref=e174]:
+                  - button [ref=e175] [cursor=pointer]:
+                    - img [ref=e176]
+                  - button [ref=e182] [cursor=pointer]:
+                    - img [ref=e183]
+              - generic [ref=e187]:
+                - generic [ref=e189]:
+                  - button "Details" [ref=e190] [cursor=pointer]
+                  - button "History" [ref=e191] [cursor=pointer]
+                - generic [ref=e194]:
+                  - generic [ref=e195]:
+                    - heading "Location Details" [level=3] [ref=e197]:
+                      - img [ref=e198]
+                      - text: Location Details
+                    - generic [ref=e203]:
+                      - generic [ref=e204]:
+                        - generic [ref=e205]: Auto-fill from Search
+                        - combobox [ref=e206]:
+                          - generic [ref=e207]:
+                            - img [ref=e208]
+                            - textbox "Search city (OpenStreetMap) to auto-fill..." [ref=e213]
+                      - generic [ref=e215]:
+                        - generic [ref=e217]: Name *
+                        - textbox "Name *" [active] [ref=e219]:
+                          - /placeholder: City Name
+                          - text: Berlin Updated
+                      - generic [ref=e220]:
+                        - generic [ref=e221]: Country *
+                        - generic [ref=e222]:
+                          - combobox [ref=e223]:
+                            - option "Select Country..." [selected]
+                            - option "Argentina (AR)"
+                            - option "Australia (AU)"
+                            - option "Austria (AT)"
+                            - option "Belgium (BE)"
+                            - option "Brazil (BR)"
+                            - option "Bulgaria (BG)"
+                            - option "Canada (CA)"
+                            - option "China (CN)"
+                            - option "Croatia (HR)"
+                            - option "Czech Republic (CZ)"
+                            - option "Denmark (DK)"
+                            - option "Egypt (EG)"
+                            - option "Estonia (EE)"
+                            - option "Finland (FI)"
+                            - option "France (FR)"
+                            - option "Germany (DE)"
+                            - option "Greece (GR)"
+                            - option "Hungary (HU)"
+                            - option "India (IN)"
+                            - option "Ireland (IE)"
+                            - option "Israel (IL)"
+                            - option "Italy (IT)"
+                            - option "Japan (JP)"
+                            - option "Latvia (LV)"
+                            - option "Lithuania (LT)"
+                            - option "Mexico (MX)"
+                            - option "Netherlands (NL)"
+                            - option "New Zealand (NZ)"
+                            - option "Norway (NO)"
+                            - option "Poland (PL)"
+                            - option "Portugal (PT)"
+                            - option "Romania (RO)"
+                            - option "Russia (RU)"
+                            - option "Serbia (RS)"
+                            - option "Slovakia (SK)"
+                            - option "Slovenia (SI)"
+                            - option "South Africa (ZA)"
+                            - option "Spain (ES)"
+                            - option "Sweden (SE)"
+                            - option "Switzerland (CH)"
+                            - option "Turkey (TR)"
+                            - option "Ukraine (UA)"
+                            - option "United Arab Emirates (AE)"
+                            - option "United Kingdom (GB)"
+                            - option "United States (US)"
+                          - img
+                      - generic [ref=e224]:
+                        - generic [ref=e225]: Timezone *
+                        - generic [ref=e226]:
+                          - combobox [ref=e227]:
+                            - option "Select Timezone..." [selected]
+                            - option "Africa/Abidjan"
+                            - option "Africa/Accra"
+                            - option "Africa/Addis_Ababa"
+                            - option "Africa/Algiers"
+                            - option "Africa/Asmara"
+                            - option "Africa/Bamako"
+                            - option "Africa/Bangui"
+                            - option "Africa/Banjul"
+                            - option "Africa/Bissau"
+                            - option "Africa/Blantyre"
+                            - option "Africa/Brazzaville"
+                            - option "Africa/Bujumbura"
+                            - option "Africa/Cairo"
+                            - option "Africa/Casablanca"
+                            - option "Africa/Ceuta"
+                            - option "Africa/Conakry"
+                            - option "Africa/Dakar"
+                            - option "Africa/Dar_es_Salaam"
+                            - option "Africa/Djibouti"
+                            - option "Africa/Douala"
+                            - option "Africa/El_Aaiun"
+                            - option "Africa/Freetown"
+                            - option "Africa/Gaborone"
+                            - option "Africa/Harare"
+                            - option "Africa/Johannesburg"
+                            - option "Africa/Juba"
+                            - option "Africa/Kampala"
+                            - option "Africa/Khartoum"
+                            - option "Africa/Kigali"
+                            - option "Africa/Kinshasa"
+                            - option "Africa/Lagos"
+                            - option "Africa/Libreville"
+                            - option "Africa/Lome"
+                            - option "Africa/Luanda"
+                            - option "Africa/Lubumbashi"
+                            - option "Africa/Lusaka"
+                            - option "Africa/Malabo"
+                            - option "Africa/Maputo"
+                            - option "Africa/Maseru"
+                            - option "Africa/Mbabane"
+                            - option "Africa/Mogadishu"
+                            - option "Africa/Monrovia"
+                            - option "Africa/Nairobi"
+                            - option "Africa/Ndjamena"
+                            - option "Africa/Niamey"
+                            - option "Africa/Nouakchott"
+                            - option "Africa/Ouagadougou"
+                            - option "Africa/Porto-Novo"
+                            - option "Africa/Sao_Tome"
+                            - option "Africa/Tripoli"
+                            - option "Africa/Tunis"
+                            - option "Africa/Windhoek"
+                            - option "America/Adak"
+                            - option "America/Anchorage"
+                            - option "America/Anguilla"
+                            - option "America/Antigua"
+                            - option "America/Araguaina"
+                            - option "America/Argentina/Buenos_Aires"
+                            - option "America/Argentina/Catamarca"
+                            - option "America/Argentina/Cordoba"
+                            - option "America/Argentina/Jujuy"
+                            - option "America/Argentina/La_Rioja"
+                            - option "America/Argentina/Mendoza"
+                            - option "America/Argentina/Rio_Gallegos"
+                            - option "America/Argentina/Salta"
+                            - option "America/Argentina/San_Juan"
+                            - option "America/Argentina/San_Luis"
+                            - option "America/Argentina/Tucuman"
+                            - option "America/Argentina/Ushuaia"
+                            - option "America/Aruba"
+                            - option "America/Asuncion"
+                            - option "America/Atikokan"
+                            - option "America/Bahia"
+                            - option "America/Bahia_Banderas"
+                            - option "America/Barbados"
+                            - option "America/Belem"
+                            - option "America/Belize"
+                            - option "America/Blanc-Sablon"
+                            - option "America/Boa_Vista"
+                            - option "America/Bogota"
+                            - option "America/Boise"
+                            - option "America/Cambridge_Bay"
+                            - option "America/Campo_Grande"
+                            - option "America/Cancun"
+                            - option "America/Caracas"
+                            - option "America/Cayenne"
+                            - option "America/Cayman"
+                            - option "America/Chicago"
+                            - option "America/Chihuahua"
+                            - option "America/Ciudad_Juarez"
+                            - option "America/Costa_Rica"
+                            - option "America/Coyhaique"
+                            - option "America/Creston"
+                            - option "America/Cuiaba"
+                            - option "America/Curacao"
+                            - option "America/Danmarkshavn"
+                            - option "America/Dawson"
+                            - option "America/Dawson_Creek"
+                            - option "America/Denver"
+                            - option "America/Detroit"
+                            - option "America/Dominica"
+                            - option "America/Edmonton"
+                            - option "America/Eirunepe"
+                            - option "America/El_Salvador"
+                            - option "America/Fort_Nelson"
+                            - option "America/Fortaleza"
+                            - option "America/Glace_Bay"
+                            - option "America/Goose_Bay"
+                            - option "America/Grand_Turk"
+                            - option "America/Grenada"
+                            - option "America/Guadeloupe"
+                            - option "America/Guatemala"
+                            - option "America/Guayaquil"
+                            - option "America/Guyana"
+                            - option "America/Halifax"
+                            - option "America/Havana"
+                            - option "America/Hermosillo"
+                            - option "America/Indiana/Indianapolis"
+                            - option "America/Indiana/Knox"
+                            - option "America/Indiana/Marengo"
+                            - option "America/Indiana/Petersburg"
+                            - option "America/Indiana/Tell_City"
+                            - option "America/Indiana/Vevay"
+                            - option "America/Indiana/Vincennes"
+                            - option "America/Indiana/Winamac"
+                            - option "America/Inuvik"
+                            - option "America/Iqaluit"
+                            - option "America/Jamaica"
+                            - option "America/Juneau"
+                            - option "America/Kentucky/Louisville"
+                            - option "America/Kentucky/Monticello"
+                            - option "America/Kralendijk"
+                            - option "America/La_Paz"
+                            - option "America/Lima"
+                            - option "America/Los_Angeles"
+                            - option "America/Lower_Princes"
+                            - option "America/Maceio"
+                            - option "America/Managua"
+                            - option "America/Manaus"
+                            - option "America/Marigot"
+                            - option "America/Martinique"
+                            - option "America/Matamoros"
+                            - option "America/Mazatlan"
+                            - option "America/Menominee"
+                            - option "America/Merida"
+                            - option "America/Metlakatla"
+                            - option "America/Mexico_City"
+                            - option "America/Miquelon"
+                            - option "America/Moncton"
+                            - option "America/Monterrey"
+                            - option "America/Montevideo"
+                            - option "America/Montserrat"
+                            - option "America/Nassau"
+                            - option "America/New_York"
+                            - option "America/Nome"
+                            - option "America/Noronha"
+                            - option "America/North_Dakota/Beulah"
+                            - option "America/North_Dakota/Center"
+                            - option "America/North_Dakota/New_Salem"
+                            - option "America/Nuuk"
+                            - option "America/Ojinaga"
+                            - option "America/Panama"
+                            - option "America/Paramaribo"
+                            - option "America/Phoenix"
+                            - option "America/Port-au-Prince"
+                            - option "America/Port_of_Spain"
+                            - option "America/Porto_Velho"
+                            - option "America/Puerto_Rico"
+                            - option "America/Punta_Arenas"
+                            - option "America/Rankin_Inlet"
+                            - option "America/Recife"
+                            - option "America/Regina"
+                            - option "America/Resolute"
+                            - option "America/Rio_Branco"
+                            - option "America/Santarem"
+                            - option "America/Santiago"
+                            - option "America/Santo_Domingo"
+                            - option "America/Sao_Paulo"
+                            - option "America/Scoresbysund"
+                            - option "America/Sitka"
+                            - option "America/St_Barthelemy"
+                            - option "America/St_Johns"
+                            - option "America/St_Kitts"
+                            - option "America/St_Lucia"
+                            - option "America/St_Thomas"
+                            - option "America/St_Vincent"
+                            - option "America/Swift_Current"
+                            - option "America/Tegucigalpa"
+                            - option "America/Thule"
+                            - option "America/Tijuana"
+                            - option "America/Toronto"
+                            - option "America/Tortola"
+                            - option "America/Vancouver"
+                            - option "America/Whitehorse"
+                            - option "America/Winnipeg"
+                            - option "America/Yakutat"
+                            - option "Antarctica/Casey"
+                            - option "Antarctica/Davis"
+                            - option "Antarctica/DumontDUrville"
+                            - option "Antarctica/Macquarie"
+                            - option "Antarctica/Mawson"
+                            - option "Antarctica/McMurdo"
+                            - option "Antarctica/Palmer"
+                            - option "Antarctica/Rothera"
+                            - option "Antarctica/Syowa"
+                            - option "Antarctica/Troll"
+                            - option "Antarctica/Vostok"
+                            - option "Arctic/Longyearbyen"
+                            - option "Asia/Aden"
+                            - option "Asia/Almaty"
+                            - option "Asia/Amman"
+                            - option "Asia/Anadyr"
+                            - option "Asia/Aqtau"
+                            - option "Asia/Aqtobe"
+                            - option "Asia/Ashgabat"
+                            - option "Asia/Atyrau"
+                            - option "Asia/Baghdad"
+                            - option "Asia/Bahrain"
+                            - option "Asia/Baku"
+                            - option "Asia/Bangkok"
+                            - option "Asia/Barnaul"
+                            - option "Asia/Beirut"
+                            - option "Asia/Bishkek"
+                            - option "Asia/Brunei"
+                            - option "Asia/Chita"
+                            - option "Asia/Colombo"
+                            - option "Asia/Damascus"
+                            - option "Asia/Dhaka"
+                            - option "Asia/Dili"
+                            - option "Asia/Dubai"
+                            - option "Asia/Dushanbe"
+                            - option "Asia/Famagusta"
+                            - option "Asia/Gaza"
+                            - option "Asia/Hebron"
+                            - option "Asia/Ho_Chi_Minh"
+                            - option "Asia/Hong_Kong"
+                            - option "Asia/Hovd"
+                            - option "Asia/Irkutsk"
+                            - option "Asia/Jakarta"
+                            - option "Asia/Jayapura"
+                            - option "Asia/Jerusalem"
+                            - option "Asia/Kabul"
+                            - option "Asia/Kamchatka"
+                            - option "Asia/Karachi"
+                            - option "Asia/Kathmandu"
+                            - option "Asia/Khandyga"
+                            - option "Asia/Kolkata"
+                            - option "Asia/Krasnoyarsk"
+                            - option "Asia/Kuala_Lumpur"
+                            - option "Asia/Kuching"
+                            - option "Asia/Kuwait"
+                            - option "Asia/Macau"
+                            - option "Asia/Magadan"
+                            - option "Asia/Makassar"
+                            - option "Asia/Manila"
+                            - option "Asia/Muscat"
+                            - option "Asia/Nicosia"
+                            - option "Asia/Novokuznetsk"
+                            - option "Asia/Novosibirsk"
+                            - option "Asia/Omsk"
+                            - option "Asia/Oral"
+                            - option "Asia/Phnom_Penh"
+                            - option "Asia/Pontianak"
+                            - option "Asia/Pyongyang"
+                            - option "Asia/Qatar"
+                            - option "Asia/Qostanay"
+                            - option "Asia/Qyzylorda"
+                            - option "Asia/Riyadh"
+                            - option "Asia/Sakhalin"
+                            - option "Asia/Samarkand"
+                            - option "Asia/Seoul"
+                            - option "Asia/Shanghai"
+                            - option "Asia/Singapore"
+                            - option "Asia/Srednekolymsk"
+                            - option "Asia/Taipei"
+                            - option "Asia/Tashkent"
+                            - option "Asia/Tbilisi"
+                            - option "Asia/Tehran"
+                            - option "Asia/Thimphu"
+                            - option "Asia/Tokyo"
+                            - option "Asia/Tomsk"
+                            - option "Asia/Ulaanbaatar"
+                            - option "Asia/Urumqi"
+                            - option "Asia/Ust-Nera"
+                            - option "Asia/Vientiane"
+                            - option "Asia/Vladivostok"
+                            - option "Asia/Yakutsk"
+                            - option "Asia/Yangon"
+                            - option "Asia/Yekaterinburg"
+                            - option "Asia/Yerevan"
+                            - option "Atlantic/Azores"
+                            - option "Atlantic/Bermuda"
+                            - option "Atlantic/Canary"
+                            - option "Atlantic/Cape_Verde"
+                            - option "Atlantic/Faroe"
+                            - option "Atlantic/Madeira"
+                            - option "Atlantic/Reykjavik"
+                            - option "Atlantic/South_Georgia"
+                            - option "Atlantic/St_Helena"
+                            - option "Atlantic/Stanley"
+                            - option "Australia/Adelaide"
+                            - option "Australia/Brisbane"
+                            - option "Australia/Broken_Hill"
+                            - option "Australia/Darwin"
+                            - option "Australia/Eucla"
+                            - option "Australia/Hobart"
+                            - option "Australia/Lindeman"
+                            - option "Australia/Lord_Howe"
+                            - option "Australia/Melbourne"
+                            - option "Australia/Perth"
+                            - option "Australia/Sydney"
+                            - option "Etc/GMT+1"
+                            - option "Etc/GMT+10"
+                            - option "Etc/GMT+11"
+                            - option "Etc/GMT+12"
+                            - option "Etc/GMT+2"
+                            - option "Etc/GMT+3"
+                            - option "Etc/GMT+4"
+                            - option "Etc/GMT+5"
+                            - option "Etc/GMT+6"
+                            - option "Etc/GMT+7"
+                            - option "Etc/GMT+8"
+                            - option "Etc/GMT+9"
+                            - option "Etc/GMT-1"
+                            - option "Etc/GMT-10"
+                            - option "Etc/GMT-11"
+                            - option "Etc/GMT-12"
+                            - option "Etc/GMT-13"
+                            - option "Etc/GMT-14"
+                            - option "Etc/GMT-2"
+                            - option "Etc/GMT-3"
+                            - option "Etc/GMT-4"
+                            - option "Etc/GMT-5"
+                            - option "Etc/GMT-6"
+                            - option "Etc/GMT-7"
+                            - option "Etc/GMT-8"
+                            - option "Etc/GMT-9"
+                            - option "Europe/Amsterdam"
+                            - option "Europe/Andorra"
+                            - option "Europe/Astrakhan"
+                            - option "Europe/Athens"
+                            - option "Europe/Belgrade"
+                            - option "Europe/Berlin"
+                            - option "Europe/Bratislava"
+                            - option "Europe/Brussels"
+                            - option "Europe/Bucharest"
+                            - option "Europe/Budapest"
+                            - option "Europe/Busingen"
+                            - option "Europe/Chisinau"
+                            - option "Europe/Copenhagen"
+                            - option "Europe/Dublin"
+                            - option "Europe/Gibraltar"
+                            - option "Europe/Guernsey"
+                            - option "Europe/Helsinki"
+                            - option "Europe/Isle_of_Man"
+                            - option "Europe/Istanbul"
+                            - option "Europe/Jersey"
+                            - option "Europe/Kaliningrad"
+                            - option "Europe/Kirov"
+                            - option "Europe/Kyiv"
+                            - option "Europe/Lisbon"
+                            - option "Europe/Ljubljana"
+                            - option "Europe/London"
+                            - option "Europe/Luxembourg"
+                            - option "Europe/Madrid"
+                            - option "Europe/Malta"
+                            - option "Europe/Mariehamn"
+                            - option "Europe/Minsk"
+                            - option "Europe/Monaco"
+                            - option "Europe/Moscow"
+                            - option "Europe/Oslo"
+                            - option "Europe/Paris"
+                            - option "Europe/Podgorica"
+                            - option "Europe/Prague"
+                            - option "Europe/Riga"
+                            - option "Europe/Rome"
+                            - option "Europe/Samara"
+                            - option "Europe/San_Marino"
+                            - option "Europe/Sarajevo"
+                            - option "Europe/Saratov"
+                            - option "Europe/Simferopol"
+                            - option "Europe/Skopje"
+                            - option "Europe/Sofia"
+                            - option "Europe/Stockholm"
+                            - option "Europe/Tallinn"
+                            - option "Europe/Tirane"
+                            - option "Europe/Ulyanovsk"
+                            - option "Europe/Vaduz"
+                            - option "Europe/Vatican"
+                            - option "Europe/Vienna"
+                            - option "Europe/Vilnius"
+                            - option "Europe/Volgograd"
+                            - option "Europe/Warsaw"
+                            - option "Europe/Zagreb"
+                            - option "Europe/Zurich"
+                            - option "Indian/Antananarivo"
+                            - option "Indian/Chagos"
+                            - option "Indian/Christmas"
+                            - option "Indian/Cocos"
+                            - option "Indian/Comoro"
+                            - option "Indian/Kerguelen"
+                            - option "Indian/Mahe"
+                            - option "Indian/Maldives"
+                            - option "Indian/Mauritius"
+                            - option "Indian/Mayotte"
+                            - option "Indian/Reunion"
+                            - option "Pacific/Apia"
+                            - option "Pacific/Auckland"
+                            - option "Pacific/Bougainville"
+                            - option "Pacific/Chatham"
+                            - option "Pacific/Chuuk"
+                            - option "Pacific/Easter"
+                            - option "Pacific/Efate"
+                            - option "Pacific/Fakaofo"
+                            - option "Pacific/Fiji"
+                            - option "Pacific/Funafuti"
+                            - option "Pacific/Galapagos"
+                            - option "Pacific/Gambier"
+                            - option "Pacific/Guadalcanal"
+                            - option "Pacific/Guam"
+                            - option "Pacific/Honolulu"
+                            - option "Pacific/Kanton"
+                            - option "Pacific/Kiritimati"
+                            - option "Pacific/Kosrae"
+                            - option "Pacific/Kwajalein"
+                            - option "Pacific/Majuro"
+                            - option "Pacific/Marquesas"
+                            - option "Pacific/Midway"
+                            - option "Pacific/Nauru"
+                            - option "Pacific/Niue"
+                            - option "Pacific/Norfolk"
+                            - option "Pacific/Noumea"
+                            - option "Pacific/Pago_Pago"
+                            - option "Pacific/Palau"
+                            - option "Pacific/Pitcairn"
+                            - option "Pacific/Pohnpei"
+                            - option "Pacific/Port_Moresby"
+                            - option "Pacific/Rarotonga"
+                            - option "Pacific/Saipan"
+                            - option "Pacific/Tahiti"
+                            - option "Pacific/Tarawa"
+                            - option "Pacific/Tongatapu"
+                            - option "Pacific/Wake"
+                            - option "Pacific/Wallis"
+                            - option "UTC"
+                          - img
+                      - generic [ref=e228]:
+                        - generic [ref=e229]:
+                          - generic [ref=e230]: Latitude
+                          - spinbutton [ref=e233]
+                        - generic [ref=e234]:
+                          - generic [ref=e235]: Longitude
+                          - spinbutton [ref=e238]
+                  - generic [ref=e239]:
+                    - heading "Scraper Configuration" [level=3] [ref=e241]:
+                      - img [ref=e242]
+                      - text: Scraper Configuration
+                    - paragraph [ref=e248]: Configure how each source scrapes this city.
+                  - generic [ref=e249]:
+                    - heading "Status" [level=3] [ref=e251]
+                    - generic [ref=e253]:
+                      - checkbox "City Global Active Status" [ref=e254]
+                      - generic [ref=e255]: City Global Active Status
+                - generic [ref=e257]:
+                  - button "Cancel" [ref=e258] [cursor=pointer]
+                  - button "Save City" [ref=e259] [cursor=pointer]:
+                    - img [ref=e261]
+                    - text: Save City
+  - alert [ref=e265]
+```

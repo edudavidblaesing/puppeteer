@@ -709,5 +709,55 @@ module.exports = {
     deleteComment,
     getComments,
     rateEvent,
-    reportContent
+    reportContent,
+    getUserUsage: async (req, res) => {
+        const { id } = req.params;
+        try {
+            const result = await pool.query(`
+                SELECT 
+                    (SELECT COUNT(*) FROM event_attendance WHERE user_id = $1) as attendance_count,
+                    (SELECT COUNT(*) FROM event_ratings WHERE user_id = $1) as ratings_count,
+                    (SELECT COUNT(*) FROM event_comments WHERE user_id = $1) as comments_count,
+                    (SELECT COUNT(*) FROM friendships WHERE user_id_1 = $1 OR user_id_2 = $1) as friends_count
+            `, [id]);
+
+            const counts = result.rows[0];
+            const usage = parseInt(counts.attendance_count) + parseInt(counts.ratings_count) + parseInt(counts.comments_count) + parseInt(counts.friends_count);
+
+            res.json({ usage, details: counts });
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    },
+    deleteUser: async (req, res) => {
+        const { id } = req.params;
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+
+            // 1. Audit Log (as system/admin since guest users don't delete themselves this way usually)
+            // But this endpoint will be admin-only protected? "NewDashboard" implies Admin.
+            // Yes, user is in Admin Dashboard context.
+
+            // 2. Remove Dependencies
+            await client.query('DELETE FROM event_attendance WHERE user_id = $1', [id]);
+            await client.query('DELETE FROM event_ratings WHERE user_id = $1', [id]);
+            await client.query('DELETE FROM event_comments WHERE user_id = $1', [id]);
+            await client.query('DELETE FROM friendships WHERE user_id_1 = $1 OR user_id_2 = $1', [id]);
+            await client.query('DELETE FROM content_reports WHERE reporter_id = $1', [id]);
+
+            // 3. Delete User
+            const result = await client.query('DELETE FROM users WHERE id = $1 RETURNING id', [id]);
+
+            await client.query('COMMIT');
+
+            if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+            res.json({ success: true, id });
+        } catch (e) {
+            await client.query('ROLLBACK');
+            res.status(500).json({ error: e.message });
+        } finally {
+            client.release();
+        }
+    }
 };

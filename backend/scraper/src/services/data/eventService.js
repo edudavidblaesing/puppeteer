@@ -44,6 +44,17 @@ class EventService {
         if (status && status !== 'all') {
             if (status === 'draft' || status === 'drafts') {
                 query += ` AND e.status IN ('SCRAPED_DRAFT', 'MANUAL_DRAFT')`;
+            } else if (status === 'pending') {
+                // For backward compatibility or if specific pending filter needed, 
+                // but user asked to revert "Events to Approve" to strict drafts.
+                // "Events to Approve" filter in dashboard will be set to 'drafts'.
+                // We can keep 'pending' as a broad alias if needed, but the user said 
+                // "filter 'Events to Approve' ... should filter for manual_drafts, scraped_drafts".
+                // So 'drafts' should be strict. 
+                // I will keep 'pending' as the broad one if I want, OR remove it. 
+                // Use asked to "Revert/Split". 
+                // I will remove 'pending' from 'drafts' block.
+                query += ` AND e.status IN ('SCRAPED_DRAFT', 'MANUAL_DRAFT', 'APPROVED_PENDING_DETAILS')`;
             } else if (status === 'needs_details') {
                 query += ` AND e.status = 'APPROVED_PENDING_DETAILS'`;
             } else if (status === 'ready') {
@@ -54,6 +65,13 @@ class EventService {
                 query += ` AND e.status = 'CANCELED'`;
             } else if (status === 'rejected') {
                 query += ` AND e.status = 'REJECTED'`;
+            } else if (status === 'live') {
+                // Status alias for live? Or time filter?
+                // If status='live' passed, we enforce Published AND Live timing.
+                query += ` AND e.status = 'PUBLISHED' 
+                            AND e.date = CURRENT_DATE 
+                            AND (e.start_time IS NULL OR e.start_time <= CURRENT_TIME::time)
+                            AND (e.end_time IS NULL OR e.end_time >= CURRENT_TIME::time)`;
             } else {
                 query += ` AND e.status = $${paramIndex}`;
                 queryParams.push(status);
@@ -99,6 +117,8 @@ class EventService {
             query += ` AND e.date >= CURRENT_DATE`;
         } else if (effectiveFilter === 'past') {
             query += ` AND e.date < CURRENT_DATE`;
+        } else if (effectiveFilter === 'today') {
+            query += ` AND e.date = CURRENT_DATE`;
         }
 
         // --- Sorting ---
@@ -198,6 +218,13 @@ class EventService {
         if (status && status !== 'all') {
             if (status === 'drafts') {
                 query += ` AND e.status IN ('SCRAPED_DRAFT', 'MANUAL_DRAFT')`;
+            } else if (status === 'pending') {
+                query += ` AND e.status IN ('SCRAPED_DRAFT', 'MANUAL_DRAFT', 'APPROVED_PENDING_DETAILS')`;
+            } else if (status === 'live') {
+                query += ` AND e.status = 'PUBLISHED' 
+                           AND e.date = CURRENT_DATE 
+                           AND (e.start_time IS NULL OR e.start_time <= CURRENT_TIME::time)
+                           AND (e.end_time IS NULL OR e.end_time >= CURRENT_TIME::time)`;
             } else {
                 query += ` AND e.status = $${paramIndex}`;
                 queryParams.push(status);
@@ -236,6 +263,8 @@ class EventService {
             query += ` AND e.date >= CURRENT_DATE`;
         } else if (timeFilter === 'past') {
             query += ` AND e.date < CURRENT_DATE`;
+        } else if (timeFilter === 'today') {
+            query += ` AND e.date = CURRENT_DATE`;
         }
 
         const result = await pool.query(query, queryParams);
@@ -432,6 +461,38 @@ class EventService {
             }
 
             // ... status transitions ...
+            if (updates.status && (updates.status === EVENT_STATES.READY_TO_PUBLISH || updates.status === EVENT_STATES.PUBLISHED)) {
+                // 1. Validate Venue
+                const venueId = updates.venue_id !== undefined ? updates.venue_id : currentEvent.venue_id;
+                if (!venueId) {
+                    throw new Error("Missing fields: Venue is required to publish.");
+                }
+
+                // 2. Validate Content Uniqueness (Must differ from source)
+                const titleToCheck = updates.title !== undefined ? updates.title : currentEvent.title;
+                const descToCheck = updates.description !== undefined ? updates.description : currentEvent.description;
+
+                // Fetch original source data
+                const sourceLinksRes = await client.query(`
+                    SELECT se.title, se.description 
+                    FROM event_scraped_links esl
+                    JOIN scraped_events se ON se.id = esl.scraped_event_id
+                    WHERE esl.event_id = $1
+                `, [id]);
+
+                for (const source of sourceLinksRes.rows) {
+                    const normalize = (s) => (s || '').toLowerCase().trim();
+
+                    if (normalize(titleToCheck) === normalize(source.title)) {
+                        throw new Error("Validation Error: Title must be different from the source title.");
+                    }
+
+                    // Optional: Only check description if both exist
+                    if (source.description && descToCheck && normalize(descToCheck) === normalize(source.description)) {
+                        throw new Error("Validation Error: Description must be different from the source description.");
+                    }
+                }
+            }
 
             // ... setClauses construction ...
 

@@ -1,18 +1,26 @@
 import React from 'react';
-import clsx from 'clsx';
 import { MapPin, Globe, Clock } from 'lucide-react';
 import { City } from '@/types';
+import { SelectableListItem } from '@/components/ui/SelectableListItem';
 
 interface CityListProps {
   cities: City[];
   isLoading: boolean;
+  selectedIds: Set<string>;
+  onSelect: (id: string) => void;
+  onSelectAll: () => void;
   onEdit: (city: City) => void;
+  focusedId?: string | null;
 }
 
 export function CityList({
   cities,
   isLoading,
-  onEdit
+  selectedIds,
+  onSelect,
+  onSelectAll,
+  onEdit,
+  focusedId
 }: CityListProps) {
   if (isLoading) {
     return (
@@ -33,61 +41,51 @@ export function CityList({
 
   return (
     <div className="bg-white dark:bg-gray-900 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-800">
-      <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/50 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-500 dark:text-gray-400">{cities.length} cities</span>
-        </div>
-      </div>
-
       <div className="divide-y divide-gray-200 dark:divide-gray-800">
         {cities.map((city) => (
-          <div
+          <SelectableListItem
             key={city.id}
+            id={String(city.id)}
+            isActiveView={focusedId === String(city.id)}
+            title={city.name}
+            imageUrl={null} // Cities usually don't have images in generic list?
+            imageFallback={<MapPin className="w-6 h-6 text-primary-600 dark:text-primary-400" />}
+            isChecked={selectedIds.has(String(city.id))}
+            onToggleSelection={() => onSelect(String(city.id))}
             onClick={() => onEdit(city)}
-            className="px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-800/50 cursor-pointer transition-colors group"
-          >
-            <div className="flex items-start gap-4">
-              <div className="w-12 h-12 rounded-lg bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center flex-shrink-0 text-primary-600 dark:text-primary-400 border border-primary-200 dark:border-primary-800">
-                <MapPin className="w-6 h-6" />
-              </div>
-
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between mb-1">
-                  <h3 className="text-base font-medium text-gray-900 dark:text-gray-100 truncate group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
-                    {city.name}
-                  </h3>
-                  <div className="flex items-center gap-2">
-                    {city.is_active ? (
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 border border-green-200 dark:border-green-800">
-                        Active
-                      </span>
-                    ) : (
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700">
-                        Inactive
-                      </span>
-                    )}
+            subtitle={
+              <div className="flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400">
+                {city.country && (
+                  <div className="flex items-center gap-1">
+                    <Globe className="w-3 h-3" />
+                    <span>{city.country}</span>
                   </div>
-                </div>
-
-                <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
-                  {city.country && (
-                    <div className="flex items-center gap-1">
-                      <Globe className="w-3 h-3" />
-                      <span>{city.country}</span>
-                    </div>
-                  )}
-                  {city.timezone && (
-                    <div className="flex items-center gap-1">
-                      <Clock className="w-3 h-3" />
-                      <span>{city.timezone}</span>
-                    </div>
-                  )}
-                </div>
+                )}
+                {city.timezone && (
+                  <div className="flex items-center gap-1">
+                    <Clock className="w-3 h-3" />
+                    <span>{city.timezone}</span>
+                  </div>
+                )}
               </div>
-            </div>
-          </div>
+            }
+            metaRight={
+              <div className="flex items-center gap-2">
+                {city.is_active ? (
+                  <span className="text-[10px] px-2 py-0.5 rounded border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 uppercase tracking-wide font-medium">
+                    Active
+                  </span>
+                ) : (
+                  <span className="text-[10px] px-2 py-0.5 rounded border border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-500 uppercase tracking-wide font-medium">
+                    Inactive
+                  </span>
+                )}
+              </div>
+            }
+          />
         ))}
       </div>
     </div>
   );
 }
+

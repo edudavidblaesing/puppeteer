@@ -34,14 +34,23 @@ import {
   LayoutDashboard,
   PanelLeft,
   ChevronsUpDown,
-  Shield
+  Shield,
+  GitPullRequest
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { Select } from '@/components/ui/Select';
+import { EventList } from '@/components/features/EventList';
+import { VenueList } from '@/components/features/VenueList';
+import { ArtistList } from '@/components/features/ArtistList';
+import { OrganizerList } from '@/components/features/OrganizerList';
+import { CityList } from '@/components/features/CityList';
 import { ActivityChart } from '@/components/dashboard/ActivityChart';
-import { RecentActivityList } from '@/components/dashboard/RecentActivityList';
+
 import { MapWidget } from '@/components/dashboard/MapWidget';
 import { ScrapeWidget } from '@/components/dashboard/ScrapeWidget';
 import { AnalyticsSummary } from '@/components/dashboard/AnalyticsSummary';
+import { DashboardSkeleton } from '@/components/dashboard/DashboardSkeleton';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { UserManagementModal } from '@/components/features/UserManagementModal';
 import { EventForm } from '@/components/features/EventForm';
 import { VenueForm } from '@/components/features/VenueForm';
@@ -49,12 +58,14 @@ import { ArtistForm } from '@/components/features/ArtistForm';
 import { CityForm } from '@/components/features/CityForm';
 import { OrganizerForm } from '@/components/features/OrganizerForm';
 import { GuestUserForm } from '@/components/features/GuestUserForm';
+import { GuestUserList } from '@/components/features/GuestUserList';
+import { ReportList } from '@/components/features/ReportList';
 import { ReportDetail } from '@/components/features/ReportDetail';
 import { DashboardSearch } from '@/components/DashboardSearch';
 
 import {
   fetchEvents, fetchStats, fetchCities, fetchScrapeHistory, setPublishStatus,
-  fetchEvent, fetchVenue, fetchArtist, fetchOrganizer, fetchAdminCities,
+  fetchEvent, fetchVenue, fetchArtist, fetchOrganizer, fetchAdminCities, fetchCity,
   fetchArtists, fetchAdminVenues, fetchOrganizers,
   createEvent, updateEvent, deleteEvent,
   createVenue, updateVenue, deleteVenue,
@@ -63,7 +74,7 @@ import {
   createCity, updateCity, deleteCity,
   searchArtists, checkHealth, fetchCountries,
   fetchGuestUsers, fetchGuestUser, updateGuestUser, createGuestUser, deleteGuestUser,
-  fetchReports
+  fetchReports, getUsage
 } from '@/lib/api';
 import { Event, Stats, City, Venue, Artist, Organizer, GuestUser, getEventTiming } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
@@ -115,13 +126,13 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
     else router.push(`/${tab}`);
   };
   const [isLoading, setIsLoading] = useState(true);
+  const [isListLoading, setIsListLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
   // --- Overview State ---
   const [stats, setStats] = useState<Stats | null>(null);
-  const [pendingEvents, setPendingEvents] = useState<Event[]>([]);
-  const [pipelineEvents, setPipelineEvents] = useState<Event[]>([]);
+
   const [mapEvents, setMapEvents] = useState<Event[]>([]);
   const [cities, setCities] = useState<City[]>([]);
   const [history, setHistory] = useState<any[]>([]);
@@ -143,10 +154,10 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
   const [sourceFilter, setSourceFilter] = useState('');
   const [sources, setSources] = useState<string[]>([]);
   const [cityFilter, setCityFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'draft' | 'needs_details' | 'ready' | 'published' | 'cancelled' | 'rejected'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'draft' | 'needs_details' | 'ready' | 'published' | 'cancelled' | 'rejected' | 'pending' | 'drafts' | 'live'>('all');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   // const [showPastEvents, setShowPastEvents] = useState(false); // Replaced by timeFilter
-  const [timeFilter, setTimeFilter] = useState<'upcoming' | 'past' | 'all'>('upcoming');
+  const [timeFilter, setTimeFilter] = useState<'upcoming' | 'past' | 'all' | 'today'>('upcoming');
 
   // New Filters
   const [venueTypeFilter, setVenueTypeFilter] = useState('');
@@ -237,6 +248,7 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
   useEffect(() => {
     setSelectedIndex(-1);
     itemRefs.current = []; // Clear refs
+    setSelectedIds(new Set());
   }, [activeTab, searchQuery, cityFilter, statusFilter, timeFilter, venueTypeFilter, countryFilter]);
 
   // Scroll Sync Effect
@@ -249,7 +261,10 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
     }
   }, [selectedIndex]);
 
+
+
   useKeyboardNavigation({
+    // ... existing props (keep them as is in the file, just inserting this above)
     onArrowUp: () => setSelectedIndex(i => Math.max(0, i - 1)),
     onArrowDown: () => {
       const list = activeTab === 'events' ? events :
@@ -265,7 +280,8 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
           activeTab === 'venues' ? venues :
             activeTab === 'artists' ? artists :
               activeTab === 'moderation' ? reports :
-                activeTab === 'organizers' ? organizers : adminCities;
+                activeTab === 'organizers' ? organizers :
+                  activeTab === 'users' ? guestUsers : adminCities;
         const item = list[selectedIndex];
         if (item) {
           // Use switchToView for single active item
@@ -310,6 +326,17 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
         }
       }
     },
+    onDelete: (id) => {
+      // Find item
+      const list = activeTab === 'events' ? events :
+        activeTab === 'venues' ? venues :
+          activeTab === 'artists' ? artists :
+            activeTab === 'organizers' ? organizers :
+              activeTab === 'moderation' ? reports :
+                activeTab === 'users' ? guestUsers : adminCities;
+      const item = list.find(i => String(i.id) === id);
+      if (item) handleDelete(item);
+    },
     disabled: isLoading
   });
 
@@ -327,19 +354,15 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
   const loadOverviewData = useCallback(async () => {
     try {
       setIsLoading(true);
-      const [statsData, citiesData, historyData, pendingData, pipelineData, mapData] = await Promise.all([
+      const [statsData, citiesData, historyData, mapData] = await Promise.all([
         fetchStats(),
         fetchCities(),
         fetchScrapeHistory({ days: 30, groupBy: 'day' }),
-        fetchEvents({ limit: 5, status: 'pending' }),
-        fetchEvents({ limit: 5, status: 'approved', published: false }),
         fetchEvents({ limit: 2000, showPast: false })
       ]);
 
       setStats(statsData);
       setCities(citiesData);
-      setPendingEvents(pendingData.data);
-      setPipelineEvents(pipelineData.data);
       setMapEvents(mapData.data);
 
       if (historyData?.data) {
@@ -362,10 +385,10 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
   }, []);
 
   // List Data
-  const loadListData = useCallback(async () => {
+  const loadListData = useCallback(async (silent = false) => {
     if (activeTab === 'overview') return;
     try {
-      setIsLoading(true);
+      if (!silent) setIsListLoading(true);
       const offset = (page - 1) * pageSize;
 
       // Always fetch countries if empty (could be optimized)
@@ -448,6 +471,8 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
       console.error('List load failed', e);
       setError(e.message);
     } finally {
+      if (!silent) setIsListLoading(false);
+      // Ensure global loading is off too if it was on
       setIsLoading(false);
     }
   }, [activeTab, page, pageSize, searchQuery, cityFilter, statusFilter, sourceFilter, timeFilter, venueTypeFilter, countryFilter, activeFilter, countries.length]);
@@ -460,6 +485,36 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
       loadListData();
     }
   }, [activeTab, loadOverviewData, loadListData]);
+
+  // Bulk Keyboard Actions (A/R)
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      // Only trigger if we have items selected
+      if (selectedIds.size === 0) return;
+
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
+
+      if (e.key.toLowerCase() === 'a' && activeTab === 'events') {
+        e.preventDefault();
+        if (confirm(`Approve ${selectedIds.size} selected items?`)) {
+          const ids = Array.from(selectedIds);
+          setPublishStatus(ids, 'APPROVED_PENDING_DETAILS').then(() => { loadListData(true); setSelectedIds(new Set()); });
+        }
+      }
+
+      if (e.key.toLowerCase() === 'r' && activeTab === 'events') {
+        e.preventDefault();
+        if (confirm(`Reject ${selectedIds.size} selected items?`)) {
+          const ids = Array.from(selectedIds);
+          setPublishStatus(ids, 'REJECTED').then(() => { loadListData(true); setSelectedIds(new Set()); });
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [selectedIds, activeTab, loadListData]);
 
   // Sync current view with list data (prevent stale state on quick actions)
   useEffect(() => {
@@ -512,27 +567,85 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
     if (editId && navigationStack.length === 0) {
       const loadItem = async () => {
         try {
-          const event = await fetchEvent(editId).catch(() => null);
-          if (event) {
-            setActiveTab('events');
-            pushView('event', event.id, event, event.title);
+          let item = null;
+          let type: ViewType = 'event'; // Default
+          let label = '';
+
+          if (activeTab === 'events') {
+            item = await fetchEvent(editId).catch(() => null);
+            type = 'event';
+            label = item?.title;
+          } else if (activeTab === 'venues') {
+            item = await fetchVenue(editId).catch(() => null);
+            type = 'venue';
+            label = item?.name;
+          } else if (activeTab === 'artists') {
+            item = await fetchArtist(editId).catch(() => null);
+            type = 'artist';
+            label = item?.name;
+          } else if (activeTab === 'organizers') {
+            item = await fetchOrganizer(editId).catch(() => null);
+            type = 'organizer';
+            label = item?.name;
+          } else if (activeTab === 'cities') {
+            item = await fetchCity(editId).catch(() => null);
+            type = 'city';
+            label = item?.name;
+          } else if (activeTab === 'users') {
+            item = await fetchGuestUser(editId).catch(() => null);
+            type = 'user';
+            label = item?.username || item?.email || 'User';
           }
-        } catch (e) { console.error(e); }
+
+          if (item) {
+            pushView(type, String(item.id), item, label);
+          }
+        } catch (e) { console.error('Deep link failed', e); }
       };
       loadItem();
     }
-  }, [editId, pushView, navigationStack.length]);
+  }, [editId, pushView, navigationStack.length, activeTab]);
 
 
   // Helper: Delete Item
   const handleDelete = async (item: any) => {
-    if (!confirm(`Delete "${item.title || item.name}"?`)) return;
+    // Determine entity type for usage check
+    let entityType = '';
+    if (activeTab === 'venues') entityType = 'venues';
+    else if (activeTab === 'artists') entityType = 'artists';
+    else if (activeTab === 'organizers') entityType = 'organizers';
+    else if (activeTab === 'cities') entityType = 'cities';
+    else if (activeTab === 'users') entityType = 'guest-users';
+
+    // 1. Check Usage (if applicable)
+    if (entityType) {
+      try {
+        const usageData = await getUsage(entityType, item.id);
+        const count = usageData?.usage || 0;
+        if (count > 0) {
+          const msg = `Warning: "${item.title || item.name || 'Item'}" is linked to ${count} items (events, history, etc).\n\nDeleting it will remove these references or relationships.\n\nAre you sure you want to proceed?`;
+          if (!confirm(msg)) return;
+        } else {
+          if (!confirm(`Delete "${item.title || item.name}"?`)) return;
+        }
+      } catch (e) {
+        // Fallback if usage check fails
+        console.warn('Usage check failed', e);
+        if (!confirm(`Delete "${item.title || item.name}"?`)) return;
+      }
+    } else {
+      // Events or other types without strict dependency check
+      if (!confirm(`Delete "${item.title || item.name}"?`)) return;
+    }
+
+    // 2. Perform Delete
     try {
       if (activeTab === 'events') await deleteEvent(item.id);
       else if (activeTab === 'venues') await deleteVenue(item.id);
       else if (activeTab === 'artists') await deleteArtist(item.id);
       else if (activeTab === 'organizers') await deleteOrganizer(item.id);
       else if (activeTab === 'cities') await deleteCity(item.id);
+      else if (activeTab === 'users') await deleteGuestUser(item.id);
 
       await loadListData();
       if (currentView?.id === item.id) popView();
@@ -542,9 +655,27 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
   };
 
 
-  // --- Render Helpers ---
 
-  // Component: Shortcuts Footer
+  if (isLoading) {
+    return (
+      <div className="p-6 max-w-[1600px] mx-auto space-y-6">
+        <DashboardSkeleton />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[50vh] p-8 text-center">
+        <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-full mb-4">
+          <AlertTriangle className="w-8 h-8 text-red-600 dark:text-red-400" />
+        </div>
+        <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">Something went wrong</h3>
+        <p className="text-gray-500 dark:text-gray-400 mb-6 text-center max-w-md">{error}</p>
+        <Button onClick={() => window.location.reload()}>Reload Page</Button>
+      </div>
+    );
+  }
   // Component: Shortcuts Footer (Single Line, No Wrap)
   const ShortcutsFooter = () => (
     <div className="flex items-center justify-center gap-2 px-4 bg-white dark:bg-gray-950 border-t border-gray-200 dark:border-gray-800 text-[10px] text-gray-500 font-medium select-none whitespace-nowrap overflow-hidden h-9">
@@ -589,267 +720,7 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
     );
   };
 
-  const renderListItem = (item: any, index: number) => {
-    const isSelected = currentView?.id === item.id || index === selectedIndex;
-    const isChecked = selectedIds.has(item.id);
 
-    const title = typeof item.title === 'string' ? item.title : (typeof item.name === 'string' ? item.name : 'Untitled');
-
-    // Fix: Handle item.city possibly being an object (React Error #31)
-    let subtitle = '';
-    if (typeof item.venue_name === 'string') subtitle = item.venue_name;
-
-    // Check city
-    if (item.city) {
-      if (typeof item.city === 'object' && (item.city as any).name) {
-        subtitle = String((item.city as any).name);
-      } else if (typeof item.city === 'string') {
-        subtitle = item.city;
-      }
-    }
-
-    const dateFormatted = item.date ? format(new Date(item.date), 'MMM d') : null; // No year as requested
-    const imageUrl = item.image_url || (item.images && item.images[0]?.url);
-
-    const toggleSelection = (e: React.MouseEvent) => {
-      e.stopPropagation();
-      const newSet = new Set(selectedIds);
-      if (newSet.has(item.id)) newSet.delete(item.id);
-      else newSet.add(item.id);
-      setSelectedIds(newSet);
-    };
-
-    if (activeTab === 'events') {
-      const eventItem = item as Event;
-      return (
-        <div key={item.id}
-          ref={el => { itemRefs.current[index] = el; }}
-          onClick={() => switchToView('event', item.id, item, title)}
-          className={clsx(
-            "px-4 py-3 border-b border-gray-100 dark:border-gray-800 cursor-pointer transition-colors flex gap-3 group relative",
-            // Intelligent hover/active state
-            isSelected ? "bg-primary-50 dark:bg-primary-900/10 border-l-4 border-l-primary-500" : "hover:bg-gray-50 dark:hover:bg-gray-800 border-l-4 border-l-transparent"
-          )}
-        >
-          {/* Image Thumbnail with Overlay Checkbox */}
-          <div className="relative w-12 h-12 flex-shrink-0 cursor-pointer" onClick={toggleSelection}>
-            <div className={clsx(
-              "absolute inset-0 z-20 flex items-center justify-center transition-opacity duration-200",
-              // Changed: Use standard group-hover from the parent row, simplify logic
-              isChecked ? "opacity-100 bg-black/20" : "opacity-0 group-hover:opacity-100 group-hover:bg-black/20"
-            )}>
-              <input
-                type="checkbox"
-                checked={isChecked}
-                readOnly // handled by parent div click
-                className="w-5 h-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 bg-white shadow-sm cursor-pointer"
-              />
-            </div>
-
-            <div className={clsx(
-              "w-full h-full rounded-md overflow-hidden bg-gray-200 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 bg-cover bg-center flex items-center justify-center text-gray-400 transition-opacity",
-              !imageUrl && "bg-gray-100 dark:bg-gray-800",
-              isChecked && "opacity-60"
-            )}
-              style={imageUrl ? { backgroundImage: `url(${imageUrl})` } : undefined}
-            >
-              {!imageUrl && <Music className="w-6 h-6 opacity-50" />}
-            </div>
-
-
-          </div>
-
-          <div className="flex-1 min-w-0 flex flex-col justify-center gap-1">
-            <div className="flex justify-between items-start">
-              {/* Left: Title & Subtitle */}
-              <div className="min-w-0 pr-2">
-                <h4 className="font-medium text-gray-900 dark:text-gray-100 truncate text-sm leading-tight">{typeof title === 'string' ? title : ''}</h4>
-                {subtitle && typeof subtitle === 'string' && (
-                  <div className="flex items-center text-xs text-gray-400 truncate mt-0.5">
-                    {subtitle}
-                  </div>
-                )}
-              </div>
-
-              {/* Right: Metadata Stack (Date top, Sources bottom) */}
-              <div className="flex flex-col items-end gap-1 shrink-0">
-                {/* Status Badge */}
-                {(() => {
-                  const s = eventItem.status || 'MANUAL_DRAFT';
-                  const isPublished = s === 'PUBLISHED';
-                  // Check Live Status
-                  const now = new Date();
-                  const start = eventItem.start_time ? new Date(`${item.date?.split('T')[0]}T${eventItem.start_time}`) : null;
-                  const end = eventItem.end_time ? new Date(`${item.date?.split('T')[0]}T${eventItem.end_time}`) : null;
-
-                  let badge = { text: s.replace(/_/g, ' '), color: 'bg-gray-100 text-gray-600 border-gray-200' };
-
-                  if (s === 'SCRAPED_DRAFT' || s === 'MANUAL_DRAFT') {
-                    badge = { text: 'DRAFT', color: 'bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700' };
-                  } else if (s === 'APPROVED_PENDING_DETAILS') {
-                    badge = { text: 'NEEDS REVIEW', color: 'bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-900/20 dark:text-yellow-400 dark:border-yellow-800' };
-                  } else if (s === 'READY_TO_PUBLISH') {
-                    badge = { text: 'READY', color: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800' };
-                  } else if (s === 'PUBLISHED') {
-                    badge = { text: 'PUBLISHED', color: 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800' };
-                    // Live Check enhancement
-                    if (start && end) {
-                      if (now >= start && now <= end) {
-                        badge = { text: 'LIVE', color: 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800 animate-pulse' };
-                      }
-                    }
-                  } else if (s === 'CANCELED' || s === 'REJECTED') {
-                    badge = { text: s, color: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800' };
-                  }
-
-                  return (
-                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-wide ${badge.color}`}>
-                      {badge.text}
-                    </span>
-                  );
-                })()}
-
-                {/* Date Badge */}
-                <span className={clsx(
-                  "text-[10px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-wide text-xs",
-                  dateFormatted ? "bg-white dark:bg-gray-800 text-gray-500 border-transparent" : "text-red-500"
-                )}>
-                  {dateFormatted}
-                </span>
-
-                {/* Source Icons */}
-                <div className="flex justify-end">
-                  {renderSourceIcons(eventItem)}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Hover Actions Overlay */}
-          <div className="absolute right-4 top-1/2 -translate-y-1/2 hidden group-hover:flex items-center gap-1 animate-in fade-in zoom-in-95 duration-150 bg-white dark:bg-gray-950 p-1 rounded-lg border border-gray-100 dark:border-gray-800 shadow-sm z-30">
-            <button className="h-7 w-7 rounded-full border border-green-200 bg-white text-green-600 hover:bg-green-50 dark:bg-gray-800 dark:border-green-900 dark:text-green-400 dark:hover:bg-green-900/30 flex items-center justify-center transition-colors" title="Approve"
-              onClick={(e) => { e.stopPropagation(); setPublishStatus([item.id], 'APPROVED_PENDING_DETAILS').then(() => loadListData()); }}
-            >
-              <Check className="w-4 h-4" />
-            </button>
-            <button className="h-7 w-7 rounded-full border border-red-200 bg-white text-red-600 hover:bg-red-50 dark:bg-gray-800 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-900/30 flex items-center justify-center transition-colors" title="Reject"
-              onClick={(e) => { e.stopPropagation(); setPublishStatus([item.id], 'REJECTED').then(() => loadListData()); }}
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      );
-    }
-
-    // Generic render for others (Artists, Venues, etc.)
-    // --- GENERIC LIST ITEM (Venues, Artists, etc.) ---
-    // Standardized with check-on-hover via CSS and no quick actions
-
-    const viewType = activeTab === 'cities' ? 'city' : activeTab === 'users' ? 'user' : activeTab.slice(0, -1);
-
-    // Defensive handling to prevent "Objects are not valid as React child" crashes
-    // Also specific handling for Guest Users
-    let titleVal = typeof item.title === 'string' ? item.title : (typeof item.name === 'string' ? item.name : 'Untitled');
-    let subtitleVal = '';
-
-    // Fix: Handle item.city possibly being an object (React Error #31)
-    // Check if item.city is present and safe
-    if (item.city) {
-      if (typeof item.city === 'object' && (item.city as any).name) {
-        subtitleVal = String((item.city as any).name);
-      } else if (typeof item.city === 'string') {
-        subtitleVal = item.city;
-      }
-    }
-    // Fallback if no city
-    if (!subtitleVal) {
-      subtitleVal = item.address || item.type || '';
-    }
-
-    let countryVal = typeof item.country === 'string' ? item.country : '';
-
-    if (activeTab === 'users') {
-      titleVal = item.username || item.email || 'Guest User';
-      subtitleVal = item.full_name || (item.username ? item.email : '') || '';
-      countryVal = ''; // Users don't have country
-    }
-
-    if (activeTab === 'moderation') {
-      titleVal = `Report #${String(item.id).substring(0, 8)}`;
-      subtitleVal = `${item.reason} - ${item.status}`;
-      countryVal = '';
-    }
-
-    return (
-      <div
-        key={item.id || index}
-        ref={el => { itemRefs.current[index] = el; }}
-        className={clsx(
-          "group flex items-center gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800/50 cursor-pointer border-b border-gray-100 dark:border-gray-800 transition-colors",
-          isSelected ? "bg-primary-50 dark:bg-primary-900/20" : "",
-          index === selectedIndex ? "ring-2 ring-inset ring-primary-500 z-10" : ""
-        )}
-        onClick={() => switchToView(viewType as any, String(item.id), item, titleVal)}
-      >
-        {/* Standardized Image with Overlay Checkbox (w-12 h-12 to match Events) */}
-        <div className="relative w-12 h-12 flex-shrink-0 group/image cursor-pointer" onClick={toggleSelection}>
-          <div className={clsx(
-            "absolute inset-0 z-20 flex items-center justify-center transition-opacity duration-200",
-            isChecked ? "opacity-100 bg-black/20" : "opacity-0 group-hover:opacity-100 group-hover:bg-black/20"
-          )}>
-            <input
-              type="checkbox"
-              checked={isChecked}
-              readOnly
-              className="w-5 h-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 bg-white shadow-sm cursor-pointer"
-            />
-          </div>
-
-          <div className={clsx(
-            "w-full h-full flex items-center justify-center overflow-hidden bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-400 transition-opacity",
-            activeTab === 'artists' ? "rounded-full" : "rounded-md",
-            isChecked && "opacity-60"
-          )}>
-            {imageUrl ? (
-              <img src={imageUrl} alt={titleVal} className="w-full h-full object-cover" />
-            ) : (
-              activeTab === 'artists' ? <Users className="w-5 h-5" /> :
-                activeTab === 'venues' ? <Building2 className="w-5 h-5" /> :
-                  activeTab === 'cities' ? <MapPin className="w-5 h-5" /> :
-                    activeTab === 'users' ? <Users className="w-5 h-5" /> :
-                      activeTab === 'moderation' ? <Shield className="w-5 h-5" /> :
-                        <Briefcase className="w-5 h-5" /> // Organizers
-            )}
-          </div>
-        </div>
-
-        {/* Content Area (Matched to Events Layout) */}
-        <div className="flex-1 min-w-0 flex flex-col justify-center gap-1">
-          <div className="flex justify-between items-start">
-            {/* Left: Title & Subtitle */}
-            <div className="min-w-0 pr-2">
-              <h4 className="font-medium text-gray-900 dark:text-gray-100 truncate text-sm leading-tight">{titleVal}</h4>
-              <div className="flex items-center text-xs text-gray-400 truncate mt-0.5">
-                {countryVal && <span className="uppercase font-medium text-gray-400">{countryVal}</span>}
-                {countryVal && subtitleVal && <span className="text-gray-300 mx-1">•</span>}
-                {subtitleVal && <span className="truncate">{subtitleVal}</span>}
-              </div>
-            </div>
-
-            {/* Right: Metadata Stack (Source Bottom Right) */}
-            <div className="flex flex-col items-end gap-1 shrink-0">
-              {/* Placeholder for Date if we ever add it, needed for spacing if matching exactly? No, but useful structure */}
-              <div className="h-4"></div> {/* Spacer to push source down if needed, or just flex-end */}
-              <div className="flex justify-end">
-                {renderSourceIcons(item)}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
 
 
 
@@ -900,18 +771,10 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
               </div>
             </div>
 
-            {/* Map & Pending */}
-            <div className="grid grid-cols-12 gap-6 min-h-[500px]">
-              <div className="col-span-12 lg:col-span-8 h-full relative rounded-2xl overflow-hidden border border-gray-200 dark:border-gray-800 shadow-sm">
+            {/* Map Full Width */}
+            <div className="grid grid-cols-12 gap-6 min-h-[600px]">
+              <div className="col-span-12 h-full relative rounded-2xl overflow-hidden border border-gray-200 dark:border-gray-800 shadow-sm">
                 <MapWidget events={mapEvents} cities={cities} />
-              </div>
-              <div className="col-span-12 lg:col-span-4 h-full">
-                <RecentActivityList
-                  events={pendingEvents}
-                  pipelineEvents={pipelineEvents}
-                  onApprove={async (id) => { await setPublishStatus([id], 'approved'); loadOverviewData(); }}
-                  onReject={async (id) => { await setPublishStatus([id], 'rejected'); loadOverviewData(); }}
-                />
               </div>
             </div>
           </div>
@@ -930,10 +793,12 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
               {/* Status & Time Filter (Events only) */}
               {activeTab === 'events' && (
                 <div className="px-2 py-2 border-b dark:border-gray-800 flex gap-2 overflow-x-auto">
-                  <select
+                  <Select
+                    fullWidth={false}
+                    containerClassName="w-auto min-w-[100px]"
                     value={statusFilter}
-                    onChange={e => setStatusFilter(e.target.value as any)}
-                    className="text-xs border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded px-2 py-1 max-w-[120px]"
+                    onChange={(e) => setStatusFilter(e.target.value as any)}
+                    className="text-xs py-1"
                   >
                     <option value="all">Status: All</option>
                     <option value="draft">Draft</option>
@@ -942,58 +807,67 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
                     <option value="published">Published</option>
                     <option value="cancelled">Cancelled</option>
                     <option value="rejected">Rejected</option>
-                  </select>
+                  </Select>
 
-                  <select
+                  <Select
+                    fullWidth={false}
+                    containerClassName="w-auto min-w-[100px]"
                     value={timeFilter}
-                    onChange={e => setTimeFilter(e.target.value as any)}
-                    className="text-xs border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded px-2 py-1 max-w-[100px]"
+                    onChange={(e) => setTimeFilter(e.target.value as any)}
+                    className="text-xs py-1"
                   >
                     <option value="upcoming">Upcoming</option>
                     <option value="past">Past</option>
                     <option value="all">Time: All</option>
-                  </select>
+                  </Select>
 
                   {/* City Filter */}
-                  <select
+                  <Select
+                    fullWidth={false}
+                    containerClassName="w-auto min-w-[100px]"
                     value={cityFilter}
-                    onChange={e => setCityFilter(e.target.value)}
-                    className="text-xs border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded px-2 py-1 max-w-[100px]"
+                    onChange={(e) => setCityFilter(e.target.value)}
+                    className="text-xs py-1"
                   >
                     <option value="">City: All</option>
                     {cities.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-                  </select>
+                  </Select>
 
-                  <select
+                  <Select
+                    fullWidth={false}
+                    containerClassName="w-auto min-w-[100px]"
                     value={sourceFilter}
-                    onChange={e => setSourceFilter(e.target.value)}
-                    className="text-xs border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded px-2 py-1 max-w-[100px]"
+                    onChange={(e) => setSourceFilter(e.target.value)}
+                    className="text-xs py-1"
                   >
                     <option value="">Source: All</option>
                     {sources.map(s => (
                       <option key={s} value={s}>{SOURCE_FILTER_MAP[s] || s}</option>
                     ))}
-                  </select>
+                  </Select>
                 </div>
               )}
 
               {/* Venue Filters */}
               {activeTab === 'venues' && (
                 <div className="px-2 py-2 border-b dark:border-gray-800 flex gap-2 overflow-x-auto">
-                  {/* City Filter for Venues */}
-                  <select
+                  <Select
+                    fullWidth={false}
+                    containerClassName="w-auto min-w-[100px]"
                     value={cityFilter}
-                    onChange={e => setCityFilter(e.target.value)}
-                    className="text-xs border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded px-2 py-1 max-w-[100px]"
+                    onChange={(e) => setCityFilter(e.target.value)}
+                    className="text-xs py-1"
                   >
                     <option value="">City: All</option>
                     {cities.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-                  </select>
+                  </Select>
 
-                  <select
+                  <Select
+                    fullWidth={false}
+                    containerClassName="w-auto min-w-[100px]"
                     value={venueTypeFilter}
-                    onChange={e => setVenueTypeFilter(e.target.value)}
-                    className="text-xs border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded px-2 py-1 max-w-[100px]"
+                    onChange={(e) => setVenueTypeFilter(e.target.value)}
+                    className="text-xs py-1"
                   >
                     <option value="">Type: All</option>
                     <option value="club">Club</option>
@@ -1001,18 +875,20 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
                     <option value="concert_hall">Concert Hall</option>
                     <option value="festival">Festival</option>
                     <option value="other">Other</option>
-                  </select>
+                  </Select>
 
-                  <select
+                  <Select
+                    fullWidth={false}
+                    containerClassName="w-auto min-w-[100px]"
                     value={sourceFilter}
-                    onChange={e => setSourceFilter(e.target.value)}
-                    className="text-xs border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded px-2 py-1 max-w-[100px]"
+                    onChange={(e) => setSourceFilter(e.target.value)}
+                    className="text-xs py-1"
                   >
                     <option value="">Source: All</option>
                     {sources.map(s => (
                       <option key={s} value={s}>{SOURCE_FILTER_MAP[s] || s}</option>
                     ))}
-                  </select>
+                  </Select>
                 </div>
               )}
 
@@ -1020,38 +896,44 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
               {activeTab !== 'events' && activeTab !== 'venues' && (
                 <div className="px-2 py-2 border-b dark:border-gray-800 flex gap-2 overflow-x-auto">
                   {(activeTab === 'artists' || activeTab === 'cities') && (
-                    <select
+                    <Select
+                      fullWidth={false}
+                      containerClassName="w-auto min-w-[100px]"
                       value={countryFilter}
-                      onChange={e => setCountryFilter(e.target.value)}
-                      className="text-xs border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded px-2 py-1 max-w-[100px]"
+                      onChange={(e) => setCountryFilter(e.target.value)}
+                      className="text-xs py-1"
                     >
                       <option value="">Country: All</option>
                       {countries.map(c => <option key={c.code} value={c.name}>{c.name}</option>)}
-                    </select>
+                    </Select>
                   )}
                   {activeTab === 'cities' && (
-                    <select
+                    <Select
+                      fullWidth={false}
+                      containerClassName="w-auto min-w-[100px]"
                       value={activeFilter}
-                      onChange={e => setActiveFilter(e.target.value as any)}
-                      className="text-xs border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded px-2 py-1 max-w-[100px]"
+                      onChange={(e) => setActiveFilter(e.target.value as any)}
+                      className="text-xs py-1"
                     >
                       <option value="all">Active: All</option>
                       <option value="active">Active Only</option>
                       <option value="inactive">Inactive Only</option>
-                    </select>
+                    </Select>
                   )}
 
                   {activeTab !== 'cities' && (
-                    <select
+                    <Select
+                      fullWidth={false}
+                      containerClassName="w-auto min-w-[100px]"
                       value={sourceFilter}
-                      onChange={e => setSourceFilter(e.target.value)}
-                      className="text-xs border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded px-2 py-1 max-w-[100px]"
+                      onChange={(e) => setSourceFilter(e.target.value)}
+                      className="text-xs py-1"
                     >
                       <option value="">Source: All</option>
                       {sources.map(s => (
                         <option key={s} value={s}>{SOURCE_FILTER_MAP[s] || s}</option>
                       ))}
-                    </select>
+                    </Select>
                   )}
                 </div>
               )}
@@ -1060,16 +942,146 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
 
               {/* Scrollable List */}
               <div className="flex-1 overflow-y-auto">
-                {isLoading ? (
-                  <div className="p-8 text-center text-gray-500">Loading...</div>
+                {/* Dedicated List Components */}
+                {activeTab === 'events' ? (
+                  <EventList
+                    events={events}
+                    isLoading={isListLoading}
+                    selectedIds={selectedIds}
+                    onSelect={(id) => {
+                      const newSet = new Set(selectedIds);
+                      if (newSet.has(id)) newSet.delete(id); else newSet.add(id);
+                      setSelectedIds(newSet);
+                    }}
+                    onSelectAll={() => {
+                      if (selectedIds.size === events.length) setSelectedIds(new Set());
+                      else setSelectedIds(new Set(events.map(e => e.id)));
+                    }}
+                    onEdit={(e) => switchToView('event', e.id, e, e.title)}
+                    onApprove={(id, e) => {
+                      e?.stopPropagation();
+                      setPublishStatus([id], 'APPROVED_PENDING_DETAILS').then(() => loadListData(true));
+                    }}
+                    onReject={(id, e) => {
+                      e?.stopPropagation();
+                      setPublishStatus([id], 'REJECTED').then(() => loadListData(true));
+                    }}
+                    focusedId={currentView?.type === 'event' && currentView.id ? currentView.id : ((activeTab === 'events' && selectedIndex >= 0 && events[selectedIndex]) ? events[selectedIndex].id : null)}
+                  />
+                ) : activeTab === 'venues' ? (
+                  <VenueList
+                    venues={venues}
+                    isLoading={isListLoading}
+                    selectedIds={selectedIds}
+                    onSelect={(id) => {
+                      const newSet = new Set(selectedIds);
+                      if (newSet.has(id)) newSet.delete(id); else newSet.add(id);
+                      setSelectedIds(newSet);
+                    }}
+                    onSelectAll={() => {
+                      if (selectedIds.size === venues.length) setSelectedIds(new Set());
+                      else setSelectedIds(new Set(venues.map(v => v.id)));
+                    }}
+                    onEdit={(v) => switchToView('venue', v.id, v, v.name)}
+                    focusedId={currentView?.type === 'venue' && currentView.id ? currentView.id : ((activeTab === 'venues' && selectedIndex >= 0 && venues[selectedIndex]) ? venues[selectedIndex].id : null)}
+                  />
+                ) : activeTab === 'artists' ? (
+                  <ArtistList
+                    artists={artists}
+                    isLoading={isListLoading}
+                    selectedIds={selectedIds}
+                    onSelect={(id) => {
+                      const newSet = new Set(selectedIds);
+                      if (newSet.has(id)) newSet.delete(id); else newSet.add(id);
+                      setSelectedIds(newSet);
+                    }}
+                    onSelectAll={() => {
+                      if (selectedIds.size === artists.length) setSelectedIds(new Set());
+                      else setSelectedIds(new Set(artists.map(a => a.id)));
+                    }}
+                    onEdit={(a) => switchToView('artist', a.id, a, a.name)}
+                    focusedId={currentView?.type === 'artist' && currentView.id ? currentView.id : ((activeTab === 'artists' && selectedIndex >= 0 && artists[selectedIndex]) ? artists[selectedIndex].id : null)}
+                  />
+                ) : activeTab === 'cities' ? (
+                  <CityList
+                    cities={adminCities}
+                    isLoading={isListLoading}
+                    selectedIds={selectedIds}
+                    onSelect={(id) => {
+                      const newSet = new Set(selectedIds);
+                      if (newSet.has(id)) newSet.delete(id); else newSet.add(id);
+                      setSelectedIds(newSet);
+                    }}
+                    onSelectAll={() => {
+                      if (selectedIds.size === adminCities.length) setSelectedIds(new Set());
+                      else setSelectedIds(new Set(adminCities.map(c => String(c.id))));
+                    }}
+                    onEdit={(c) => switchToView('city', String(c.id), c, c.name)}
+                    focusedId={currentView?.type === 'city' && currentView.id ? currentView.id : ((activeTab === 'cities' && selectedIndex >= 0 && adminCities[selectedIndex]) ? String(adminCities[selectedIndex].id) : null)}
+                  />
+                ) : activeTab === 'organizers' ? (
+                  <OrganizerList
+                    organizers={organizers}
+                    isLoading={isListLoading}
+                    selectedIds={selectedIds}
+                    onSelect={(id) => {
+                      const newSet = new Set(selectedIds);
+                      if (newSet.has(id)) newSet.delete(id); else newSet.add(id);
+                      setSelectedIds(newSet);
+                    }}
+                    onSelectAll={() => {
+                      if (selectedIds.size === organizers.length) setSelectedIds(new Set());
+                      else setSelectedIds(new Set(organizers.map(o => o.id)));
+                    }}
+                    onEdit={(o) => switchToView('organizer', String(o.id), o, o.name)}
+                    focusedId={currentView?.type === 'organizer' && currentView.id ? currentView.id : ((activeTab === 'organizers' && selectedIndex >= 0 && organizers[selectedIndex]) ? String(organizers[selectedIndex].id) : null)}
+                  />
+                ) : activeTab === 'users' ? (
+                  <GuestUserList
+                    users={guestUsers}
+                    isLoading={isListLoading}
+                    selectedIds={selectedIds}
+                    onSelect={(id) => {
+                      const newSet = new Set(selectedIds);
+                      if (newSet.has(id)) newSet.delete(id); else newSet.add(id);
+                      setSelectedIds(newSet);
+                    }}
+                    onSelectAll={() => {
+                      if (selectedIds.size === guestUsers.length) setSelectedIds(new Set());
+                      else setSelectedIds(new Set(guestUsers.map(u => u.id)));
+                    }}
+                    onEdit={(u) => switchToView('user', u.id, u, u.username || u.email)}
+                    focusedId={currentView?.type === 'user' && currentView.id ? currentView.id : ((activeTab === 'users' && selectedIndex >= 0 && guestUsers[selectedIndex]) ? guestUsers[selectedIndex].id : null)}
+                  />
+                ) : activeTab === 'moderation' ? (
+                  <ReportList
+                    reports={reports}
+                    isLoading={isListLoading}
+                    selectedIds={selectedIds}
+                    onSelect={(id) => {
+                      const newSet = new Set(selectedIds);
+                      if (newSet.has(id)) newSet.delete(id); else newSet.add(id);
+                      setSelectedIds(newSet);
+                    }}
+                    onSelectAll={() => {
+                      if (selectedIds.size === reports.length) setSelectedIds(new Set());
+                      else setSelectedIds(new Set(reports.map(r => String(r.id))));
+                    }}
+                    onEdit={(r) => switchToView('report', String(r.id), r, `Report #${String(r.id).substring(0, 8)}`)}
+                    focusedId={currentView?.type === 'report' && currentView.id ? currentView.id : ((activeTab === 'moderation' && selectedIndex >= 0 && reports[selectedIndex]) ? String(reports[selectedIndex].id) : null)}
+                  />
                 ) : (
-                  (activeTab === 'events' ? events :
-                    activeTab === 'venues' ? venues :
-                      activeTab === 'artists' ? artists :
-                        activeTab === 'organizers' ? organizers :
-                          activeTab === 'moderation' ? reports :
-                            activeTab === 'users' ? guestUsers : adminCities
-                  ).map((item, index) => renderListItem(item, index))
+                  // Fallback for empty state or unknown tabs
+                  <EmptyState
+                    icon={Search}
+                    title="No results found"
+                    description="Try adjusting your filters or search query."
+                    actionLabel="Clear Filters"
+                    onAction={() => {
+                      setSearchQuery('');
+                      setSourceFilter('');
+                    }}
+                  />
                 )}
               </div>
 
@@ -1165,7 +1177,7 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
                         onSubmit={async (data) => {
                           if (currentView.id) await updateEvent(currentView.id, data);
                           else await createEvent(data);
-                          loadListData(); // refresh list
+                          loadListData(true); // refresh list silently
                           setIsFormDirty(false); // Clear dirty state before closing
                           if (!currentView.id) popView();
                         }}
@@ -1290,22 +1302,113 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
                   </div>
                 </div>
               ) : (
-                <div className="h-full flex flex-col items-center justify-center text-gray-400">
-                  <LayoutDashboard className="w-16 h-16 mb-4 opacity-20" />
-                  <p>Select an item to view details</p>
+                <div className="h-full w-full flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-300">
+                  <div className="max-w-md w-full bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 p-8">
+                    <div className="w-12 h-12 bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                      <Filter className="w-6 h-6" />
+                    </div>
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
+                      {activeTab.charAt(0).toUpperCase() + activeTab.slice(1)} Filters
+                    </h3>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+                      Use these quick filters to organize your view.
+                    </p>
+
+                    <div className="grid gap-2.5">
+                      {activeTab === 'events' && (
+                        <>
+                          {/* Row 1: Workflow */}
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => { setStatusFilter('drafts'); setTimeFilter('upcoming'); }}
+                              className="flex-1 flex items-center justify-center gap-2 p-3 rounded-lg border border-gray-200 dark:border-gray-800 hover:border-primary-500 hover:ring-1 hover:ring-primary-500 hover:bg-primary-50 dark:hover:bg-primary-900/10 transition-all text-sm font-medium text-gray-700 dark:text-gray-200"
+                            >
+                              <Clock className="w-4 h-4 text-gray-500" />
+                              <span className="text-xs">Drafts</span>
+                            </button>
+                            <button
+                              onClick={() => { setStatusFilter('needs_details'); setTimeFilter('upcoming'); }}
+                              className="flex-1 flex items-center justify-center gap-2 p-3 rounded-lg border border-gray-200 dark:border-gray-800 hover:border-amber-500 hover:ring-1 hover:ring-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/10 transition-all text-sm font-medium text-gray-700 dark:text-gray-200"
+                            >
+                              <GitPullRequest className="w-4 h-4 text-amber-500" />
+                              <span className="text-xs">Review</span>
+                            </button>
+                            <button
+                              onClick={() => { setStatusFilter('ready'); setTimeFilter('upcoming'); }}
+                              className="flex-1 flex items-center justify-center gap-2 p-3 rounded-lg border border-gray-200 dark:border-gray-800 hover:border-blue-500 hover:ring-1 hover:ring-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/10 transition-all text-sm font-medium text-gray-700 dark:text-gray-200"
+                            >
+                              <Check className="w-4 h-4 text-blue-500" />
+                              <span className="text-xs">Ready</span>
+                            </button>
+                          </div>
+
+                          {/* Row 2: Publishing */}
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => { setStatusFilter('published'); setTimeFilter('today'); }}
+                              className="flex-1 flex items-center justify-center gap-2 p-3 rounded-lg border border-gray-200 dark:border-gray-800 hover:border-green-500 hover:ring-1 hover:ring-green-500 hover:bg-green-50 dark:hover:bg-green-900/10 transition-all text-sm font-medium text-gray-700 dark:text-gray-200"
+                            >
+                              <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                              <span className="text-xs">Today</span>
+                            </button>
+                            <button
+                              onClick={() => { setStatusFilter('live'); setTimeFilter('all'); }}
+                              className="flex-1 flex items-center justify-center gap-2 p-3 rounded-lg border border-gray-200 dark:border-gray-800 hover:border-red-500 hover:ring-1 hover:ring-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 transition-all text-sm font-medium text-gray-700 dark:text-gray-200"
+                            >
+                              <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+                              <span className="text-xs">Live Now</span>
+                            </button>
+                          </div>
+                        </>
+                      )}
+
+                      {activeTab === 'venues' && (
+                        <>
+                          <button
+                            onClick={() => { setCityFilter('Berlin'); }}
+                            className="flex items-center justify-between p-3 rounded-lg border border-gray-200 dark:border-gray-800 hover:border-primary-500 hover:ring-1 hover:ring-primary-500 hover:bg-primary-50 dark:hover:bg-primary-900/10 transition-all text-sm font-medium text-gray-700 dark:text-gray-200 group"
+                          >
+                            <span className="flex items-center gap-2">
+                              <MapPin className="w-4 h-4 text-purple-500" />
+                              Berlin Venues
+                            </span>
+                            <span className="text-xs text-gray-400 group-hover:text-primary-600">Filter</span>
+                          </button>
+                          <button
+                            onClick={() => { setVenueTypeFilter('club'); }}
+                            className="flex items-center justify-between p-3 rounded-lg border border-gray-200 dark:border-gray-800 hover:border-primary-500 hover:ring-1 hover:ring-primary-500 hover:bg-primary-50 dark:hover:bg-primary-900/10 transition-all text-sm font-medium text-gray-700 dark:text-gray-200 group"
+                          >
+                            <span className="flex items-center gap-2">
+                              <Music className="w-4 h-4 text-pink-500" />
+                              Clubs
+                            </span>
+                            <span className="text-xs text-gray-400 group-hover:text-primary-600">Filter</span>
+                          </button>
+                        </>
+                      )}
+
+                      {/* Fallback for others */}
+                      {!['events', 'venues'].includes(activeTab) && (
+                        <div className="text-center py-4 text-gray-400 text-sm italic">
+                          Select an item from the list to view details
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
-              )}
-            </div>
-          </div>
+              )
+              }
+            </div >
+          </div >
         )}
-      </main>
+      </main >
 
       <UserManagementModal
         isOpen={false}
         onClose={() => { }}
       />
       {unsavedModal}
-    </div>
+    </div >
   );
 }
 

@@ -38,9 +38,9 @@ export default function RootLayout({
         />
       </head>
       <body className={`font-sans h-screen overflow-hidden bg-white dark:bg-gray-950`}>
-        <ReactQueryProvider>
-          <AuthProvider>
-            <ToastProvider>
+        <ToastProvider>
+          <ReactQueryProvider>
+            <AuthProvider>
               <div className="h-full flex bg-gray-50 dark:bg-gray-950">
                 <div className="flex-shrink-0 h-full">
                   <Navigation />
@@ -50,9 +50,9 @@ export default function RootLayout({
                 </main>
                 <CommandPalette />
               </div>
-            </ToastProvider>
-          </AuthProvider>
-        </ReactQueryProvider>
+            </AuthProvider>
+          </ReactQueryProvider>
+        </ToastProvider>
       </body>
     </html>
   );

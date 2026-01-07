@@ -1,18 +1,16 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React from 'react';
 import { format } from 'date-fns';
 import clsx from 'clsx';
-import { Calendar, MapPin, Building2, Music, Check, X, Keyboard, GitPullRequest } from 'lucide-react';
+import { Calendar, Music, Check, X, GitPullRequest } from 'lucide-react';
 import { Event, EVENT_TYPES, getEventTiming } from '@/types';
 import { SourceIcon } from '@/components/ui/SourceIcon';
-import { useKeyboardNavigation } from '@/hooks/useKeyboardNavigation';
+import { SelectableListItem } from '@/components/ui/SelectableListItem';
 
 export interface EventListItemProps {
   event: Event;
   selected: boolean;
   onSelect: (id: string) => void;
   onEdit: (event: Event) => void;
-  onVenueClick: (venueId: string) => void;
-  onArtistClick: (artistName: string) => void;
   onApprove?: (id: string, e: React.MouseEvent | React.KeyboardEvent) => void;
   onReject?: (id: string, e: React.MouseEvent | React.KeyboardEvent) => void;
   isFocused?: boolean;
@@ -23,239 +21,186 @@ export function EventListItem({
   selected,
   onSelect,
   onEdit,
-  onVenueClick,
-  onArtistClick,
   onApprove,
   onReject,
   isFocused
 }: EventListItemProps) {
-  // Get unique sources from source_references
+  // Get unique sources
   const sources = item.source_references?.reduce((acc: string[], ref: any) => {
     if (ref.source_code && !acc.includes(ref.source_code)) acc.push(ref.source_code);
     return acc;
   }, [] as string[]) || [];
 
-  // Add 'manual' source if ID indicates it
   if (item.id.startsWith('manual_') && !sources.includes('manual')) {
     sources.push('manual');
   }
 
-  // Parse artists list if it's a string (legacy) or use the array
+  // Parse artists
   let artistsList: string[] = [];
-  if (item.artists_list && item.artists_list.length > 0) {
-    artistsList = item.artists_list.map(a => {
-      if (typeof a.name === 'string' && (a.name.startsWith('{') || a.name.startsWith('['))) {
-        try {
-          const parsed = JSON.parse(a.name);
-          return parsed.name || a.name;
-        } catch { return a.name; }
-      }
-      return a.name;
-    });
-  } else if (typeof item.artists === 'string') {
-    try {
-      // Robust parsing for various JSON states
-      let parsed = JSON.parse(item.artists);
-      // Handle potential double stringification
-      if (typeof parsed === 'string') {
-        try { parsed = JSON.parse(parsed); } catch { }
-      }
-
-      if (Array.isArray(parsed)) {
-        artistsList = parsed.map((a: any) => typeof a === 'string' ? a : a.name || '');
-      } else if (typeof parsed === 'object' && parsed !== null) {
-        artistsList = [parsed.name || ''];
-      } else {
-        artistsList = [String(item.artists)];
-      }
-    } catch {
-      artistsList = item.artists ? [item.artists] : [];
+  try {
+    if (item.artists_list && item.artists_list.length > 0) {
+      artistsList = item.artists_list.map(a => typeof a === 'string' ? a : a.name);
+    } else if (typeof item.artists === 'string') {
+      const parsed = JSON.parse(item.artists);
+      artistsList = Array.isArray(parsed) ? parsed.map((a: any) => a.name || a) : [parsed.name || item.artists];
     }
+  } catch {
+    artistsList = [];
   }
 
+  // Timing & Status Logic
   const getTimingStyle = (event: Event) => {
     const timing = getEventTiming(event);
     const styles = {
-      upcoming: { dateClass: 'text-gray-900 dark:text-gray-100', isLive: false, isPast: false },
-      ongoing: { dateClass: 'text-emerald-600 dark:text-emerald-400 font-semibold', isLive: true, isPast: false },
-      recent: { dateClass: 'text-gray-400 dark:text-gray-500', isLive: false, isPast: true },
-      expired: { dateClass: 'text-gray-400 dark:text-gray-500', isLive: false, isPast: true }
+      upcoming: { isLive: false, isPast: false },
+      ongoing: { isLive: true, isPast: false },
+      recent: { isLive: false, isPast: true },
+      expired: { isLive: false, isPast: true }
     };
     return styles[timing];
   };
 
   const timing = getTimingStyle(item);
-  const isRejected = item.publish_status === 'rejected';
-  const isPending = item.publish_status === 'pending';
-  const isPast = timing.isPast;
-  const isLive = timing.isLive;
+  const isRejected = item.status === 'REJECTED' || item.publish_status === 'rejected';
+
+  // Status Logic mirroring Dashboard (Prioritize status over deprecated publish_status)
+  const s = (item.status || item.publish_status || 'MANUAL_DRAFT') as string;
+
+  // Status Badge Component
+  const StatusBadge = () => {
+    let badgeText = s.replace(/_/g, ' ');
+    // Default fallback
+    let badgeColor = 'bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700';
+
+    if (s === 'APPROVED_PENDING_DETAILS' || s === 'needs_details') {
+      badgeText = 'NEEDS REVIEW';
+      badgeColor = 'bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-900/20 dark:text-yellow-400 dark:border-yellow-800';
+    } else if (s === 'READY_TO_PUBLISH' || s === 'ready') {
+      badgeText = 'READY';
+      badgeColor = 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800';
+    } else if (s === 'PUBLISHED' || s === 'published') {
+      if (timing.isLive) {
+        badgeText = 'LIVE';
+        badgeColor = 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800 animate-pulse';
+      } else if (timing.isPast) {
+        badgeText = 'ENDED';
+        badgeColor = 'bg-gray-100 text-gray-500 border-gray-200 dark:bg-gray-800 dark:text-gray-500 dark:border-gray-700';
+      } else {
+        badgeText = 'PUBLISHED';
+        badgeColor = 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800';
+      }
+    } else if (s === 'CANCELED' || s === 'canceled') {
+      badgeText = 'CANCELED';
+      badgeColor = 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800';
+    } else if (s === 'REJECTED' || s === 'rejected') {
+      badgeText = 'REJECTED';
+      badgeColor = 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800';
+    } else if (['MANUAL_DRAFT', 'SCRAPED_DRAFT', 'DRAFT', 'draft', 'pending'].includes(s)) {
+      badgeText = 'DRAFT';
+      badgeColor = 'bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700';
+    }
+
+    const isDraftState = ['MANUAL_DRAFT', 'SCRAPED_DRAFT', 'DRAFT', 'draft', 'pending'].includes(s);
+    const showHoverActions = isDraftState && onApprove && onReject;
+
+    return (
+      <div className="flex items-center gap-2 justify-end min-h-[22px]">
+        {item.has_pending_changes && (
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-amber-200 dark:border-amber-800 text-amber-600 dark:text-amber-500 font-medium flex items-center gap-1">
+            <GitPullRequest className="w-3 h-3" />
+          </span>
+        )}
+
+        {/* Badge: Hidden on hover if actions available */}
+        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border uppercase tracking-wide ${badgeColor} ${showHoverActions ? 'group-hover:hidden' : ''}`}>
+          {badgeText}
+        </span>
+
+        {/* Actions: Shown on hover if draft */}
+        {showHoverActions && (
+          <div className="hidden group-hover:flex items-center gap-1">
+            <button
+              onClick={(e) => { e.stopPropagation(); onApprove(item.id, e); }}
+              className="h-5 px-2 flex items-center justify-center rounded-full border border-green-200 bg-green-50 text-green-700 hover:bg-green-100 dark:border-green-900/50 dark:bg-green-900/20 dark:text-green-400 dark:hover:bg-green-900/40 text-[10px] uppercase font-bold tracking-wide transition-colors"
+              title="Approve (A)"
+            >
+              Approve
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); onReject(item.id, e); }}
+              className="h-5 px-2 flex items-center justify-center rounded-full border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/40 text-[10px] uppercase font-bold tracking-wide transition-colors"
+              title="Reject (R)"
+            >
+              Reject
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const formattedDate = item.date ? format(new Date(item.date.toString().split('T')[0]), 'MMM d') : '—';
 
   return (
-    <div
-      id={`event-item-${item.id}`}
-      onClick={() => onEdit(item)}
-      className={clsx(
-        'px-6 py-4 flex items-center gap-3 cursor-pointer transition-colors relative group',
-        isFocused && 'ring-2 ring-primary-500 z-10 bg-primary-50 dark:bg-primary-900/20',
-        isRejected && 'bg-gray-50 dark:bg-gray-900/50',
-        isPending && 'pending-stripes',
-        !isRejected && !isPending && !isFocused && 'bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800',
-        isPast && !isRejected && 'opacity-60'
-      )}
-    >
-      <input
-        type="checkbox"
-        checked={selected}
-        onClick={(e) => e.stopPropagation()}
-        onChange={(e) => { e.stopPropagation(); onSelect(item.id); }}
-        className="w-4 h-4 rounded text-primary-600 dark:text-primary-500 border-gray-300 dark:border-gray-600 focus:ring-primary-500"
-      />
-
-      <div className="w-12 h-12 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center flex-shrink-0 overflow-hidden border border-gray-200 dark:border-gray-700">
-        {item.flyer_front ? (
-          <img src={item.flyer_front} alt="" className="w-full h-full object-cover" />
-        ) : (
-          <Calendar className="w-6 h-6 text-gray-400 dark:text-gray-500" />
-        )}
-      </div>
-
-      <div className="flex-1 min-w-0">
-        <div className="flex items-start gap-2 mb-1">
-          <h3 className={clsx(
-            'font-medium text-sm truncate flex-1',
-            isRejected ? 'text-gray-400 dark:text-gray-500 line-through' : 'text-gray-900 dark:text-gray-100'
-          )}>{item.title}</h3>
-
+    <SelectableListItem
+      id={item.id}
+      title={
+        <div className="flex items-center gap-2">
+          <span className={clsx(isRejected && "line-through text-gray-400")}>{item.title}</span>
           {item.event_type && item.event_type !== 'event' && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 font-medium flex-shrink-0 leading-tight whitespace-nowrap">
-              {EVENT_TYPES.find(t => t.value === item.event_type)?.icon} {EVENT_TYPES.find(t => t.value === item.event_type)?.label}
+            <span className="text-[10px] px-1.5 py-0.5 rounded border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 font-medium leading-tight">
+              {EVENT_TYPES.find(t => t.value === item.event_type)?.label || item.event_type}
             </span>
           )}
         </div>
-
-        <div className="flex items-center gap-x-2 gap-y-1 flex-wrap text-xs text-gray-500 dark:text-gray-400">
+      }
+      subtitle={
+        <div className="flex items-center gap-x-2 gap-y-1 flex-wrap">
           {item.venue_name && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                if (item.venue_id) onVenueClick(item.venue_id);
-              }}
-              className={clsx(
-                'flex items-center gap-1 hover:text-primary-600 dark:hover:text-primary-400 transition-colors',
-                !item.venue_id && 'cursor-default hover:text-gray-500 dark:hover:text-gray-400'
-              )}
-              disabled={!item.venue_id}
-            >
-              <Building2 className="w-3 h-3" />
-              <span className={clsx(isRejected && 'line-through')}>{item.venue_name}</span>
-            </button>
+            <span className="text-gray-600 dark:text-gray-400">
+              {item.venue_name}
+            </span>
           )}
-
-          {item.venue_city && (
+          {artistsList.length > 0 && (
             <>
-              <span className="text-gray-300 dark:text-gray-600">•</span>
-              <span className={clsx(isRejected && 'line-through')}>{item.venue_city}</span>
+              <span className="text-gray-300 dark:text-gray-600 mx-1">•</span>
+              <div className="flex gap-1">
+                {artistsList.slice(0, 2).map((a, i) => (
+                  <span key={i} className="text-gray-500 dark:text-gray-400 px-1.5 rounded text-[10px]">{a}</span>
+                ))}
+                {artistsList.length > 2 && <span className="text-[10px]">+{artistsList.length - 2}</span>}
+              </div>
             </>
           )}
         </div>
+      }
+      imageUrl={item.flyer_front}
+      imageFallback={<Calendar className="w-6 h-6 text-gray-400" />}
+      isChecked={selected}
+      onToggleSelection={() => onSelect(item.id)}
+      onClick={() => onEdit(item)}
+      // Force 'isActiveView' style on focus to mimic keyboard selection
+      isActiveView={isFocused || false}
+      className={clsx(isFocused && "ring-2 ring-primary-500 z-10")}
 
-        {artistsList.length > 0 && (
-          <div className="flex items-center gap-1 mt-1.5 flex-wrap">
-            <Music className="w-3 h-3 text-gray-400 dark:text-gray-500 mr-1" />
-            {artistsList.slice(0, 3).map((artistName, idx) => (
-              <button
-                key={idx}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onArtistClick(artistName);
-                }}
-                className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-primary-100 dark:hover:bg-primary-900/30 hover:text-primary-700 dark:hover:text-primary-400 transition-colors border border-gray-200 dark:border-gray-700"
-              >
-                {artistName}
-              </button>
-            ))}
-            {artistsList.length > 3 && (
-              <span className="text-[10px] text-gray-400 dark:text-gray-500">+{artistsList.length - 3}</span>
-            )}
-          </div>
-        )}
-      </div>
+      statusBadge={<StatusBadge />}
+      // Actions: implicitly handled by StatusBadge returning buttons for drafts
+      actions={undefined}
 
-      <div className="text-right flex-shrink-0 self-start flex flex-col items-end gap-1">
-        {isLive ? (
-          <div className="flex items-center gap-1.5 bg-emerald-100 dark:bg-emerald-900/30 px-2 py-0.5 rounded-full">
-            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-            <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">LIVE</span>
-          </div>
-        ) : (
-          <p className={clsx(
-            'text-sm font-medium whitespace-nowrap',
-            timing.dateClass,
-            isRejected && 'line-through'
+      metaRight={
+        <>
+          <span className={clsx(
+            "text-[10px] font-medium px-1.5 py-0.5 rounded border uppercase tracking-wide text-xs mb-1 block text-right",
+            formattedDate !== '—' ? "border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400" : "text-red-500 border-transparent"
           )}>
-            {item.date ? format(new Date(`${item.date.toString().split('T')[0]}T00:00:00`), 'MMM d') : '—'}
-          </p>
-        )}
-
-        <div className="flex items-center gap-1 mt-1 justify-end">
-          {item.has_pending_changes && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 font-medium flex items-center gap-1">
-              <GitPullRequest className="w-3 h-3" />
-              Updates
-            </span>
-          )}
-          {item.status === 'PUBLISHED' && (
-            <>
-              {isLive ? (
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 font-medium animate-pulse">
-                  Live
-                </span>
-              ) : isPast ? (
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 font-medium">
-                  Ended
-                </span>
-              ) : (
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 font-medium">
-                  Published
-                </span>
-              )}
-            </>
-          )}
-          {item.status === 'READY_TO_PUBLISH' && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 font-medium">
-              Ready
-            </span>
-          )}
-          {item.status === 'CANCELED' && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 font-medium">
-              Canceled
-            </span>
-          )}
-          {sources.map((source) => (
-            <SourceIcon key={source} sourceCode={source} className="w-4 h-4" />
-          ))}
-        </div>
-
-        {(isPending && onApprove && onReject) && (
-          <div className="flex items-center gap-1 mt-2 justify-end">
-            <button
-              onClick={(e) => onApprove(item.id, e)}
-              className="w-7 h-7 flex items-center justify-center rounded-full bg-green-50 text-green-600 hover:bg-green-100 dark:bg-green-900/20 dark:text-green-400 dark:hover:bg-green-900/40 transition-colors"
-              title="Approve"
-            >
-              <Check className="w-4 h-4" />
-            </button>
-            <button
-              onClick={(e) => onReject(item.id, e)}
-              className="w-7 h-7 flex items-center justify-center rounded-full bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/40 transition-colors"
-              title="Reject"
-            >
-              <X className="w-4 h-4" />
-            </button>
+            {formattedDate}
+          </span>
+          <div className="flex justify-end gap-1">
+            {sources.map(s => <SourceIcon key={s} sourceCode={s} className="w-4 h-4" />)}
           </div>
-        )}
-      </div>
-    </div >
+        </>
+      }
+    />
   );
 }
 
@@ -266,12 +211,10 @@ interface EventListProps {
   onSelect: (id: string) => void;
   onSelectAll: () => void;
   onEdit: (event: Event) => void;
-  onVenueClick: (venueId: string) => void;
-  onArtistClick: (artistName: string) => void;
   onApprove?: (id: string, e: React.MouseEvent | React.KeyboardEvent) => void;
   onReject?: (id: string, e: React.MouseEvent | React.KeyboardEvent) => void;
+  focusedId?: string | null;
 }
-
 
 export function EventList({
   events,
@@ -280,20 +223,10 @@ export function EventList({
   onSelect,
   onSelectAll,
   onEdit,
-  onVenueClick,
-  onArtistClick,
   onApprove,
-  onReject
+  onReject,
+  focusedId
 }: EventListProps) {
-  const { focusedId } = useKeyboardNavigation({
-    events,
-    onApprove: onApprove ? (id, e) => onApprove(id, e) : undefined,
-    onReject: onReject ? (id, e) => onReject(id, e) : undefined,
-    onEdit: (id) => {
-      const event = events.find(e => e.id === id);
-      if (event) onEdit(event);
-    }
-  });
 
   if (isLoading) {
     return (
@@ -314,33 +247,6 @@ export function EventList({
 
   return (
     <div className="bg-white dark:bg-gray-900 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-800">
-      <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/50 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <span className="text-sm text-gray-500 dark:text-gray-400">{events.length} events</span>
-          <div className="flex items-center gap-2 text-[10px] md:text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded border border-gray-200 dark:border-gray-700">
-            <Keyboard className="w-3 h-3" />
-            <span className="font-mono">↑↓</span> <span className="hidden sm:inline">Nav</span>
-            <span className="text-gray-300 dark:text-gray-600 mx-1">•</span>
-            <span className="font-mono">A</span> <span className="hidden sm:inline">Approve</span>
-            <span className="text-gray-300 dark:text-gray-600 mx-1">•</span>
-            <span className="font-mono">R</span> <span className="hidden sm:inline">Reject</span>
-            <span className="text-gray-300 dark:text-gray-600 mx-1">•</span>
-            <span className="font-mono">Enter</span> <span className="hidden sm:inline">Edit</span>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={events.length > 0 && selectedIds.size === events.length}
-              onChange={onSelectAll}
-              className="rounded text-primary-600 dark:text-primary-500 border-gray-300 dark:border-gray-600 focus:ring-primary-500"
-            />
-            Select all
-          </label>
-        </div>
-      </div>
-
       <div className="divide-y divide-gray-200 dark:divide-gray-800">
         {events.map((item) => (
           <EventListItem
@@ -349,8 +255,6 @@ export function EventList({
             selected={selectedIds.has(item.id)}
             onSelect={onSelect}
             onEdit={onEdit}
-            onVenueClick={onVenueClick}
-            onArtistClick={onArtistClick}
             onApprove={onApprove}
             onReject={onReject}
             isFocused={focusedId === item.id}

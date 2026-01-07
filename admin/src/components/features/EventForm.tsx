@@ -13,6 +13,8 @@ import { EVENT_STATES, EventStatusState, canTransition } from '@/lib/eventStateM
 export const EventStatusValues = EVENT_STATES;
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { Select } from '@/components/ui/Select';
+import { Textarea } from '@/components/ui/Textarea';
 import { SourceFieldOptions } from '@/components/ui/SourceFieldOptions';
 import { ResetSectionButton } from '@/components/ui/ResetSectionButton';
 import { FormLayout } from '@/components/ui/FormLayout';
@@ -66,6 +68,7 @@ export function EventForm({
   // Tabs State
   const [activeTab, setActiveTab] = useState<'details' | 'history'>('details');
   const [pendingChanges, setPendingChanges] = useState<any>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [formData, setFormData] = useState<Partial<Event>>(() => {
     if (!initialData) {
@@ -196,9 +199,19 @@ export function EventForm({
       finalEndTime = finalEndTime.split('T')[1].substring(0, 5);
     }
 
+    // Auto-promote to PUBLISHED if currently READY and user clicked "Publish"
+    let finalStatus = formData.status;
+    if (formData.status === EventStatusValues.READY_TO_PUBLISH) {
+      // Check validation before publishing
+      if (!validateContentUniqueness(formData.title || undefined, formData.description || undefined)) {
+        throw new Error("Validation failed: Content must be unique.");
+      }
+      finalStatus = EventStatusValues.PUBLISHED;
+    }
+
     const finalData = {
       ...formData,
-      status: formData.status, // Ensure status is explicitly included
+      status: finalStatus,
       start_time: finalStartTime,
       end_date: endDate || null,
       end_time: finalEndTime,
@@ -210,8 +223,11 @@ export function EventForm({
   };
 
   const handleSaveButton = async () => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
     try {
       await internalSave();
+      success('Event saved successfully');
       // Explicit save button closes the form
       onCancel(true);
     } catch (err: any) {
@@ -220,6 +236,8 @@ export function EventForm({
       showError(err.message || 'Failed to save event');
       // Scroll to top
       window.scrollTo({ top: 0, behavior: 'smooth' });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -319,7 +337,35 @@ export function EventForm({
     }
 
     setTransitionError(null);
+
+    // VALIDATION: Moving to READY or PUBLISHED requires unique content
+    if (newStatus === EventStatusValues.READY_TO_PUBLISH || newStatus === EventStatusValues.PUBLISHED) {
+      if (!validateContentUniqueness(formData.title || undefined, formData.description || undefined)) {
+        return; // Error set by validate function
+      }
+    }
+
     setFormData(prev => ({ ...prev, status: newStatus }));
+  };
+
+  const validateContentUniqueness = (title?: string, description?: string) => {
+    const normalize = (s: string | undefined | null) => (s || '').toLowerCase().trim();
+    const currentTitle = normalize(title);
+    const currentDesc = normalize(description);
+
+    for (const source of initialData?.source_references || []) {
+      if (source.title && normalize(source.title) === currentTitle) {
+        setTransitionError(`Title matches source "${source.source_code}". Please rewrite to be unique.`);
+        setTimeout(() => setTransitionError(null), 5000);
+        return false;
+      }
+      if (source.description && currentDesc && normalize(source.description) === currentDesc) {
+        setTransitionError(`Description matches source "${source.source_code}". Please rewrite to be unique.`);
+        setTimeout(() => setTransitionError(null), 5000);
+        return false;
+      }
+    }
+    return true;
   };
 
   // -- Helpers --
@@ -556,9 +602,9 @@ export function EventForm({
         onCancel={handleCancelRequest}
         onSave={handleSaveButton}
         onDelete={initialData && onDelete ? () => promptBeforeAction(() => handleDeleteClick(initialData.id)) : undefined}
-        isLoading={isLoading}
+        isLoading={isLoading || isSubmitting}
         headerExtras={headerExtras}
-        saveLabel="Save & Close"
+        saveLabel={formData.status === EventStatusValues.READY_TO_PUBLISH ? 'Publish' : 'Save & Close'}
       >
         {activeTab === 'history' ? (
           <div className="py-6"><HistoryPanel entityId={initialData?.id || ''} entityType="event" /></div>
@@ -686,26 +732,24 @@ export function EventForm({
                     value={formData.title || ''}
                     onChange={(e) => setFormData({ ...formData, title: e.target.value })}
                     required
+                    maxLength={255}
                   />
                   <SourceFieldOptions sources={sources} field="title" onSelect={(v) => handleSourceSelect('title', v)} currentValue={formData.title} />
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Type
-                    </label>
-                    <select
+                    <Select
+                      label="Type"
                       value={formData.event_type || 'event'}
                       onChange={(e) => setFormData({ ...formData, event_type: e.target.value as EventType })}
-                      className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 dark:text-white"
                     >
                       {EVENT_TYPES.map(type => (
                         <option key={type.value} value={type.value}>
                           {type.label}
                         </option>
                       ))}
-                    </select>
+                    </Select>
                     <SourceFieldOptions sources={sources} field="event_type" onSelect={(v) => handleSourceSelect('event_type', v)} currentValue={formData.event_type} />
                   </div>
                 </div>
@@ -828,7 +872,7 @@ export function EventForm({
             >
               <div className="space-y-4 pt-4">
                 <div>
-                  <Input label="Flyer URL" value={formData.flyer_front || ''} onChange={(e) => setFormData({ ...formData, flyer_front: e.target.value })} />
+                  <Input label="Flyer URL" type="url" placeholder="https://..." value={formData.flyer_front || ''} onChange={(e) => setFormData({ ...formData, flyer_front: e.target.value })} />
                   <SourceFieldOptions sources={sources} field="flyer_front" onSelect={(v) => handleSourceSelect('flyer_front', v)} currentValue={formData.flyer_front} />
                 </div>
                 {formData.flyer_front && (
@@ -837,11 +881,11 @@ export function EventForm({
                   </div>
                 )}
                 <div>
-                  <Input label="Content URL" value={formData.content_url || ''} onChange={(e) => setFormData({ ...formData, content_url: e.target.value })} leftIcon={<LinkIcon className="w-4 h-4" />} />
+                  <Input label="Content URL" type="url" placeholder="https://..." value={formData.content_url || ''} onChange={(e) => setFormData({ ...formData, content_url: e.target.value })} leftIcon={<LinkIcon className="w-4 h-4" />} />
                   <SourceFieldOptions sources={sources} field="content_url" onSelect={(v) => handleSourceSelect('content_url', v)} currentValue={formData.content_url} />
                 </div>
                 <div>
-                  <Input label="Ticket URL" value={formData.ticket_url || ''} onChange={(e) => setFormData({ ...formData, ticket_url: e.target.value })} leftIcon={<Ticket className="w-4 h-4" />} />
+                  <Input label="Ticket URL" type="url" placeholder="https://..." value={formData.ticket_url || ''} onChange={(e) => setFormData({ ...formData, ticket_url: e.target.value })} leftIcon={<Ticket className="w-4 h-4" />} />
                   <SourceFieldOptions sources={sources} field="ticket_url" onSelect={(v) => handleSourceSelect('ticket_url', v)} currentValue={formData.ticket_url} />
                 </div>
               </div>
@@ -854,11 +898,11 @@ export function EventForm({
               onReset={(source) => resetFields(source, ['description'])}
             >
               <div className="pt-4">
-                <textarea
+                <Textarea
                   value={formData.description || ''}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   rows={6}
-                  className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 dark:text-white"
+                  maxLength={5000}
                 />
                 <SourceFieldOptions sources={sources} field="description" onSelect={(v) => handleSourceSelect('description', v)} currentValue={formData.description} />
               </div>

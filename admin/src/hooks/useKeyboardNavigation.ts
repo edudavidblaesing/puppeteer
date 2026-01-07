@@ -14,6 +14,7 @@ interface KeyboardNavigationOptions {
     onApprove?: (id: string, e: any) => void;
     onReject?: (id: string, e: any) => void;
     onEdit?: (id: string) => void;
+    onDelete?: (id: string, e: any) => void;
     onSpace?: () => void; // New handler for Space key
     disabled?: boolean;
 }
@@ -30,6 +31,7 @@ export function useKeyboardNavigation({
     onApprove,
     onReject,
     onEdit,
+    onDelete,
     onSpace,
     disabled = false
 }: KeyboardNavigationOptions) {
@@ -114,9 +116,16 @@ export function useKeyboardNavigation({
                         onReject(events[activeIndex].id, e);
                     }
                     break;
+                case 'd':
+                case 'D':
+                    if (onDelete && activeIndex >= 0 && events[activeIndex]) {
+                        e.preventDefault();
+                        onDelete(events[activeIndex].id, e);
+                    }
+                    break;
             }
         }
-    }, [events, activeIndex, onArrowUp, onArrowDown, onEnter, onEscape, onSave, onSearch, onApprove, onReject, onEdit, onSpace, disabled]);
+    }, [events, activeIndex, onArrowUp, onArrowDown, onEnter, onEscape, onSave, onSearch, onApprove, onReject, onEdit, onDelete, onSpace, disabled]);
 
     useEffect(() => {
         window.addEventListener('keydown', handleKeyDown);

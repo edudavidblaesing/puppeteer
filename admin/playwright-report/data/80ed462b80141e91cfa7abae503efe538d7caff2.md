@@ -1,0 +1,161 @@
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e4]:
+      - generic [ref=e6]:
+        - img [ref=e8]
+        - generic [ref=e11]:
+          - generic [ref=e12]: EventHub
+          - generic [ref=e13]: Global Events Manager
+        - button [ref=e14] [cursor=pointer]:
+          - img [ref=e15]
+      - generic [ref=e17]:
+        - generic [ref=e18]:
+          - heading "Main Menu" [level=3] [ref=e19]
+          - generic [ref=e20]:
+            - link "Dashboard" [ref=e21] [cursor=pointer]:
+              - /url: /
+              - img [ref=e22]
+              - generic [ref=e27]: Dashboard
+            - link "Events" [ref=e28] [cursor=pointer]:
+              - /url: /events
+              - img [ref=e29]
+              - generic [ref=e31]: Events
+            - link "Venues" [ref=e32] [cursor=pointer]:
+              - /url: /venues
+              - img [ref=e33]
+              - generic [ref=e37]: Venues
+            - link "Artists" [ref=e38] [cursor=pointer]:
+              - /url: /artists
+              - img [ref=e39]
+              - generic [ref=e44]: Artists
+            - link "Organizers" [ref=e45] [cursor=pointer]:
+              - /url: /organizers
+              - img [ref=e46]
+              - generic [ref=e49]: Organizers
+            - link "Guest Users" [ref=e50] [cursor=pointer]:
+              - /url: /users
+              - img [ref=e51]
+              - generic [ref=e56]: Guest Users
+            - link "Moderation" [ref=e57] [cursor=pointer]:
+              - /url: /moderation
+              - img [ref=e58]
+              - generic [ref=e60]: Moderation
+            - link "Cities" [ref=e61] [cursor=pointer]:
+              - /url: /cities
+              - img [ref=e62]
+              - generic [ref=e65]: Cities
+        - generic [ref=e66]:
+          - heading "Other" [level=3] [ref=e67]
+          - generic [ref=e68]:
+            - link "Sources" [ref=e69] [cursor=pointer]:
+              - /url: /sources
+              - img [ref=e70]
+              - generic [ref=e73]: Sources
+            - link "Settings" [ref=e74] [cursor=pointer]:
+              - /url: /settings
+              - img [ref=e75]
+              - generic [ref=e78]: Settings
+      - generic [ref=e80]:
+        - img [ref=e82]
+        - generic [ref=e85]:
+          - paragraph
+          - paragraph [ref=e86]: Administrator
+        - button "Logout" [ref=e87] [cursor=pointer]:
+          - img [ref=e88]
+    - main [ref=e91]:
+      - generic [ref=e92]:
+        - generic [ref=e93]:
+          - generic [ref=e96]:
+            - button "users" [ref=e98] [cursor=pointer]:
+              - img [ref=e99]
+              - generic [ref=e101]: users
+            - textbox "Filter list..." [ref=e102]
+          - button "New user" [ref=e103] [cursor=pointer]:
+            - img [ref=e104]
+            - generic [ref=e105]: New user
+        - main [ref=e106]:
+          - generic [ref=e107]:
+            - generic [ref=e108]:
+              - combobox [ref=e110]:
+                - 'option "Source: All" [selected]'
+              - generic [ref=e114] [cursor=pointer]:
+                - generic [ref=e115]:
+                  - checkbox [ref=e117]
+                  - img [ref=e119]
+                - generic [ref=e125]:
+                  - generic [ref=e126]:
+                    - heading "testuser" [level=4] [ref=e127]
+                    - generic [ref=e130]: user@test.com
+                  - generic [ref=e132]: Invalid Date
+              - generic [ref=e133]:
+                - generic [ref=e134]:
+                  - generic [ref=e135]: 1 items
+                  - generic [ref=e136]:
+                    - button [disabled] [ref=e137]:
+                      - img [ref=e138]
+                    - generic [ref=e140]: "1"
+                    - button [disabled] [ref=e141]:
+                      - img [ref=e142]
+                - generic [ref=e144]:
+                  - generic [ref=e145]:
+                    - generic [ref=e146]:
+                      - generic [ref=e147]: ↑
+                      - generic [ref=e148]: ↓
+                    - generic [ref=e149]: Navigate
+                  - generic [ref=e150]:
+                    - generic [ref=e151]: Enter
+                    - generic [ref=e152]: Open
+                  - generic [ref=e153]:
+                    - generic [ref=e154]: Space
+                    - generic [ref=e155]: Select
+                  - generic [ref=e156]:
+                    - generic [ref=e157]: Esc
+                    - generic [ref=e158]: Back / Clear
+            - generic [ref=e160]:
+              - generic [ref=e161]:
+                - heading "testuser" [level=2] [ref=e163]
+                - generic [ref=e164]:
+                  - button [ref=e165] [cursor=pointer]:
+                    - img [ref=e166]
+                  - button [ref=e169] [cursor=pointer]:
+                    - img [ref=e170]
+              - generic [ref=e174]:
+                - generic [ref=e176]:
+                  - generic [ref=e177]:
+                    - img [ref=e179]
+                    - generic [ref=e182]:
+                      - heading "testuser" [level=3] [ref=e183]
+                      - paragraph [ref=e184]: user@test.com
+                  - generic [ref=e185]:
+                    - heading "Account Details" [level=3] [ref=e187]:
+                      - img [ref=e188]
+                      - text: Account Details
+                    - generic [ref=e192]:
+                      - generic [ref=e193]:
+                        - generic [ref=e194]: Username
+                        - textbox "Username" [ref=e196]: testuser
+                      - generic [ref=e197]:
+                        - generic [ref=e198]: Full Name
+                        - textbox "Full Name" [ref=e200]
+                      - generic [ref=e201]:
+                        - generic [ref=e202]: Email
+                        - generic [ref=e203]:
+                          - img [ref=e205]
+                          - textbox "Email" [ref=e208]: user@test.com
+                      - generic [ref=e209]:
+                        - generic [ref=e210]: Avatar URL
+                        - textbox "Avatar URL" [ref=e212]:
+                          - /placeholder: https://...
+                      - generic [ref=e213]:
+                        - checkbox "Mark as Verified User" [ref=e214]
+                        - generic [ref=e215] [cursor=pointer]: Mark as Verified User
+                - generic [ref=e217]:
+                  - button "Cancel" [ref=e218] [cursor=pointer]
+                  - button "Save Changes" [ref=e219] [cursor=pointer]:
+                    - img [ref=e221]
+                    - text: Save Changes
+  - alert [ref=e225]
+```

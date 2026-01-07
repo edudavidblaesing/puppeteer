@@ -1,0 +1,252 @@
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e4]:
+      - generic [ref=e6]:
+        - img [ref=e8]
+        - generic [ref=e11]:
+          - generic [ref=e12]: EventHub
+          - generic [ref=e13]: Global Events Manager
+        - button [ref=e14] [cursor=pointer]:
+          - img [ref=e15]
+      - generic [ref=e17]:
+        - generic [ref=e18]:
+          - heading "Main Menu" [level=3] [ref=e19]
+          - generic [ref=e20]:
+            - link "Dashboard" [ref=e21] [cursor=pointer]:
+              - /url: /
+              - img [ref=e22]
+              - generic [ref=e27]: Dashboard
+            - link "Events" [ref=e28] [cursor=pointer]:
+              - /url: /events
+              - img [ref=e29]
+              - generic [ref=e31]: Events
+            - link "Venues" [ref=e32] [cursor=pointer]:
+              - /url: /venues
+              - img [ref=e33]
+              - generic [ref=e37]: Venues
+            - link "Artists" [ref=e38] [cursor=pointer]:
+              - /url: /artists
+              - img [ref=e39]
+              - generic [ref=e44]: Artists
+            - link "Organizers" [ref=e45] [cursor=pointer]:
+              - /url: /organizers
+              - img [ref=e46]
+              - generic [ref=e49]: Organizers
+            - link "Guest Users" [ref=e50] [cursor=pointer]:
+              - /url: /users
+              - img [ref=e51]
+              - generic [ref=e56]: Guest Users
+            - link "Moderation" [ref=e57] [cursor=pointer]:
+              - /url: /moderation
+              - img [ref=e58]
+              - generic [ref=e60]: Moderation
+            - link "Cities" [ref=e61] [cursor=pointer]:
+              - /url: /cities
+              - img [ref=e62]
+              - generic [ref=e65]: Cities
+        - generic [ref=e66]:
+          - heading "Other" [level=3] [ref=e67]
+          - generic [ref=e68]:
+            - link "Sources" [ref=e69] [cursor=pointer]:
+              - /url: /sources
+              - img [ref=e70]
+              - generic [ref=e73]: Sources
+            - link "Settings" [ref=e74] [cursor=pointer]:
+              - /url: /settings
+              - img [ref=e75]
+              - generic [ref=e78]: Settings
+      - generic [ref=e80]:
+        - img [ref=e82]
+        - generic [ref=e85]:
+          - paragraph
+          - paragraph [ref=e86]: Administrator
+        - button "Logout" [ref=e87] [cursor=pointer]:
+          - img [ref=e88]
+    - main [ref=e91]:
+      - generic [ref=e92]:
+        - generic [ref=e93]:
+          - generic [ref=e96]:
+            - button "events" [ref=e98] [cursor=pointer]:
+              - img [ref=e99]
+              - generic [ref=e101]: events
+            - textbox "Filter events by name..." [ref=e102]
+          - button "New event" [ref=e103] [cursor=pointer]:
+            - img [ref=e104]
+            - generic [ref=e105]: New event
+        - main [ref=e106]:
+          - generic [ref=e107]:
+            - generic [ref=e108]:
+              - generic [ref=e109]:
+                - combobox [ref=e110]:
+                  - 'option "Status: All" [selected]'
+                  - option "Draft"
+                  - option "Needs Details"
+                  - option "Ready to Publish"
+                  - option "Published"
+                  - option "Cancelled"
+                  - option "Rejected"
+                - combobox [ref=e111]:
+                  - option "Upcoming" [selected]
+                  - option "Past"
+                  - 'option "Time: All"'
+                - combobox [ref=e112]:
+                  - 'option "City: All" [selected]'
+                  - option "Berlin"
+                - combobox [ref=e113]:
+                  - 'option "Source: All" [selected]'
+                  - option "Ticketmaster"
+                  - option "Resident Advisor"
+                  - option "Facebook"
+                  - option "Manual / Original"
+              - generic [ref=e117] [cursor=pointer]:
+                - generic [ref=e118]:
+                  - checkbox [ref=e120]
+                  - img [ref=e122]
+                - generic [ref=e125]:
+                  - heading "Test Event 1" [level=4] [ref=e127]:
+                    - generic [ref=e129]: Test Event 1
+                  - generic [ref=e130]:
+                    - generic [ref=e133]: pending
+                    - generic [ref=e134]: Dec 31
+                - generic [ref=e135]:
+                  - button "Approve" [ref=e136]:
+                    - img [ref=e137]
+                  - button "Reject" [ref=e139]:
+                    - img [ref=e140]
+              - generic [ref=e143]:
+                - generic [ref=e144]:
+                  - generic [ref=e145]: 1 items
+                  - generic [ref=e146]:
+                    - button [disabled] [ref=e147]:
+                      - img [ref=e148]
+                    - generic [ref=e150]: "1"
+                    - button [disabled] [ref=e151]:
+                      - img [ref=e152]
+                - generic [ref=e154]:
+                  - generic [ref=e155]:
+                    - generic [ref=e156]:
+                      - generic [ref=e157]: ↑
+                      - generic [ref=e158]: ↓
+                    - generic [ref=e159]: Navigate
+                  - generic [ref=e160]:
+                    - generic [ref=e161]: Enter
+                    - generic [ref=e162]: Open
+                  - generic [ref=e163]:
+                    - generic [ref=e164]: Space
+                    - generic [ref=e165]: Select
+                  - generic [ref=e166]:
+                    - generic [ref=e167]: Esc
+                    - generic [ref=e168]: Back / Clear
+            - generic [ref=e170]:
+              - generic [ref=e171]:
+                - heading "Test Event 1" [level=2] [ref=e173]
+                - generic [ref=e174]:
+                  - button [ref=e175] [cursor=pointer]:
+                    - img [ref=e176]
+                  - button [ref=e179] [cursor=pointer]:
+                    - img [ref=e180]
+              - generic [ref=e184]:
+                - generic [ref=e187]:
+                  - button "Details" [ref=e188] [cursor=pointer]
+                  - button "History" [ref=e189] [cursor=pointer]
+                - generic [ref=e192]:
+                  - generic [ref=e195]:
+                    - generic [ref=e196]: Workflow
+                    - generic [ref=e197]:
+                      - button "Draft" [disabled] [ref=e198]
+                      - button "Needs Details" [disabled] [ref=e199]
+                      - button "Ready" [disabled] [ref=e200]
+                      - button "Published" [disabled] [ref=e201]
+                      - button "Canceled" [disabled] [ref=e202]
+                      - button "Rejected" [disabled] [ref=e203]
+                  - generic [ref=e204]:
+                    - heading "Basic Info" [level=3] [ref=e206]
+                    - generic [ref=e208]:
+                      - generic [ref=e210]:
+                        - generic [ref=e211]: Title
+                        - textbox "Title" [ref=e213]: Test Event 1
+                      - generic [ref=e216]:
+                        - generic [ref=e217]: Type
+                        - generic [ref=e218]:
+                          - combobox "Type" [ref=e219]:
+                            - option "Event" [selected]
+                            - option "Club Night"
+                            - option "Concert"
+                            - option "Festival"
+                            - option "Exhibition"
+                            - option "Workshop"
+                            - option "Party"
+                            - option "Performance"
+                            - option "Rave"
+                            - option "Listening"
+                          - generic:
+                            - img
+                      - generic [ref=e220]:
+                        - generic [ref=e222]:
+                          - generic [ref=e223]: Start Date
+                          - textbox "Start Date" [ref=e225]: 2025-01-01
+                        - generic [ref=e227]:
+                          - generic [ref=e228]: Start Time
+                          - textbox "Start Time" [ref=e230]: 18:00
+                      - generic [ref=e231]:
+                        - generic [ref=e233]:
+                          - generic [ref=e234]: End Date (Optional)
+                          - textbox "End Date (Optional)" [ref=e236]:
+                            - /placeholder: Same as start date
+                        - generic [ref=e238]:
+                          - generic [ref=e239]: End Time
+                          - textbox "End Time" [ref=e241]
+                  - generic [ref=e242]:
+                    - heading "Artists" [level=3] [ref=e244]:
+                      - img [ref=e245]
+                      - text: Artists
+                    - generic [ref=e254]:
+                      - img [ref=e256]
+                      - textbox "Search artists..." [ref=e259]
+                  - generic [ref=e260]:
+                    - heading "Location" [level=3] [ref=e262]:
+                      - img [ref=e263]
+                      - text: Location
+                    - generic [ref=e269]:
+                      - generic [ref=e270]:
+                        - heading "Linked" [level=4] [ref=e271]:
+                          - generic [ref=e272]: Linked
+                        - paragraph
+                      - generic [ref=e273]:
+                        - button "Edit" [ref=e274] [cursor=pointer]
+                        - button [ref=e275] [cursor=pointer]:
+                          - img [ref=e276]
+                  - generic [ref=e279]:
+                    - heading "Media & Links" [level=3] [ref=e281]:
+                      - img [ref=e282]
+                      - text: Media & Links
+                    - generic [ref=e287]:
+                      - generic [ref=e289]:
+                        - generic [ref=e290]: Flyer URL
+                        - textbox "Flyer URL" [ref=e292]:
+                          - /placeholder: https://...
+                      - generic [ref=e294]:
+                        - generic [ref=e295]: Content URL
+                        - generic [ref=e296]:
+                          - img [ref=e298]
+                          - textbox "Content URL" [ref=e301]:
+                            - /placeholder: https://...
+                      - generic [ref=e303]:
+                        - generic [ref=e304]: Ticket URL
+                        - generic [ref=e305]:
+                          - img [ref=e307]
+                          - textbox "Ticket URL" [ref=e309]:
+                            - /placeholder: https://...
+                  - generic [ref=e310]:
+                    - heading "Description" [level=3] [ref=e312]
+                    - textbox [ref=e316]
+                - generic [ref=e318]:
+                  - button "Cancel" [ref=e319] [cursor=pointer]
+                  - button "Save & Close" [ref=e320] [cursor=pointer]:
+                    - img [ref=e322]
+                    - text: Save & Close
+  - alert [ref=e326]
+```

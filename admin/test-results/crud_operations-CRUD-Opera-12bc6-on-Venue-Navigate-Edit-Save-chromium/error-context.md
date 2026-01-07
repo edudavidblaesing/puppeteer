@@ -1,0 +1,236 @@
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e4]:
+      - generic [ref=e6]:
+        - img [ref=e8]
+        - generic [ref=e11]:
+          - generic [ref=e12]: EventHub
+          - generic [ref=e13]: Global Events Manager
+        - button [ref=e14] [cursor=pointer]:
+          - img [ref=e15]
+      - generic [ref=e17]:
+        - generic [ref=e18]:
+          - heading "Main Menu" [level=3] [ref=e19]
+          - generic [ref=e20]:
+            - link "Dashboard" [ref=e21] [cursor=pointer]:
+              - /url: /
+              - img [ref=e22]
+              - generic [ref=e27]: Dashboard
+            - link "Events" [ref=e28] [cursor=pointer]:
+              - /url: /events
+              - img [ref=e29]
+              - generic [ref=e31]: Events
+            - link "Venues" [ref=e32] [cursor=pointer]:
+              - /url: /venues
+              - img [ref=e33]
+              - generic [ref=e37]: Venues
+            - link "Artists" [ref=e38] [cursor=pointer]:
+              - /url: /artists
+              - img [ref=e39]
+              - generic [ref=e44]: Artists
+            - link "Organizers" [ref=e45] [cursor=pointer]:
+              - /url: /organizers
+              - img [ref=e46]
+              - generic [ref=e49]: Organizers
+            - link "Guest Users" [ref=e50] [cursor=pointer]:
+              - /url: /users
+              - img [ref=e51]
+              - generic [ref=e56]: Guest Users
+            - link "Moderation" [ref=e57] [cursor=pointer]:
+              - /url: /moderation
+              - img [ref=e58]
+              - generic [ref=e60]: Moderation
+            - link "Cities" [ref=e61] [cursor=pointer]:
+              - /url: /cities
+              - img [ref=e62]
+              - generic [ref=e65]: Cities
+        - generic [ref=e66]:
+          - heading "Other" [level=3] [ref=e67]
+          - generic [ref=e68]:
+            - link "Sources" [ref=e69] [cursor=pointer]:
+              - /url: /sources
+              - img [ref=e70]
+              - generic [ref=e73]: Sources
+            - link "Settings" [ref=e74] [cursor=pointer]:
+              - /url: /settings
+              - img [ref=e75]
+              - generic [ref=e78]: Settings
+      - generic [ref=e80]:
+        - img [ref=e82]
+        - generic [ref=e85]:
+          - paragraph
+          - paragraph [ref=e86]: Administrator
+        - button "Logout" [ref=e87] [cursor=pointer]:
+          - img [ref=e88]
+    - main [ref=e91]:
+      - generic [ref=e92]:
+        - generic [ref=e93]:
+          - generic [ref=e96]:
+            - button "venues" [ref=e98] [cursor=pointer]:
+              - img [ref=e99]
+              - generic [ref=e101]: venues
+            - textbox "Filter venues by name or city..." [ref=e102]
+          - button "New venue" [ref=e103] [cursor=pointer]:
+            - img [ref=e104]
+            - generic [ref=e105]: New venue
+        - main [ref=e106]:
+          - generic [ref=e107]:
+            - generic [ref=e108]:
+              - generic [ref=e109]:
+                - generic [ref=e111]:
+                  - combobox [ref=e112]:
+                    - 'option "City: All" [selected]'
+                  - generic:
+                    - img
+                - generic [ref=e114]:
+                  - combobox [ref=e115]:
+                    - 'option "Type: All" [selected]'
+                    - option "Club"
+                    - option "Bar"
+                    - option "Concert Hall"
+                    - option "Festival"
+                    - option "Other"
+                  - generic:
+                    - img
+                - generic [ref=e117]:
+                  - combobox [ref=e118]:
+                    - 'option "Source: All" [selected]'
+                    - option "Ticketmaster"
+                    - option "Resident Advisor"
+                    - option "Facebook"
+                    - option "Manual / Original"
+                  - generic:
+                    - img
+              - generic [ref=e122] [cursor=pointer]:
+                - generic [ref=e123]:
+                  - checkbox [ref=e125]
+                  - img [ref=e127]
+                - generic [ref=e133]:
+                  - heading "Test Venue 1" [level=4] [ref=e134]
+                  - generic [ref=e137]:
+                    - img [ref=e138]
+                    - generic [ref=e141]: Berlin
+              - generic [ref=e142]:
+                - generic [ref=e143]:
+                  - generic [ref=e144]: 1 items
+                  - generic [ref=e145]:
+                    - button [disabled] [ref=e146]:
+                      - img [ref=e147]
+                    - generic [ref=e149]: "1"
+                    - button [disabled] [ref=e150]:
+                      - img [ref=e151]
+                - generic [ref=e153]:
+                  - generic [ref=e154]:
+                    - generic [ref=e155]:
+                      - generic [ref=e156]: ↑
+                      - generic [ref=e157]: ↓
+                    - generic [ref=e158]: Navigate
+                  - generic [ref=e159]:
+                    - generic [ref=e160]: Enter
+                    - generic [ref=e161]: Open
+                  - generic [ref=e162]:
+                    - generic [ref=e163]: Space
+                    - generic [ref=e164]: Select
+                  - generic [ref=e165]:
+                    - generic [ref=e166]: Esc
+                    - generic [ref=e167]: Back / Clear
+            - generic [ref=e169]:
+              - generic [ref=e170]:
+                - heading "Test Venue 1" [level=2] [ref=e172]
+                - generic [ref=e173]:
+                  - button [ref=e174] [cursor=pointer]:
+                    - img [ref=e175]
+                  - button [ref=e178] [cursor=pointer]:
+                    - img [ref=e179]
+              - generic [ref=e183]:
+                - generic [ref=e186]:
+                  - button "Details" [ref=e187] [cursor=pointer]
+                  - button "History" [ref=e188] [cursor=pointer]
+                - generic [ref=e190]:
+                  - generic [ref=e191]:
+                    - heading "Basic Details" [level=3] [ref=e193]:
+                      - img [ref=e194]
+                      - text: Basic Details
+                    - generic [ref=e198]:
+                      - generic [ref=e200]:
+                        - generic [ref=e201]: Name
+                        - textbox "Name" [ref=e203]:
+                          - /placeholder: e.g. Berghain
+                          - text: Test Venue 1
+                      - generic [ref=e206]:
+                        - generic [ref=e207]: Venue Type
+                        - generic [ref=e208]:
+                          - combobox "Venue Type" [ref=e209]:
+                            - option "-- Select Type --" [selected]
+                            - option "Club"
+                            - option "Bar"
+                            - option "Live Music Venue"
+                            - option "Concert Hall"
+                            - option "Festival Grounds"
+                            - option "Art Space"
+                            - option "Theater"
+                            - option "Other"
+                          - generic:
+                            - img
+                      - generic [ref=e211]:
+                        - generic [ref=e212]: Description
+                        - textbox "Description" [ref=e213]:
+                          - /placeholder: Venue description...
+                  - generic [ref=e214]:
+                    - heading "Location" [level=3] [ref=e216]:
+                      - img [ref=e217]
+                      - text: Location
+                    - generic [ref=e221]:
+                      - generic [ref=e223]:
+                        - generic [ref=e224]: Address
+                        - textbox "Address" [ref=e226]:
+                          - /placeholder: Street address...
+                          - text: 123 Test St
+                      - generic [ref=e228]:
+                        - generic [ref=e229]: City
+                        - textbox "City" [ref=e231]:
+                          - /placeholder: e.g. Berlin
+                          - text: Berlin
+                      - generic [ref=e233]:
+                        - generic [ref=e234]: Country
+                        - textbox "Country" [ref=e236]:
+                          - /placeholder: e.g. DE
+                      - generic [ref=e237]:
+                        - generic [ref=e238]:
+                          - generic [ref=e239]: Latitude
+                          - spinbutton "Latitude" [ref=e241]
+                        - generic [ref=e242]:
+                          - generic [ref=e243]: Longitude
+                          - spinbutton "Longitude" [ref=e245]
+                  - generic [ref=e246]:
+                    - heading "Contact & Info" [level=3] [ref=e248]:
+                      - img [ref=e249]
+                      - text: Contact & Info
+                    - generic [ref=e253]:
+                      - generic [ref=e255]:
+                        - generic [ref=e256]: Content URL
+                        - generic [ref=e257]:
+                          - img [ref=e259]
+                          - textbox "Content URL" [ref=e262]:
+                            - /placeholder: https://...
+                      - generic [ref=e263]:
+                        - generic [ref=e265]:
+                          - generic [ref=e266]: Phone
+                          - generic [ref=e267]:
+                            - img [ref=e269]
+                            - textbox "Phone" [ref=e271]
+                        - generic [ref=e273]:
+                          - generic [ref=e274]: Email
+                          - generic [ref=e275]:
+                            - img [ref=e277]
+                            - textbox "Email" [ref=e280]
+                - generic [ref=e282]:
+                  - button "Cancel" [ref=e283] [cursor=pointer]
+                  - button "Save Changes" [ref=e284] [cursor=pointer]:
+                    - img [ref=e286]
+                    - text: Save Changes
+  - alert [ref=e290]
+```

@@ -31,7 +31,7 @@ export function EventActionCell({ event, onApprove, onReject, onPublish, onEdit 
                     <Button
                         size="sm"
                         variant="ghost"
-                        className="text-green-600 hover:text-green-700 hover:bg-green-50"
+                        className="text-green-600 hover:text-green-700 hover:bg-green-50 rounded-full"
                         onClick={() => handleAction(() => onApprove(event.id))}
                         disabled={loading}
                         title="Approve / Mark as Draft"
@@ -41,14 +41,14 @@ export function EventActionCell({ event, onApprove, onReject, onPublish, onEdit 
                     <Button
                         size="sm"
                         variant="ghost"
-                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50 rounded-full"
                         onClick={() => handleAction(() => onReject(event.id))}
                         disabled={loading}
                         title="Reject"
                     >
                         <X className="w-4 h-4" />
                     </Button>
-                    <Button size="sm" variant="ghost" onClick={() => onEdit(event)}>
+                    <Button size="sm" variant="ghost" className="rounded-full" onClick={() => onEdit(event)}>
                         <Edit className="w-4 h-4 text-gray-500" />
                     </Button>
                 </div>
@@ -57,7 +57,7 @@ export function EventActionCell({ event, onApprove, onReject, onPublish, onEdit 
         case 'APPROVED_PENDING_DETAILS':
             return (
                 <div className="flex items-center justify-end gap-1">
-                    <Button size="sm" variant="secondary" onClick={() => onEdit(event)}>
+                    <Button size="sm" variant="secondary" className="rounded-full" onClick={() => onEdit(event)}>
                         Complete Details
                     </Button>
                 </div>
@@ -69,13 +69,13 @@ export function EventActionCell({ event, onApprove, onReject, onPublish, onEdit 
                     <Button
                         size="sm"
                         variant="primary"
-                        className="bg-primary-600 hover:bg-primary-700 text-white"
+                        className="bg-primary-600 hover:bg-primary-700 text-white rounded-full"
                         onClick={() => handleAction(() => onPublish(event.id))}
                         disabled={loading}
                     >
                         <Upload className="w-4 h-4 mr-1" /> Publish
                     </Button>
-                    <Button size="sm" variant="ghost" onClick={() => onEdit(event)}>
+                    <Button size="sm" variant="ghost" className="rounded-full" onClick={() => onEdit(event)}>
                         <Edit className="w-4 h-4 text-gray-500" />
                     </Button>
                 </div>
@@ -84,7 +84,7 @@ export function EventActionCell({ event, onApprove, onReject, onPublish, onEdit 
         case 'PUBLISHED':
             return (
                 <div className="flex items-center justify-end gap-1">
-                    <Button size="sm" variant="ghost" onClick={() => onEdit(event)}>
+                    <Button size="sm" variant="ghost" className="rounded-full" onClick={() => onEdit(event)}>
                         <Edit className="w-4 h-4 text-gray-500" />
                     </Button>
                 </div>
@@ -93,7 +93,7 @@ export function EventActionCell({ event, onApprove, onReject, onPublish, onEdit 
         default:
             return (
                 <div className="flex items-center justify-end gap-1">
-                    <Button size="sm" variant="ghost" onClick={() => onEdit(event)}>
+                    <Button size="sm" variant="ghost" className="rounded-full" onClick={() => onEdit(event)}>
                         <Edit className="w-4 h-4 text-gray-500" />
                     </Button>
                 </div>

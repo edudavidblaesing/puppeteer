@@ -1,0 +1,171 @@
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e4]:
+      - generic [ref=e6]:
+        - img [ref=e8]
+        - generic [ref=e11]:
+          - generic [ref=e12]: EventHub
+          - generic [ref=e13]: Global Events Manager
+        - button [ref=e14] [cursor=pointer]:
+          - img [ref=e15]
+      - generic [ref=e17]:
+        - generic [ref=e18]:
+          - heading "Main Menu" [level=3] [ref=e19]
+          - generic [ref=e20]:
+            - link "Dashboard" [ref=e21] [cursor=pointer]:
+              - /url: /
+              - img [ref=e22]
+              - generic [ref=e27]: Dashboard
+            - link "Events" [ref=e28] [cursor=pointer]:
+              - /url: /events
+              - img [ref=e29]
+              - generic [ref=e31]: Events
+            - link "Venues" [ref=e32] [cursor=pointer]:
+              - /url: /venues
+              - img [ref=e33]
+              - generic [ref=e37]: Venues
+            - link "Artists" [ref=e38] [cursor=pointer]:
+              - /url: /artists
+              - img [ref=e39]
+              - generic [ref=e44]: Artists
+            - link "Organizers" [ref=e45] [cursor=pointer]:
+              - /url: /organizers
+              - img [ref=e46]
+              - generic [ref=e49]: Organizers
+            - link "Guest Users" [ref=e50] [cursor=pointer]:
+              - /url: /users
+              - img [ref=e51]
+              - generic [ref=e56]: Guest Users
+            - link "Moderation" [ref=e57] [cursor=pointer]:
+              - /url: /moderation
+              - img [ref=e58]
+              - generic [ref=e60]: Moderation
+            - link "Cities" [ref=e61] [cursor=pointer]:
+              - /url: /cities
+              - img [ref=e62]
+              - generic [ref=e65]: Cities
+        - generic [ref=e66]:
+          - heading "Other" [level=3] [ref=e67]
+          - generic [ref=e68]:
+            - link "Sources" [ref=e69] [cursor=pointer]:
+              - /url: /sources
+              - img [ref=e70]
+              - generic [ref=e73]: Sources
+            - link "Settings" [ref=e74] [cursor=pointer]:
+              - /url: /settings
+              - img [ref=e75]
+              - generic [ref=e78]: Settings
+      - generic [ref=e80]:
+        - img [ref=e82]
+        - generic [ref=e85]:
+          - paragraph
+          - paragraph [ref=e86]: Administrator
+        - button "Logout" [ref=e87] [cursor=pointer]:
+          - img [ref=e88]
+    - main [ref=e91]:
+      - generic [ref=e92]:
+        - generic [ref=e93]:
+          - generic [ref=e96]:
+            - button "organizers" [ref=e98] [cursor=pointer]:
+              - img [ref=e99]
+              - generic [ref=e101]: organizers
+            - textbox "Filter organizers..." [ref=e102]
+          - button "New organizer" [ref=e103] [cursor=pointer]:
+            - img [ref=e104]
+            - generic [ref=e105]: New organizer
+        - main [ref=e106]:
+          - generic [ref=e107]:
+            - generic [ref=e108]:
+              - combobox [ref=e110]:
+                - 'option "Source: All" [selected]'
+                - option "Ticketmaster"
+                - option "Resident Advisor"
+                - option "Facebook"
+                - option "Manual / Original"
+              - generic [ref=e114] [cursor=pointer]:
+                - generic [ref=e115]:
+                  - checkbox [ref=e117]
+                  - img [ref=e119]
+                - heading "Test Organizer 1" [level=4] [ref=e125]
+              - generic [ref=e126]:
+                - generic [ref=e127]:
+                  - generic [ref=e128]: 1 items
+                  - generic [ref=e129]:
+                    - button [disabled] [ref=e130]:
+                      - img [ref=e131]
+                    - generic [ref=e133]: "1"
+                    - button [disabled] [ref=e134]:
+                      - img [ref=e135]
+                - generic [ref=e137]:
+                  - generic [ref=e138]:
+                    - generic [ref=e139]:
+                      - generic [ref=e140]: ↑
+                      - generic [ref=e141]: ↓
+                    - generic [ref=e142]: Navigate
+                  - generic [ref=e143]:
+                    - generic [ref=e144]: Enter
+                    - generic [ref=e145]: Open
+                  - generic [ref=e146]:
+                    - generic [ref=e147]: Space
+                    - generic [ref=e148]: Select
+                  - generic [ref=e149]:
+                    - generic [ref=e150]: Esc
+                    - generic [ref=e151]: Back / Clear
+            - generic [ref=e153]:
+              - generic [ref=e154]:
+                - heading "Test Organizer 1" [level=2] [ref=e156]
+                - generic [ref=e157]:
+                  - button [ref=e158] [cursor=pointer]:
+                    - img [ref=e159]
+                  - button [ref=e162] [cursor=pointer]:
+                    - img [ref=e163]
+              - generic [ref=e167]:
+                - generic [ref=e170]:
+                  - button "Details" [ref=e171] [cursor=pointer]
+                  - button "History" [ref=e172] [cursor=pointer]
+                - generic [ref=e174]:
+                  - generic [ref=e175]:
+                    - heading "Basic Details" [level=3] [ref=e177]:
+                      - img [ref=e178]
+                      - text: Basic Details
+                    - generic [ref=e182]:
+                      - generic [ref=e183]:
+                        - generic [ref=e184]: Name
+                        - textbox "Name" [ref=e186]:
+                          - /placeholder: Organizer Name
+                          - text: Test Organizer 1
+                      - generic [ref=e188]:
+                        - generic [ref=e189]: Description
+                        - textbox "Description" [ref=e190]:
+                          - /placeholder: Organizer description...
+                      - generic [ref=e192]:
+                        - generic [ref=e193]: Provider
+                        - textbox "Provider" [ref=e195]:
+                          - /placeholder: e.g. ticketmaster
+                  - generic [ref=e196]:
+                    - heading "Links & Media" [level=3] [ref=e198]:
+                      - img [ref=e199]
+                      - text: Links & Media
+                    - generic [ref=e203]:
+                      - generic [ref=e204]:
+                        - generic [ref=e205]: Website URL
+                        - generic [ref=e206]:
+                          - img [ref=e208]
+                          - textbox "Website URL" [ref=e211]:
+                            - /placeholder: https://...
+                      - generic [ref=e213]:
+                        - generic [ref=e214]: Image URL
+                        - generic [ref=e215]:
+                          - img [ref=e217]
+                          - textbox "Image URL" [ref=e221]:
+                            - /placeholder: https://...
+                - generic [ref=e223]:
+                  - button "Cancel" [ref=e224] [cursor=pointer]
+                  - button "Save Changes" [ref=e225] [cursor=pointer]:
+                    - img [ref=e227]
+                    - text: Save Changes
+  - alert [ref=e231]
+```

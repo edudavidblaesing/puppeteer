@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Organizer, Event } from '@/types';
 import { Input } from '@/components/ui/Input';
+import { Textarea } from '@/components/ui/Textarea';
 import { Button } from '@/components/ui/Button';
 import { SourceFieldOptions } from '@/components/ui/SourceFieldOptions';
 import { ResetSectionButton } from '@/components/ui/ResetSectionButton';
@@ -46,6 +47,7 @@ export function OrganizerForm({
   onDirtyChange
 }: OrganizerFormProps) {
   const { success, error: showError } = useToast();
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState<Partial<Organizer>>({
     name: '',
     provider: '',
@@ -126,6 +128,8 @@ export function OrganizerForm({
 
 
   const handleSave = async () => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
     // Duplicate Check
     if (!initialData?.id && formData.name) {
       try {
@@ -137,16 +141,24 @@ export function OrganizerForm({
 
         if (isDuplicate) {
           showError('An organizer with this name already exists.');
+          setIsSubmitting(false);
           return;
         }
       } catch (err) { }
     }
-    await onSubmit(formData);
-    success('Organizer saved successfully');
+    try {
+      await onSubmit(formData);
+      success('Organizer saved successfully');
 
-    // Reset dirty state by updating baseline
-    setBaselineData({ ...formData });
-    setFetchedData(prev => ({ ...prev, ...formData } as Organizer)); // Update fetch cache if relevant
+      // Reset dirty state by updating baseline
+      setBaselineData({ ...formData });
+      setFetchedData(prev => ({ ...prev, ...formData } as Organizer)); // Update fetch cache if relevant
+    } catch (e: any) {
+      console.error(e);
+      showError(e.message || 'Failed to save organizer');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const { promptBeforeAction, modalElement } = useUnsavedChanges({
@@ -276,7 +288,7 @@ export function OrganizerForm({
         onSave={handleSave}
         onDelete={initialData?.id && onDelete ? () => handleDeleteClick(initialData.id!) : undefined}
         headerExtras={headerExtras}
-        isLoading={isLoading}
+        isLoading={isLoading || isSubmitting}
         saveLabel={initialData?.id ? 'Save Changes' : 'Create Organizer'}
       >
         {activeTab === 'history' ? (
@@ -299,29 +311,32 @@ export function OrganizerForm({
                   </div>
                 )}
 
-                <Input label="Name" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required placeholder="Organizer Name" />
+                <Input label="Name" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required placeholder="Organizer Name" maxLength={255} />
                 <SourceFieldOptions sources={initialData?.source_references} field="name" currentValue={formData.name} onSelect={(val) => setFormData({ ...formData, name: val })} />
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Description</label>
-                  <textarea value={formData.description || ''} onChange={(e) => setFormData({ ...formData, description: e.target.value })} rows={3} className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 dark:text-white" placeholder="Organizer description..." />
+                  <Textarea
+                    label="Description"
+                    value={formData.description || ''}
+                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                    rows={3}
+                    placeholder="Organizer description..."
+                    maxLength={5000}
+                  />
                   <SourceFieldOptions sources={initialData?.source_references} field="description" currentValue={formData.description} onSelect={(val) => setFormData({ ...formData, description: val })} />
                 </div>
 
-                <div>
-                  <Input label="Provider" value={formData.provider || ''} onChange={(e) => setFormData({ ...formData, provider: e.target.value })} placeholder="e.g. ticketmaster" />
-                  <SourceFieldOptions sources={initialData?.source_references} field="provider" currentValue={formData.provider} onSelect={(val) => setFormData({ ...formData, provider: val })} />
-                </div>
+                {/* Provider Field Removed */}
               </div>
             </FormSection>
 
             <FormSection title="Links & Media" icon={<Globe className="w-4 h-4" />} sources={uniqueSources} onReset={(source) => resetFields(source, ['website_url', 'image_url'])}>
               <div className="space-y-4 pt-4">
-                <Input label="Website URL" value={formData.website_url || ''} onChange={(e) => setFormData({ ...formData, website_url: e.target.value })} leftIcon={<Globe className="w-4 h-4" />} placeholder="https://..." />
+                <Input label="Website URL" type="url" value={formData.website_url || ''} onChange={(e) => setFormData({ ...formData, website_url: e.target.value })} leftIcon={<Globe className="w-4 h-4" />} placeholder="https://..." />
                 <SourceFieldOptions sources={initialData?.source_references} field="content_url" currentValue={formData.website_url} onSelect={(val) => setFormData({ ...formData, website_url: val })} />
 
                 <div>
-                  <Input label="Image URL" value={formData.image_url || ''} onChange={(e) => setFormData({ ...formData, image_url: e.target.value })} leftIcon={<ImageIcon className="w-4 h-4" />} placeholder="https://..." />
+                  <Input label="Image URL" type="url" value={formData.image_url || ''} onChange={(e) => setFormData({ ...formData, image_url: e.target.value })} leftIcon={<ImageIcon className="w-4 h-4" />} placeholder="https://..." />
                   <SourceFieldOptions sources={initialData?.source_references} field="image_url" currentValue={formData.image_url} onSelect={(val) => setFormData({ ...formData, image_url: val })} />
                   {formData.image_url && (
                     <div className="mt-2 w-32 h-32 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800">

@@ -60,7 +60,7 @@ export async function fetchEvents(params?: {
   from?: string;
   to?: string;
   showPast?: boolean;
-  timeFilter?: 'upcoming' | 'past' | 'all';
+  timeFilter?: 'upcoming' | 'past' | 'all' | 'today';
   source?: string;
   createdAfter?: string;
   updatedAfter?: string;

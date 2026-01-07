@@ -2,6 +2,8 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Venue, Event } from '@/types';
 import { Input } from '@/components/ui/Input';
+import { Select } from '@/components/ui/Select';
+import { Textarea } from '@/components/ui/Textarea';
 import { Button } from '@/components/ui/Button';
 import { SourceFieldOptions } from '@/components/ui/SourceFieldOptions';
 import { ResetSectionButton } from '@/components/ui/ResetSectionButton';
@@ -51,6 +53,7 @@ export function VenueForm({
   onDirtyChange
 }: VenueFormProps) {
   const { success, error: showError } = useToast();
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [formData, setFormData] = useState<Partial<Venue>>({
     name: '',
@@ -143,6 +146,8 @@ export function VenueForm({
 
   // Prepare Save Function
   const handleSave = async () => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
     // Duplicate Check?
     if (!initialData?.id && formData.name) {
       try {
@@ -158,6 +163,7 @@ export function VenueForm({
 
         if (isDuplicate) {
           showError('A venue with this name and city already exists.');
+          setIsSubmitting(false);
           return; // Block save
         }
       } catch (err) {
@@ -171,10 +177,13 @@ export function VenueForm({
       if (initialData?.id || fetchedData) {
         setFetchedData(prev => ({ ...prev, ...formData }));
       }
+      success('Venue saved successfully');
       onCancel(true); // Close after save
     } catch (e: any) {
       console.error(e);
       showError(e.message || 'Failed to save venue');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -351,7 +360,7 @@ export function VenueForm({
         onCancel={handleCancelRequest}
         onSave={handleSave}
         onDelete={initialData && initialData.id && onDelete ? () => handleDeleteClick(initialData.id!) : undefined}
-        isLoading={isLoading}
+        isLoading={isLoading || isSubmitting}
         headerExtras={headerExtras}
         saveLabel={initialData && initialData.id ? 'Save Changes' : 'Create Venue'}
       >
@@ -375,24 +384,34 @@ export function VenueForm({
                     </div>
                   )}
 
-                  <Input label="Name" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required placeholder="e.g. Berghain" />
+                  <Input label="Name" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required placeholder="e.g. Berghain" maxLength={255} />
                   <SourceFieldOptions sources={initialData?.source_references} field="name" currentValue={formData.name} onSelect={(val) => setFormData({ ...formData, name: val })} />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Venue Type</label>
                   <div className="relative">
-                    <select value={formData.venue_type || ''} onChange={(e) => setFormData({ ...formData, venue_type: e.target.value })} className="w-full appearance-none rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 dark:text-white">
-                      <option value="">-- Select Type --</option>
-                      {VENUE_TYPES.map(type => <option key={type} value={type}>{type}</option>)}
-                    </select>
+                    <Select
+                      label="Venue Type"
+                      value={formData.venue_type || ''}
+                      onChange={(e) => setFormData({ ...formData, venue_type: e.target.value })}
+                      options={[
+                        { label: '-- Select Type --', value: '' },
+                        ...VENUE_TYPES.map(type => ({ label: type, value: type }))
+                      ]}
+                    />
                     <SourceFieldOptions sources={initialData?.source_references} field="venue_type" currentValue={formData.venue_type} onSelect={(val) => setFormData({ ...formData, venue_type: val })} />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Description</label>
-                  <textarea value={formData.description || ''} onChange={(e) => setFormData({ ...formData, description: e.target.value })} rows={4} className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 dark:text-white" placeholder="Venue description..." />
+                  <Textarea
+                    label="Description"
+                    value={formData.description || ''}
+                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                    rows={4}
+                    placeholder="Venue description..."
+                    maxLength={5000}
+                  />
                   <SourceFieldOptions sources={initialData?.source_references} field="description" currentValue={formData.description} onSelect={(val) => setFormData({ ...formData, description: val })} />
                 </div>
               </div>
@@ -407,12 +426,12 @@ export function VenueForm({
             >
               <div className="space-y-4 pt-4">
                 <div>
-                  <Input label="Address" value={formData.address || ''} onChange={(e) => setFormData({ ...formData, address: e.target.value })} placeholder="Street address..." />
+                  <Input label="Address" value={formData.address || ''} onChange={(e) => setFormData({ ...formData, address: e.target.value })} placeholder="Street address..." maxLength={255} />
                   <SourceFieldOptions sources={initialData?.source_references} field="address" currentValue={formData.address} onSelect={(val) => setFormData({ ...formData, address: val })} />
                 </div>
 
                 <div className="relative" onClick={e => e.stopPropagation()}>
-                  <Input label="City" value={formData.city || ''} onChange={(e) => { setFormData({ ...formData, city: e.target.value }); setShowCitySuggestions(true); }} onFocus={() => setShowCitySuggestions(true)} placeholder="e.g. Berlin" />
+                  <Input label="City" value={formData.city || ''} onChange={(e) => { setFormData({ ...formData, city: e.target.value }); setShowCitySuggestions(true); }} onFocus={() => setShowCitySuggestions(true)} placeholder="e.g. Berlin" maxLength={100} />
                   {showCitySuggestions && availableCities.length > 0 && (
                     <div className="absolute z-10 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg mt-1 max-h-60 overflow-y-auto">
                       {availableCities.filter(c => c.name.toLowerCase().includes((formData.city || '').toLowerCase())).map(c => (
@@ -427,7 +446,7 @@ export function VenueForm({
                 </div>
 
                 <div>
-                  <Input label="Country" value={formData.country || ''} onChange={(e) => setFormData({ ...formData, country: e.target.value })} placeholder="e.g. DE" />
+                  <Input label="Country" value={formData.country || ''} onChange={(e) => setFormData({ ...formData, country: e.target.value })} placeholder="e.g. DE" maxLength={100} />
                   <SourceFieldOptions sources={initialData?.source_references} field="country" currentValue={formData.country} onSelect={(val) => setFormData({ ...formData, country: val })} />
                 </div>
 
@@ -447,16 +466,16 @@ export function VenueForm({
             >
               <div className="space-y-4 pt-4">
                 <div>
-                  <Input label="Content URL" value={formData.content_url || ''} onChange={(e) => setFormData({ ...formData, content_url: e.target.value })} leftIcon={<LinkIcon className="w-4 h-4" />} placeholder="https://..." />
+                  <Input label="Content URL" type="url" value={formData.content_url || ''} onChange={(e) => setFormData({ ...formData, content_url: e.target.value })} leftIcon={<LinkIcon className="w-4 h-4" />} placeholder="https://..." />
                   <SourceFieldOptions sources={initialData?.source_references} field="content_url" currentValue={formData.content_url} onSelect={(val) => setFormData({ ...formData, content_url: val })} />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <Input label="Phone" value={formData.phone || ''} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} leftIcon={<Phone className="w-4 h-4" />} />
+                    <Input label="Phone" type="tel" value={formData.phone || ''} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} leftIcon={<Phone className="w-4 h-4" />} />
                     <SourceFieldOptions sources={initialData?.source_references} field="phone" currentValue={formData.phone} onSelect={(val) => setFormData({ ...formData, phone: val })} />
                   </div>
                   <div>
-                    <Input label="Email" value={formData.email || ''} onChange={(e) => setFormData({ ...formData, email: e.target.value })} leftIcon={<Mail className="w-4 h-4" />} />
+                    <Input label="Email" type="email" value={formData.email || ''} onChange={(e) => setFormData({ ...formData, email: e.target.value })} leftIcon={<Mail className="w-4 h-4" />} />
                     <SourceFieldOptions sources={initialData?.source_references} field="email" currentValue={formData.email} onSelect={(val) => setFormData({ ...formData, email: val })} />
                   </div>
                 </div>

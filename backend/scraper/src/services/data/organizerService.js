@@ -15,21 +15,13 @@ class OrganizerService {
                 (SELECT COUNT(*) FROM event_organizers eo WHERE eo.organizer_id = o.id) as event_count,
                 (SELECT COUNT(DISTINCT e.venue_id) FROM event_organizers eo JOIN events e ON e.id = eo.event_id WHERE eo.organizer_id = o.id) as venue_count,
                 (
-                    SELECT so.source_code
-                    FROM organizer_scraped_links osl
-                    JOIN scraped_organizers so ON so.id = osl.scraped_organizer_id
-                    WHERE osl.organizer_id = o.id
-                    LIMIT 1
-                ) as provider,
-                (
                     SELECT json_agg(json_build_object(
                         'source_code', so.source_code, 
                         'id', so.id,
                         'name', so.name,
                         'description', so.description,
                         'image_url', so.image_url,
-                        'content_url', so.url,
-                        'provider', so.source_code
+                        'content_url', so.url
                     ))
                     FROM organizer_scraped_links osl
                     JOIN scraped_organizers so ON so.id = osl.scraped_organizer_id
@@ -233,13 +225,30 @@ class OrganizerService {
     }
 
     async delete(id, user) {
-        await this.pool.query(`
-            INSERT INTO audit_logs (entity_type, entity_id, action, changes, performed_by)
-            VALUES ($1, $2, $3, $4, $5)
-        `, ['organizer', id, 'DELETE', '{}', user?.id || 'admin']);
+        const client = await this.pool.connect();
+        try {
+            await client.query('BEGIN');
 
-        const result = await this.pool.query('DELETE FROM organizers WHERE id = $1 RETURNING id', [id]);
-        return result.rows.length > 0;
+            // 1. Audit Log
+            await client.query(`
+                INSERT INTO audit_logs (entity_type, entity_id, action, changes, performed_by)
+                VALUES ($1, $2, $3, $4, $5)
+            `, ['organizer', id, 'DELETE', '{}', user?.id || 'admin']);
+
+            // 2. Remove from Event Organizers
+            await client.query('DELETE FROM event_organizers WHERE organizer_id = $1', [id]);
+
+            // 3. Delete Organizer
+            const result = await client.query('DELETE FROM organizers WHERE id = $1 RETURNING id', [id]);
+
+            await client.query('COMMIT');
+            return result.rows.length > 0;
+        } catch (e) {
+            await client.query('ROLLBACK');
+            throw e;
+        } finally {
+            client.release();
+        }
     }
 
     async getHistory(id) {

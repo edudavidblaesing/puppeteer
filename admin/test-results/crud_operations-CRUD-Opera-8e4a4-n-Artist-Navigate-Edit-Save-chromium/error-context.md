@@ -1,0 +1,342 @@
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e4]:
+      - generic [ref=e6]:
+        - img [ref=e8]
+        - generic [ref=e11]:
+          - generic [ref=e12]: EventHub
+          - generic [ref=e13]: Global Events Manager
+        - button [ref=e14] [cursor=pointer]:
+          - img [ref=e15]
+      - generic [ref=e17]:
+        - generic [ref=e18]:
+          - heading "Main Menu" [level=3] [ref=e19]
+          - generic [ref=e20]:
+            - link "Dashboard" [ref=e21] [cursor=pointer]:
+              - /url: /
+              - img [ref=e22]
+              - generic [ref=e27]: Dashboard
+            - link "Events" [ref=e28] [cursor=pointer]:
+              - /url: /events
+              - img [ref=e29]
+              - generic [ref=e31]: Events
+            - link "Venues" [ref=e32] [cursor=pointer]:
+              - /url: /venues
+              - img [ref=e33]
+              - generic [ref=e37]: Venues
+            - link "Artists" [ref=e38] [cursor=pointer]:
+              - /url: /artists
+              - img [ref=e39]
+              - generic [ref=e44]: Artists
+            - link "Organizers" [ref=e45] [cursor=pointer]:
+              - /url: /organizers
+              - img [ref=e46]
+              - generic [ref=e49]: Organizers
+            - link "Guest Users" [ref=e50] [cursor=pointer]:
+              - /url: /users
+              - img [ref=e51]
+              - generic [ref=e56]: Guest Users
+            - link "Moderation" [ref=e57] [cursor=pointer]:
+              - /url: /moderation
+              - img [ref=e58]
+              - generic [ref=e60]: Moderation
+            - link "Cities" [ref=e61] [cursor=pointer]:
+              - /url: /cities
+              - img [ref=e62]
+              - generic [ref=e65]: Cities
+        - generic [ref=e66]:
+          - heading "Other" [level=3] [ref=e67]
+          - generic [ref=e68]:
+            - link "Sources" [ref=e69] [cursor=pointer]:
+              - /url: /sources
+              - img [ref=e70]
+              - generic [ref=e73]: Sources
+            - link "Settings" [ref=e74] [cursor=pointer]:
+              - /url: /settings
+              - img [ref=e75]
+              - generic [ref=e78]: Settings
+      - generic [ref=e80]:
+        - img [ref=e82]
+        - generic [ref=e85]:
+          - paragraph
+          - paragraph [ref=e86]: Administrator
+        - button "Logout" [ref=e87] [cursor=pointer]:
+          - img [ref=e88]
+    - main [ref=e91]:
+      - generic [ref=e92]:
+        - generic [ref=e93]:
+          - generic [ref=e96]:
+            - button "artists" [ref=e98] [cursor=pointer]:
+              - img [ref=e99]
+              - generic [ref=e101]: artists
+            - textbox "Filter artists by name..." [ref=e102]
+          - button "New artist" [ref=e103] [cursor=pointer]:
+            - img [ref=e104]
+            - generic [ref=e105]: New artist
+        - main [ref=e106]:
+          - generic [ref=e107]:
+            - generic [ref=e108]:
+              - generic [ref=e109]:
+                - combobox [ref=e110]:
+                  - 'option "Country: All" [selected]'
+                  - option "Argentina"
+                  - option "Australia"
+                  - option "Austria"
+                  - option "Belgium"
+                  - option "Brazil"
+                  - option "Bulgaria"
+                  - option "Canada"
+                  - option "China"
+                  - option "Croatia"
+                  - option "Czech Republic"
+                  - option "Denmark"
+                  - option "Egypt"
+                  - option "Estonia"
+                  - option "Finland"
+                  - option "France"
+                  - option "Germany"
+                  - option "Greece"
+                  - option "Hungary"
+                  - option "India"
+                  - option "Ireland"
+                  - option "Israel"
+                  - option "Italy"
+                  - option "Japan"
+                  - option "Latvia"
+                  - option "Lithuania"
+                  - option "Mexico"
+                  - option "Netherlands"
+                  - option "New Zealand"
+                  - option "Norway"
+                  - option "Poland"
+                  - option "Portugal"
+                  - option "Romania"
+                  - option "Russia"
+                  - option "Serbia"
+                  - option "Slovakia"
+                  - option "Slovenia"
+                  - option "South Africa"
+                  - option "Spain"
+                  - option "Sweden"
+                  - option "Switzerland"
+                  - option "Turkey"
+                  - option "Ukraine"
+                  - option "United Arab Emirates"
+                  - option "United Kingdom"
+                  - option "United States"
+                - combobox [ref=e111]:
+                  - 'option "Source: All" [selected]'
+                  - option "Ticketmaster"
+                  - option "Resident Advisor"
+                  - option "Facebook"
+                  - option "Manual / Original"
+              - generic [ref=e115] [cursor=pointer]:
+                - generic [ref=e116]:
+                  - checkbox [ref=e118]
+                  - img [ref=e120]
+                - heading "Test Artist 1" [level=4] [ref=e127]
+              - generic [ref=e128]:
+                - generic [ref=e129]:
+                  - generic [ref=e130]: 1 items
+                  - generic [ref=e131]:
+                    - button [disabled] [ref=e132]:
+                      - img [ref=e133]
+                    - generic [ref=e135]: "1"
+                    - button [disabled] [ref=e136]:
+                      - img [ref=e137]
+                - generic [ref=e139]:
+                  - generic [ref=e140]:
+                    - generic [ref=e141]:
+                      - generic [ref=e142]: ↑
+                      - generic [ref=e143]: ↓
+                    - generic [ref=e144]: Navigate
+                  - generic [ref=e145]:
+                    - generic [ref=e146]: Enter
+                    - generic [ref=e147]: Open
+                  - generic [ref=e148]:
+                    - generic [ref=e149]: Space
+                    - generic [ref=e150]: Select
+                  - generic [ref=e151]:
+                    - generic [ref=e152]: Esc
+                    - generic [ref=e153]: Back / Clear
+            - generic [ref=e155]:
+              - generic [ref=e156]:
+                - heading "Test Artist 1" [level=2] [ref=e158]
+                - generic [ref=e159]:
+                  - button [ref=e160] [cursor=pointer]:
+                    - img [ref=e161]
+                  - button [ref=e164] [cursor=pointer]:
+                    - img [ref=e165]
+              - generic [ref=e169]:
+                - generic [ref=e172]:
+                  - button "Details" [ref=e173] [cursor=pointer]
+                  - button "History" [ref=e174] [cursor=pointer]
+                - generic [ref=e176]:
+                  - generic [ref=e177]:
+                    - heading "Profile Info" [level=3] [ref=e179]:
+                      - img [ref=e180]
+                      - text: Profile Info
+                    - generic [ref=e184]:
+                      - generic [ref=e186]:
+                        - generic [ref=e187]: Name
+                        - textbox "Name" [ref=e189]:
+                          - /placeholder: Artist Name
+                          - text: Test Artist 1
+                      - generic [ref=e190]:
+                        - generic [ref=e192]:
+                          - generic [ref=e193]: First Name
+                          - textbox "First Name" [ref=e195]
+                        - generic [ref=e197]:
+                          - generic [ref=e198]: Last Name
+                          - textbox "Last Name" [ref=e200]
+                      - generic [ref=e202]:
+                        - generic [ref=e203]: Type
+                        - generic [ref=e204]:
+                          - combobox "Type" [ref=e205]:
+                            - option "Select Type..." [selected]
+                            - option "Individual"
+                            - option "DJ"
+                            - option "Group"
+                            - option "Band"
+                            - option "Orchestra"
+                            - option "Choir"
+                            - option "Producer"
+                            - option "Other"
+                          - generic:
+                            - img
+                      - generic [ref=e207]:
+                        - generic [ref=e208]: Bio
+                        - textbox "Bio" [ref=e209]:
+                          - /placeholder: Artist biography...
+                      - generic [ref=e211]:
+                        - generic [ref=e212]: Genres (comma separated)
+                        - textbox "Genres (comma separated)" [ref=e214]:
+                          - /placeholder: Techno, House, Ambient
+                  - generic [ref=e215]:
+                    - heading "Social Connections" [level=3] [ref=e217]:
+                      - img [ref=e218]
+                      - text: Social Connections
+                    - generic [ref=e222]:
+                      - generic [ref=e223]:
+                        - generic [ref=e225]:
+                          - generic [ref=e226]: Website
+                          - generic [ref=e227]:
+                            - img [ref=e229]
+                            - textbox "Website" [ref=e233]:
+                              - /placeholder: https://...
+                        - generic [ref=e235]:
+                          - generic [ref=e236]: Facebook
+                          - generic [ref=e237]:
+                            - img [ref=e239]
+                            - textbox "Facebook" [ref=e243]:
+                              - /placeholder: https://...
+                        - generic [ref=e245]:
+                          - generic [ref=e246]: Instagram
+                          - generic [ref=e247]:
+                            - img [ref=e249]
+                            - textbox "Instagram" [ref=e253]:
+                              - /placeholder: https://...
+                        - generic [ref=e255]:
+                          - generic [ref=e256]: Twitter / X
+                          - generic [ref=e257]:
+                            - img [ref=e259]
+                            - textbox "Twitter / X" [ref=e263]:
+                              - /placeholder: https://...
+                        - generic [ref=e265]:
+                          - generic [ref=e266]: SoundCloud
+                          - generic [ref=e267]:
+                            - img [ref=e269]
+                            - textbox "SoundCloud" [ref=e273]:
+                              - /placeholder: https://...
+                        - generic [ref=e275]:
+                          - generic [ref=e276]: Bandcamp
+                          - generic [ref=e277]:
+                            - img [ref=e279]
+                            - textbox "Bandcamp" [ref=e283]:
+                              - /placeholder: https://...
+                        - generic [ref=e285]:
+                          - generic [ref=e286]: Discogs
+                          - generic [ref=e287]:
+                            - img [ref=e289]
+                            - textbox "Discogs" [ref=e293]:
+                              - /placeholder: https://...
+                        - generic [ref=e295]:
+                          - generic [ref=e296]: Spotify
+                          - generic [ref=e297]:
+                            - img [ref=e299]
+                            - textbox "Spotify" [ref=e303]:
+                              - /placeholder: https://...
+                      - generic [ref=e305]:
+                        - generic [ref=e306]: Country
+                        - generic [ref=e307]:
+                          - combobox "Country" [ref=e308]:
+                            - option "Select Country..." [selected]
+                            - option "Argentina (AR)"
+                            - option "Australia (AU)"
+                            - option "Austria (AT)"
+                            - option "Belgium (BE)"
+                            - option "Brazil (BR)"
+                            - option "Bulgaria (BG)"
+                            - option "Canada (CA)"
+                            - option "China (CN)"
+                            - option "Croatia (HR)"
+                            - option "Czech Republic (CZ)"
+                            - option "Denmark (DK)"
+                            - option "Egypt (EG)"
+                            - option "Estonia (EE)"
+                            - option "Finland (FI)"
+                            - option "France (FR)"
+                            - option "Germany (DE)"
+                            - option "Greece (GR)"
+                            - option "Hungary (HU)"
+                            - option "India (IN)"
+                            - option "Ireland (IE)"
+                            - option "Israel (IL)"
+                            - option "Italy (IT)"
+                            - option "Japan (JP)"
+                            - option "Latvia (LV)"
+                            - option "Lithuania (LT)"
+                            - option "Mexico (MX)"
+                            - option "Netherlands (NL)"
+                            - option "New Zealand (NZ)"
+                            - option "Norway (NO)"
+                            - option "Poland (PL)"
+                            - option "Portugal (PT)"
+                            - option "Romania (RO)"
+                            - option "Russia (RU)"
+                            - option "Serbia (RS)"
+                            - option "Slovakia (SK)"
+                            - option "Slovenia (SI)"
+                            - option "South Africa (ZA)"
+                            - option "Spain (ES)"
+                            - option "Sweden (SE)"
+                            - option "Switzerland (CH)"
+                            - option "Turkey (TR)"
+                            - option "Ukraine (UA)"
+                            - option "United Arab Emirates (AE)"
+                            - option "United Kingdom (GB)"
+                            - option "United States (US)"
+                          - generic:
+                            - img
+                      - generic [ref=e310]:
+                        - generic [ref=e311]: Content URL
+                        - generic [ref=e312]:
+                          - img [ref=e314]
+                          - textbox "Content URL" [ref=e318]:
+                            - /placeholder: https://...
+                      - generic [ref=e320]:
+                        - generic [ref=e321]: Image URL
+                        - generic [ref=e322]:
+                          - img [ref=e324]
+                          - textbox "Image URL" [ref=e328]:
+                            - /placeholder: https://...
+                - generic [ref=e330]:
+                  - button "Cancel" [ref=e331] [cursor=pointer]
+                  - button "Save Changes" [ref=e332] [cursor=pointer]:
+                    - img [ref=e334]
+                    - text: Save Changes
+  - alert [ref=e338]
+```

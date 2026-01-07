@@ -382,22 +382,22 @@ export default function EventMap({
 
         if (hasLive) {
           extraClass = 'live-marker-pulse';
-          borderColor = 'border-emerald-500'; // Live is emerald
-          bgColor = 'bg-white dark:bg-gray-900';
+          borderColor = 'border-rose-500'; // Live is Rose/Red pulse
+          bgColor = 'bg-rose-50 dark:bg-rose-900/30';
         } else if (statusCounts.needsDetails > 0) {
-          bgColor = 'bg-amber-50 dark:bg-amber-900/30';
+          bgColor = 'bg-amber-100 dark:bg-amber-900/40';
           borderColor = 'border-amber-500';
         } else if (statusCounts.draft > 0) {
-          bgColor = 'bg-neutral-100 dark:bg-neutral-800'; // Drafts gray/neutral
-          borderColor = 'border-neutral-400';
+          bgColor = 'bg-gray-100 dark:bg-gray-800'; // Drafts gray
+          borderColor = 'border-gray-400';
         } else if (statusCounts.ready > 0) {
-          bgColor = 'bg-blue-50 dark:bg-blue-900/30';
+          bgColor = 'bg-blue-100 dark:bg-blue-900/40';
           borderColor = 'border-blue-500';
         } else if (statusCounts.published > 0) {
-          bgColor = 'bg-white dark:bg-gray-900';
-          borderColor = 'border-green-500';
+          bgColor = 'bg-emerald-100 dark:bg-emerald-900/40';
+          borderColor = 'border-emerald-500';
         } else if (statusCounts.canceled > 0) {
-          bgColor = 'bg-red-50 dark:bg-red-900/30';
+          bgColor = 'bg-red-100 dark:bg-red-900/40';
           borderColor = 'border-red-500';
         } else if (statusCounts.rejected > 0) {
           bgColor = 'bg-gray-200 dark:bg-gray-800';
@@ -448,12 +448,12 @@ export default function EventMap({
               ${data.events.map((event, idx) => {
             let statusColor = 'bg-gray-50 border-gray-200';
             const s = event.status;
-            if (s === 'PUBLISHED') statusColor = 'bg-green-50 border-green-200';
-            else if (s === 'READY_TO_PUBLISH') statusColor = 'bg-blue-50 border-blue-200';
-            else if (s === 'APPROVED_PENDING_DETAILS') statusColor = 'bg-amber-50 border-amber-200';
-            else if (s === 'SCRAPED_DRAFT' || s === 'MANUAL_DRAFT') statusColor = 'bg-neutral-50 border-neutral-200';
-            else if (s === 'CANCELED') statusColor = 'bg-red-50 border-red-200';
-            else if (s === 'REJECTED') statusColor = 'bg-gray-100 border-gray-300 text-gray-400';
+            if (s === 'PUBLISHED') statusColor = 'bg-emerald-50 border-emerald-200 text-emerald-700';
+            else if (s === 'READY_TO_PUBLISH') statusColor = 'bg-blue-50 border-blue-200 text-blue-700';
+            else if (s === 'APPROVED_PENDING_DETAILS') statusColor = 'bg-amber-50 border-amber-200 text-amber-900';
+            else if (s === 'SCRAPED_DRAFT' || s === 'MANUAL_DRAFT') statusColor = 'bg-gray-100 border-gray-200 text-gray-600';
+            else if (s === 'CANCELED') statusColor = 'bg-red-50 border-red-200 text-red-700';
+            else if (s === 'REJECTED') statusColor = 'bg-gray-100 border-gray-300 text-gray-400 line-through';
             return `
                 <button 
                   data-event-idx="${idx}" 
@@ -585,7 +585,7 @@ export default function EventMap({
   }, [cityConfig, events]);
 
   return (
-    <div className="relative h-full w-full overflow-hidden rounded-lg">
+    <div className="relative h-full w-full overflow-hidden">
       <div ref={mapContainerRef} className="h-full w-full" style={{ zIndex: 1 }} />
 
       {/* City Quick Select */}
@@ -642,35 +642,27 @@ export default function EventMap({
 
       {/* Legend */}
       {!minimal && (
-        <div className="absolute bottom-16 left-3 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-3" style={{ zIndex: 1000 }}>
+        <div className="absolute bottom-16 left-3 bg-white/90 dark:bg-gray-800/90 backdrop-blur rounded-lg shadow-lg p-3 border border-gray-200 dark:border-gray-700" style={{ zIndex: 1000 }}>
           <div className="space-y-2">
             <div className="flex items-center">
-              <div className="w-3 h-3 rounded bg-neutral-300 mr-2 border border-neutral-400"></div>
+              <div className="w-3 h-3 rounded bg-gray-400 mr-2"></div>
               <span className="text-xs text-gray-600 dark:text-gray-300">Draft</span>
             </div>
             <div className="flex items-center">
-              <div className="w-3 h-3 rounded bg-amber-200 mr-2 border border-amber-400"></div>
+              <div className="w-3 h-3 rounded bg-amber-400 mr-2"></div>
               <span className="text-xs text-gray-600 dark:text-gray-300">Needs Details</span>
             </div>
             <div className="flex items-center">
-              <div className="w-3 h-3 rounded bg-blue-300 mr-2 border border-blue-500"></div>
+              <div className="w-3 h-3 rounded bg-blue-500 mr-2"></div>
               <span className="text-xs text-gray-600 dark:text-gray-300">Ready</span>
             </div>
             <div className="flex items-center">
-              <div className="w-3 h-3 rounded bg-white mr-2 border border-green-500"></div>
+              <div className="w-3 h-3 rounded bg-emerald-500 mr-2"></div>
               <span className="text-xs text-gray-600 dark:text-gray-300">Published</span>
             </div>
             <div className="flex items-center">
-              <div className="w-3 h-3 rounded bg-emerald-500 mr-2 live-marker-pulse"></div>
-              <span className="text-xs text-gray-800 dark:text-gray-200 font-medium">LIVE</span>
-            </div>
-            <div className="flex items-center">
-              <div className="w-3 h-3 rounded bg-red-200 mr-2 border border-red-400"></div>
-              <span className="text-xs text-gray-600 dark:text-gray-300">Canceled</span>
-            </div>
-            <div className="flex items-center">
-              <div className="w-3 h-3 rounded bg-gray-600 mr-2"></div>
-              <span className="text-xs text-gray-600 dark:text-gray-300">Rejected</span>
+              <div className="w-3 h-3 rounded bg-rose-500 mr-2 live-marker-pulse"></div>
+              <span className="text-xs text-gray-800 dark:text-gray-200 font-bold">LIVE NOW</span>
             </div>
           </div>
         </div>

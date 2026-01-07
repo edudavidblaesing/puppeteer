@@ -187,6 +187,16 @@ class ArtistService {
         let paramIndex = 1;
         const changes = {};
 
+        // Pre-process updates
+        if (updates.website_url !== undefined) {
+            updates.content_url = updates.website_url;
+            delete updates.website_url;
+        }
+        if (updates.website !== undefined) {
+            updates.content_url = updates.website;
+            delete updates.website;
+        }
+
         for (const [key, value] of Object.entries(updates)) {
             if (allowedFields.includes(key)) {
                 // Normalize for comparison (JSON stringify for arrays/objects)
@@ -241,13 +251,30 @@ class ArtistService {
     // I will replace delete/deleteAll and add getHistory.
 
     async delete(id, user) {
-        await this.pool.query(`
-            INSERT INTO audit_logs (entity_type, entity_id, action, changes, performed_by)
-            VALUES ($1, $2, $3, $4, $5)
-        `, ['artist', id, 'DELETE', '{}', user?.id || 'admin']);
+        const client = await this.pool.connect();
+        try {
+            await client.query('BEGIN');
 
-        const result = await this.pool.query('DELETE FROM artists WHERE id = $1 RETURNING id', [id]);
-        return result.rows.length > 0;
+            // 1. Audit Log
+            await client.query(`
+                INSERT INTO audit_logs (entity_type, entity_id, action, changes, performed_by)
+                VALUES ($1, $2, $3, $4, $5)
+            `, ['artist', id, 'DELETE', '{}', user?.id || 'admin']);
+
+            // 2. Remove from Event Artists (Cascade-like behavior)
+            await client.query('DELETE FROM event_artists WHERE artist_id = $1', [id]);
+
+            // 3. Delete Artist
+            const result = await client.query('DELETE FROM artists WHERE id = $1 RETURNING id', [id]);
+
+            await client.query('COMMIT');
+            return result.rows.length > 0;
+        } catch (e) {
+            await client.query('ROLLBACK');
+            throw e;
+        } finally {
+            client.release();
+        }
     }
 
     async getHistory(id) {

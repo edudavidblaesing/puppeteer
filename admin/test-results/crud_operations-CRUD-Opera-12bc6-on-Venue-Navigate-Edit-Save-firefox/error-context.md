@@ -1,0 +1,59 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e2]:
+  - complementary [ref=e4]:
+    - generic [ref=e6]:
+      - img [ref=e8]
+      - generic [ref=e12]: EventHubGlobal Events Manager
+      - button [ref=e13]:
+        - img [ref=e14]
+    - generic [ref=e16]:
+      - generic [ref=e17]:
+        - heading "Main Menu" [level=3] [ref=e18]
+        - generic [ref=e19]:
+          - link "Dashboard" [ref=e20] [cursor=pointer]:
+            - /url: /
+            - img [ref=e21]
+            - text: Dashboard
+          - link "Events" [ref=e26] [cursor=pointer]:
+            - /url: /events
+            - img [ref=e27]
+            - text: Events
+          - link "Venues" [ref=e32] [cursor=pointer]:
+            - /url: /venues
+            - img [ref=e33]
+            - text: Venues
+          - link "Artists" [ref=e41] [cursor=pointer]:
+            - /url: /artists
+            - img [ref=e42]
+            - text: Artists
+          - link "Organizers" [ref=e47] [cursor=pointer]:
+            - /url: /organizers
+            - img [ref=e48]
+            - text: Organizers
+          - link "Guest Users" [ref=e51] [cursor=pointer]:
+            - /url: /users
+            - img [ref=e52]
+            - text: Guest Users
+          - link "Moderation" [ref=e57] [cursor=pointer]:
+            - /url: /moderation
+            - img [ref=e58]
+            - text: Moderation
+          - link "Cities" [ref=e60] [cursor=pointer]:
+            - /url: /cities
+            - img [ref=e61]
+            - text: Cities
+      - generic [ref=e65]:
+        - heading "Other" [level=3] [ref=e66]
+        - generic [ref=e67]:
+          - link "Sources" [ref=e68] [cursor=pointer]:
+            - /url: /sources
+            - img [ref=e69]
+            - text: Sources
+          - link "Settings" [ref=e73] [cursor=pointer]:
+            - /url: /settings
+            - img [ref=e74]
+            - text: Settings
+  - main
+```

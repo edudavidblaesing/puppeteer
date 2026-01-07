@@ -55,12 +55,12 @@ class VenueService {
                     WHERE vsl.venue_id = combined.id
                 ) as source_references
             FROM (
-                SELECT v.id, v.name, v.address, v.city, v.country, v.latitude, v.longitude, 1 as priority
+                SELECT v.id, v.name, v.address, v.city, v.country, v.latitude, v.longitude, v.venue_type, 1 as priority
                 FROM venues v
                 WHERE 1=1 ${venueFilter}
                 UNION ALL
                 SELECT NULL as id, venue_name as name, venue_address as address, venue_city as city, venue_country as country, 
-                       NULL as latitude, NULL as longitude, 2 as priority
+                       NULL as latitude, NULL as longitude, NULL as venue_type, 2 as priority
                 FROM events
                 WHERE venue_name IS NOT NULL AND venue_name != '' AND venue_id IS NULL ${eventFilter}
             ) combined
@@ -125,9 +125,9 @@ class VenueService {
             SELECT COUNT(*) FROM (
                 SELECT DISTINCT LOWER(name), LOWER(city)
                 FROM (
-                    SELECT v.name, v.city, v.address FROM venues v WHERE 1=1 ${venueFilter}
+                    SELECT v.name, v.city, v.address, v.venue_type FROM venues v WHERE 1=1 ${venueFilter}
                     UNION ALL
-                    SELECT venue_name as name, venue_city as city, venue_address as address FROM events WHERE venue_name IS NOT NULL AND venue_name != '' AND venue_id IS NULL ${eventFilter}
+                    SELECT venue_name as name, venue_city as city, venue_address as address, NULL as venue_type FROM events WHERE venue_name IS NOT NULL AND venue_name != '' AND venue_id IS NULL ${eventFilter}
                 ) combined
                 WHERE name IS NOT NULL AND city IS NOT NULL
         `;
@@ -305,12 +305,34 @@ class VenueService {
     }
 
     async delete(id, user) {
-        await this.pool.query(`
-            INSERT INTO audit_logs(entity_type, entity_id, action, changes, performed_by)
-        VALUES($1, $2, $3, $4, $5)
+        const client = await this.pool.connect();
+        try {
+            await client.query('BEGIN');
+
+            // 1. Audit Log
+            await client.query(`
+                INSERT INTO audit_logs(entity_type, entity_id, action, changes, performed_by)
+                VALUES($1, $2, $3, $4, $5)
             `, ['venue', id, 'DELETE', '{}', user?.id || 'admin']);
-        const result = await this.pool.query('DELETE FROM venues WHERE id = $1 RETURNING id', [id]);
-        return result.rows.length > 0;
+
+            // 2. Unlink from Events (Set NULL)
+            await client.query(`
+                UPDATE events 
+                SET venue_id = NULL, updated_at = NOW() 
+                WHERE venue_id = $1
+            `, [id]);
+
+            // 3. Delete Venue
+            const result = await client.query('DELETE FROM venues WHERE id = $1 RETURNING id', [id]);
+
+            await client.query('COMMIT');
+            return result.rows.length > 0;
+        } catch (e) {
+            await client.query('ROLLBACK');
+            throw e;
+        } finally {
+            client.release();
+        }
     }
 
     async getHistory(id) {

@@ -355,7 +355,7 @@ export function CityForm({ initialData, onSubmit, onDelete, onCancel, isLoading 
                   </div>
 
                   <div>
-                    <Input label={<span>Name <span className="text-red-500">*</span></span>} value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder="City Name" className={submitted && !formData.name ? 'border-red-300 focus:ring-red-500' : ''} />
+                    <Input name="name" label={<span>Name <span className="text-red-500">*</span></span>} value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder="City Name" className={submitted && !formData.name ? 'border-red-300 focus:ring-red-500' : ''} />
                     {submitted && !formData.name && <p className="text-xs text-red-500 mt-1">Name is required.</p>}
                   </div>
 
