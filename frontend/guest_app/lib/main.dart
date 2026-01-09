@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -28,10 +29,10 @@ class _SocialEventAppState extends ConsumerState<SocialEventApp> {
   void initState() {
     super.initState();
     // Initialize session check immediately on app start
-    // Use addPostFrameCallback to ensure provider is ready if needed, 
+    // Use addPostFrameCallback to ensure provider is ready if needed,
     // though initState is usually fine for reading providers via ref.read
     WidgetsBinding.instance.addPostFrameCallback((_) {
-       ref.read(sessionProvider.notifier).restoreSession();
+      ref.read(sessionProvider.notifier).restoreSession();
     });
   }
 
@@ -44,6 +45,16 @@ class _SocialEventAppState extends ConsumerState<SocialEventApp> {
       theme: AppTheme.darkTheme, // High-end dark mode
       routerConfig: router,
       debugShowCheckedModeBanner: false,
+      scrollBehavior: AppScrollBehavior(),
     );
   }
+}
+
+class AppScrollBehavior extends MaterialScrollBehavior {
+  @override
+  Set<PointerDeviceKind> get dragDevices => {
+        PointerDeviceKind.touch,
+        PointerDeviceKind.mouse,
+        PointerDeviceKind.trackpad,
+      };
 }

@@ -408,11 +408,11 @@ const getEventsForMap = async (req, res) => {
         query += `
             FROM events e
             LEFT JOIN friend_attendance fa ON e.id = fa.event_id
-            WHERE e.publish_status IN ('published', 'cancelled')
-              AND e.publish_status NOT IN ('draft', 'approved') -- Explicit safety check
+            WHERE 
+              e.status = 'PUBLISHED' 
               AND e.latitude IS NOT NULL 
               AND e.longitude IS NOT NULL
-              AND e.date > NOW()
+              AND e.date > (NOW() - INTERVAL '24 hours') -- Show upcoming + recently ended (24h)
         `;
 
         if (lat && lng) {
@@ -434,8 +434,21 @@ const getEventsForMap = async (req, res) => {
 
         params.push(parseInt(limit));
 
+        // DEBUG: Diagnose why map is empty
+        const debugTotal = await pool.query('SELECT COUNT(*) FROM events');
+        const debugPublished = await pool.query("SELECT COUNT(*) FROM events WHERE publish_status = 'published'");
+        const debugCoords = await pool.query('SELECT COUNT(*) FROM events WHERE latitude IS NOT NULL AND longitude IS NOT NULL');
+        const debugFuture = await pool.query('SELECT COUNT(*) FROM events WHERE date >= CURRENT_DATE');
+        const debugFutureCoords = await pool.query('SELECT COUNT(*) FROM events WHERE date >= CURRENT_DATE AND latitude IS NOT NULL');
+
+        console.log(`[Map Debug] Total: ${debugTotal.rows[0].count}`);
+        console.log(`[Map Debug] Published: ${debugPublished.rows[0].count}`);
+        console.log(`[Map Debug] With Coords: ${debugCoords.rows[0].count}`);
+        console.log(`[Map Debug] Future (Today+): ${debugFuture.rows[0].count}`);
+        console.log(`[Map Debug] Future (Today+) & With Coords: ${debugFutureCoords.rows[0].count}`);
+
         const result = await pool.query(query, params);
-        console.log(`[Map] Returning ${result.rows.length} events. Filter: published/cancelled`);
+        console.log(`[Map] Returning ${result.rows.length} events. Filter: STATUS='PUBLISHED' + 24h Window`);
 
         res.json({ data: result.rows });
     } catch (e) {
@@ -454,63 +467,63 @@ const getEventDetails = async (req, res) => {
         let userParamIdx = 0;
 
         let query = `
-            WITH ratings_stats AS (
-                SELECT AVG(rating)::numeric(2,1) as avg_rating, COUNT(*) as rating_count FROM event_ratings WHERE event_id = $1
-            ),
-            all_attendees_count AS (
+            WITH ratings_stats AS(
+            SELECT AVG(rating):: numeric(2, 1) as avg_rating, COUNT(*) as rating_count FROM event_ratings WHERE event_id = $1
+        ),
+            all_attendees_count AS(
                 SELECT COUNT(*) as count FROM event_attendance WHERE event_id = $1 AND status = 'going'
             )
-        `;
+                `;
 
         if (userId) {
             params.push(userId);
             userParamIdx = 2;
 
             query += `,
-            my_attendance AS (
-                SELECT status FROM event_attendance WHERE user_id = $2 AND event_id = $1
-            ),
-            friend_attendance AS (
-                SELECT ea.event_id, 
-                       json_agg(json_build_object(
-                           'id', u.id, 
-                           'username', u.username, 
-                           'full_name', u.full_name, 
-                           'avatar_url', u.avatar_url
-                       )) as friends
+                my_attendance AS(
+                    SELECT status FROM event_attendance WHERE user_id = $2 AND event_id = $1
+                ),
+                    friend_attendance AS(
+                        SELECT ea.event_id,
+                        json_agg(json_build_object(
+                            'id', u.id,
+                            'username', u.username,
+                            'full_name', u.full_name,
+                            'avatar_url', u.avatar_url
+                        )) as friends
                 FROM event_attendance ea
-                JOIN friendships f ON (f.user_id_1 = $2 OR f.user_id_2 = $2) AND f.status = 'accepted'
+                JOIN friendships f ON(f.user_id_1 = $2 OR f.user_id_2 = $2) AND f.status = 'accepted'
                 JOIN users u ON ea.user_id = u.id
-                WHERE (
-                    (ea.user_id = f.user_id_1 AND f.user_id_2 = $2) OR 
-                    (ea.user_id = f.user_id_2 AND f.user_id_1 = $2)
-                ) AND ea.status = 'going' AND ea.event_id = $1
+                WHERE(
+                            (ea.user_id = f.user_id_1 AND f.user_id_2 = $2) OR
+                        (ea.user_id = f.user_id_2 AND f.user_id_1 = $2)
+                    ) AND ea.status = 'going' AND ea.event_id = $1
                 GROUP BY ea.event_id
             ),
-            my_rating AS (
-                SELECT rating FROM event_ratings WHERE user_id = $2 AND event_id = $1
-            )
-            `;
+            my_rating AS(
+                        SELECT rating FROM event_ratings WHERE user_id = $2 AND event_id = $1
+                    )
+    `;
         } else {
             // Null CTEs if no user
             query += `,
-            my_attendance AS (SELECT null::text as status WHERE false),
-            friend_attendance AS (SELECT null::json as friends WHERE false),
-            my_rating AS (SELECT null::int as rating WHERE false)
-            `;
+    my_attendance AS(SELECT null:: text as status WHERE false),
+        friend_attendance AS(SELECT null:: json as friends WHERE false),
+            my_rating AS(SELECT null:: int as rating WHERE false)
+                `;
         }
 
         query += `
             SELECT e.*,
-                   (SELECT status FROM my_attendance) as my_rsvp_status,
-                   COALESCE((SELECT friends FROM friend_attendance), '[]'::json) as friends_attending,
-                   (SELECT count FROM all_attendees_count) as total_attendees,
-                   (SELECT avg_rating FROM ratings_stats) as average_rating,
-                   (SELECT rating_count FROM ratings_stats) as rating_count,
-                   (SELECT rating FROM my_rating) as my_rating
+    (SELECT status FROM my_attendance) as my_rsvp_status,
+        COALESCE((SELECT friends FROM friend_attendance), '[]'::json) as friends_attending,
+            (SELECT count FROM all_attendees_count) as total_attendees,
+                (SELECT avg_rating FROM ratings_stats) as average_rating,
+                    (SELECT rating_count FROM ratings_stats) as rating_count,
+                        (SELECT rating FROM my_rating) as my_rating
             FROM events e
             WHERE e.id = $1
-        `;
+    `;
 
         const result = await pool.query(query, params);
 
@@ -527,7 +540,7 @@ const getEventDetails = async (req, res) => {
             JOIN artists a ON ea.artist_id = a.id
             WHERE ea.event_id = $1
             ORDER BY ea.billing_order ASC
-        `, [id]);
+    `, [id]);
 
         event.artists_list = artistsResult.rows;
 
@@ -537,7 +550,7 @@ const getEventDetails = async (req, res) => {
             FROM event_organizers eo
             JOIN organizers o ON eo.organizer_id = o.id
             WHERE eo.event_id = $1
-        `, [id]);
+    `, [id]);
 
         event.organizers_list = organizersResult.rows;
 
@@ -614,9 +627,9 @@ const rateEvent = async (req, res) => {
 
     try {
         await pool.query(
-            `INSERT INTO event_ratings (event_id, user_id, rating) 
-             VALUES ($1, $2, $3) 
-             ON CONFLICT (event_id, user_id) DO UPDATE SET rating = $3, updated_at = NOW()`,
+            `INSERT INTO event_ratings(event_id, user_id, rating)
+VALUES($1, $2, $3) 
+             ON CONFLICT(event_id, user_id) DO UPDATE SET rating = $3, updated_at = NOW()`,
             [id, userId, rating]
         );
         res.json({ success: true });
@@ -714,12 +727,12 @@ module.exports = {
         const { id } = req.params;
         try {
             const result = await pool.query(`
-                SELECT 
-                    (SELECT COUNT(*) FROM event_attendance WHERE user_id = $1) as attendance_count,
-                    (SELECT COUNT(*) FROM event_ratings WHERE user_id = $1) as ratings_count,
-                    (SELECT COUNT(*) FROM event_comments WHERE user_id = $1) as comments_count,
-                    (SELECT COUNT(*) FROM friendships WHERE user_id_1 = $1 OR user_id_2 = $1) as friends_count
-            `, [id]);
+SELECT
+    (SELECT COUNT(*) FROM event_attendance WHERE user_id = $1) as attendance_count,
+    (SELECT COUNT(*) FROM event_ratings WHERE user_id = $1) as ratings_count,
+        (SELECT COUNT(*) FROM event_comments WHERE user_id = $1) as comments_count,
+            (SELECT COUNT(*) FROM friendships WHERE user_id_1 = $1 OR user_id_2 = $1) as friends_count
+                `, [id]);
 
             const counts = result.rows[0];
             const usage = parseInt(counts.attendance_count) + parseInt(counts.ratings_count) + parseInt(counts.comments_count) + parseInt(counts.friends_count);

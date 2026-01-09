@@ -329,9 +329,10 @@ class _MapScreenState extends ConsumerState<MapScreen> {
           }
         }
       } catch (e) {
-        if (mounted)
+        if (mounted) {
           ScaffoldMessenger.of(context)
               .showSnackBar(SnackBar(content: Text('Error: $e')));
+        }
       }
     }
   }

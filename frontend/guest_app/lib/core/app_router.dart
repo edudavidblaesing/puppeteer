@@ -3,7 +3,7 @@ import '../features/auth/splash_screen.dart';
 import '../features/auth/login_screen.dart';
 import '../features/auth/register_screen.dart';
 import '../features/auth/verification_screen.dart';
-import '../features/map/map_screen.dart';
+import '../features/map/moments_map_screen.dart';
 import '../features/feed/feed_screen.dart';
 import '../features/event/event_detail_screen.dart';
 import '../features/profile/profile_screen.dart';
@@ -40,64 +40,42 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           return VerificationScreen(email: email);
         },
       ),
-      // Main Application Shell
-      StatefulShellRoute.indexedStack(
-        builder: (context, state, navigationShell) {
-          return ScaffoldWithNavBar(navigationShell: navigationShell);
-        },
-        branches: [
-          // Tab 1: Map
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: '/map',
-                builder: (context, state) => const MapScreen(),
-              ),
-            ],
-          ),
-          // Tab 2: Feed
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: '/feed',
-                builder: (context, state) => const FeedScreen(),
-              ),
-            ],
-          ),
-          // Tab 3: Friends
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: '/friends',
-                builder: (context, state) => const FriendScreen(),
-              ),
-            ],
-          ),
-          // Tab 4: Profile
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: '/profile',
-                builder: (context, state) => const ProfileScreen(),
-              ),
-              GoRoute(
-                path: '/my-events',
-                builder: (context, state) => const MyEventsScreen(),
-              ),
-              GoRoute(
-                path: '/settings',
-                builder: (context, state) => const SettingsScreen(),
-                routes: [
-                  GoRoute(
-                    path: 'edit-profile',
-                    builder: (context, state) => const EditProfileScreen(),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ],
+      // Main Application Routes (No Shell/Tabs)
+      GoRoute(
+        path: '/map',
+        builder: (context, state) => const MomentsMapScreen(),
       ),
+      // Feed is now integrated in Map, but keeping route if needed for deep link?
+      // User said "feed moves to bottom" implying it's part of the screen.
+      // We can keep /feed as a standalone for now or redirect?
+      // Let's redirect /feed to /map? Or keep it accessible.
+      GoRoute(
+        path: '/feed',
+        builder: (context, state) => const FeedScreen(),
+      ),
+      GoRoute(
+        path: '/friends',
+        builder: (context, state) => const FriendScreen(),
+      ),
+      GoRoute(
+          path: '/profile',
+          builder: (context, state) => const ProfileScreen(),
+          routes: [
+            GoRoute(
+              path: 'my-events',
+              builder: (context, state) => const MyEventsScreen(),
+            ),
+            GoRoute(
+              path: 'settings',
+              builder: (context, state) => const SettingsScreen(),
+              routes: [
+                GoRoute(
+                  path: 'edit-profile',
+                  builder: (context, state) => const EditProfileScreen(),
+                ),
+              ],
+            ),
+          ]),
       // Event Details (Full Screen, outside shell or inside? Usually pushed on top)
       GoRoute(
         path: '/event/:id',
