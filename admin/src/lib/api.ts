@@ -1,5 +1,8 @@
 import type { Event, Organizer, Venue, City, GuestUser } from '@/types';
 
+// For client-side, use the public URL. For server-side (SSR), usage varies. 
+// If this file is used in SSR, we might want an internal URL, but Next.js usually handles env vars.
+// Let's stick to the public variable for now unless SSR specific issues arise.
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3007';
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'your-secure-api-key-here';
 
@@ -65,6 +68,7 @@ export async function fetchEvents(params?: {
   createdAfter?: string;
   updatedAfter?: string;
   published?: boolean;
+  hasUpdates?: string; // 'true', 'dismissed', 'any'
 }) {
   const searchParams = new URLSearchParams();
   if (params?.city) searchParams.set('city', params.city);
@@ -80,6 +84,7 @@ export async function fetchEvents(params?: {
   if (params?.createdAfter) searchParams.set('createdAfter', params.createdAfter);
   if (params?.updatedAfter) searchParams.set('updatedAfter', params.updatedAfter);
   if (params?.published !== undefined) searchParams.set('published', params.published.toString());
+  if (params?.hasUpdates) searchParams.set('hasUpdates', params.hasUpdates);
 
   return request(`/db/events?${searchParams}`);
 }
@@ -234,6 +239,8 @@ export async function searchArtists(query: string) {
   return result.data || [];
 }
 
+
+
 // External Search (Multi-source auto-fill)
 export async function searchExternal(type: 'venue' | 'artist' | 'organizer' | 'city', query: string) {
   if (!query || query.length < 2) return [];
@@ -277,6 +284,19 @@ export async function fetchEntityHistory(type: 'event' | 'artist' | 'venue' | 'o
 export async function fetchPendingChanges(eventId: string) {
   const result = await request<{ event_id: string; has_changes: boolean; changes: any[] }>(`/db/events/changes?id=${eventId}`);
   return result;
+}
+
+// Manual Source Linking
+export async function searchSourceEvents(source: string, query: string) {
+  const res = await request(`/db/events/source/search?source=${source}&query=${encodeURIComponent(query)}`);
+  return res || [];
+}
+
+export async function linkSource(eventId: string, sourceCode: string, sourceEventId: string) {
+  return request(`/db/events/${eventId}/link-source`, {
+    method: 'POST',
+    body: JSON.stringify({ sourceCode, sourceEventId }),
+  });
 }
 
 export async function applyPendingChanges(eventId: string, scrapedEventId: string, fields?: string[]) {
@@ -587,7 +607,8 @@ export async function deduplicateData(type: 'all' | 'events' | 'venues' | 'artis
 
 // Ensure configured cities fetcher is available
 export async function fetchConfiguredCities() {
-  return request(`/scrape/cities`);
+  const result = await request<any>(`/scrape/cities`);
+  return result.data || [];
 }
 
 // Fetch all event sources

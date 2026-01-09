@@ -1,7 +1,7 @@
 const { v4: uuidv4 } = require('uuid');
-const { pool } = require('../db');
+const { pool } = require('@social-events/shared').db;
 const { stringSimilarity, cleanVenueAddress } = require('../utils/stringUtils');
-const { geocodeAddress } = require('./geocoder');
+const { geocodeAddress } = require('@social-events/shared').services.geocoder;
 const { mergeSourceData } = require('./unifiedService');
 const musicBrainzService = require('./musicBrainzService');
 const spotifyService = require('./spotifyService');
@@ -1775,7 +1775,53 @@ VALUES($1, $2, 1.0)
     console.log(`[Enrichment] Completed.Enriched ${enriched} venues.`);
 }
 
+// Enrich a single artist by ID
+async function enrichOneArtist(id) {
+    const artistRes = await pool.query('SELECT name, country FROM artists WHERE id = $1', [id]);
+    if (artistRes.rows.length === 0) throw new Error('Artist not found');
+
+    const { name, country } = artistRes.rows[0];
+    const searchResults = await musicBrainzService.searchArtist(name, country);
+
+    if (searchResults.length === 0) return null;
+
+    const bestMatch = searchResults[0];
+    const details = await musicBrainzService.getArtistDetails(bestMatch.id);
+
+    const scrapedRes = await pool.query(`
+        INSERT INTO scraped_artists (
+            source_code, source_artist_id, name, country, artist_type, 
+            genres, image_url, content_url, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)
+        ON CONFLICT (source_code, source_artist_id) DO UPDATE SET
+            name = EXCLUDED.name,
+            country = EXCLUDED.country,
+            artist_type = EXCLUDED.artist_type,
+            genres = EXCLUDED.genres,
+            image_url = EXCLUDED.image_url,
+            content_url = EXCLUDED.content_url,
+            updated_at = CURRENT_TIMESTAMP
+        RETURNING id
+    `, [
+        'mb', details.source_artist_id, details.name, details.country,
+        details.artist_type, JSON.stringify(details.genres_list), null, details.content_url
+    ]);
+
+    const scrapedId = scrapedRes.rows[0].id;
+
+    await pool.query(`
+        INSERT INTO artist_scraped_links (artist_id, scraped_artist_id, match_confidence)
+        VALUES ($1, $2, 1.0)
+        ON CONFLICT (artist_id, scraped_artist_id) DO UPDATE SET match_confidence = 1.0
+    `, [id, scrapedId]);
+
+    await refreshMainArtist(id);
+
+    return { source_data: details };
+}
+
 module.exports = {
+    enrichOneArtist,
     matchAndLinkEvents,
     matchAndLinkArtists,
     matchAndLinkVenues,

@@ -7,9 +7,10 @@ interface AnalyticsSummaryProps {
     stats: Stats['events'];
     scrapeStats?: Stats['scraping'];
     history?: any[];
+    onQuickFilter?: (type: 'approved' | 'updated' | 'pending' | 'live') => void;
 }
 
-export function AnalyticsSummary({ stats, scrapeStats, history = [] }: AnalyticsSummaryProps) {
+export function AnalyticsSummary({ stats, scrapeStats, history = [], onQuickFilter }: AnalyticsSummaryProps) {
     // Helper to normalize data for mini-charts (last 7 days)
     const getLast7DaysData = (key: string) => {
         if (!history || history.length === 0) return [20, 40, 30, 50, 40, 60, 50]; // Fallback
@@ -34,11 +35,14 @@ export function AnalyticsSummary({ stats, scrapeStats, history = [] }: Analytics
     return (
         <>
             {/* 1. Approved Card (Primary) */}
-            <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800 relative overflow-hidden group flex flex-col justify-between">
+            <div
+                onClick={() => onQuickFilter?.('approved')}
+                className="bg-gray-900 rounded-2xl p-6 border border-gray-800 relative overflow-hidden group flex flex-col justify-between cursor-pointer hover:border-green-500/50 transition-colors"
+            >
                 <div>
                     <div className="flex justify-between items-start mb-4">
                         <span className="text-gray-400 font-medium">Approved Events</span>
-                        <div className="p-2 rounded-lg bg-gray-800 text-green-500">
+                        <div className="p-2 rounded-lg bg-gray-800 text-green-500 group-hover:bg-green-500/20 transition-colors">
                             <CheckCircle className="w-5 h-5" />
                         </div>
                     </div>
@@ -65,11 +69,14 @@ export function AnalyticsSummary({ stats, scrapeStats, history = [] }: Analytics
             </div>
 
             {/* 2. Updated Card */}
-            <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800 relative overflow-hidden group flex flex-col justify-between">
+            <div
+                onClick={() => onQuickFilter?.('updated')}
+                className="bg-gray-900 rounded-2xl p-6 border border-gray-800 relative overflow-hidden group flex flex-col justify-between cursor-pointer hover:border-blue-500/50 transition-colors"
+            >
                 <div>
                     <div className="flex justify-between items-start mb-4">
                         <span className="text-gray-400 font-medium">Recently Updated</span>
-                        <div className="p-2 rounded-lg bg-gray-800 text-blue-500">
+                        <div className="p-2 rounded-lg bg-gray-800 text-blue-500 group-hover:bg-blue-500/20 transition-colors">
                             <RefreshCw className="w-5 h-5" />
                         </div>
                     </div>
@@ -92,11 +99,14 @@ export function AnalyticsSummary({ stats, scrapeStats, history = [] }: Analytics
             </div>
 
             {/* 3. Approval Rate (Relative for Approved) */}
-            <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800 relative overflow-hidden group flex flex-col justify-between">
+            <div
+                onClick={() => onQuickFilter?.('pending')}
+                className="bg-gray-900 rounded-2xl p-6 border border-gray-800 relative overflow-hidden group flex flex-col justify-between cursor-pointer hover:border-purple-500/50 transition-colors"
+            >
                 <div>
                     <div className="flex justify-between items-start mb-4">
                         <span className="text-gray-400 font-medium">Approval Efficiency</span>
-                        <div className="p-2 rounded-lg bg-gray-800 text-purple-500">
+                        <div className="p-2 rounded-lg bg-gray-800 text-purple-500 group-hover:bg-purple-500/20 transition-colors">
                             <TrendingUp className="w-5 h-5" />
                         </div>
                     </div>
@@ -120,7 +130,10 @@ export function AnalyticsSummary({ stats, scrapeStats, history = [] }: Analytics
             </div>
 
             {/* 4. Live/Upcoming (Relative for Live) */}
-            <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800 relative overflow-hidden group flex flex-col justify-between">
+            <div
+                onClick={() => onQuickFilter?.('live')}
+                className="bg-gray-900 rounded-2xl p-6 border border-gray-800 relative overflow-hidden group flex flex-col justify-between cursor-pointer hover:border-orange-500/50 transition-colors"
+            >
                 <div>
                     <div className="flex justify-between items-start mb-4">
                         <span className="text-gray-400 font-medium">Live & Upcoming</span>

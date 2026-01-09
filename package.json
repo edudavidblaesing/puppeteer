@@ -1,4 +1,9 @@
 {
+  "workspaces": [
+    "backend/*",
+    "admin",
+    "frontend/*"
+  ],
   "devDependencies": {
     "@types/node": "^24.10.1"
   }

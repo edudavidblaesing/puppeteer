@@ -27,6 +27,9 @@ export interface SelectableListItemProps {
     actions?: React.ReactNode; // Always visible actions (e.g. Approve/Reject for Events)
     actionsHover?: React.ReactNode; // e.g. Approve/Reject buttons on hover
 
+    // Refs
+    domRef?: (node: HTMLDivElement | null) => void;
+
     className?: string;
 }
 
@@ -45,6 +48,7 @@ export function SelectableListItem({
     metaRight,
     actions,
     actionsHover,
+    domRef,
     className
 }: SelectableListItemProps) {
 
@@ -57,6 +61,7 @@ export function SelectableListItem({
 
     return (
         <div
+            ref={domRef}
             onClick={onClick}
             className={clsx(
                 "group flex items-center gap-3 px-4 py-3 cursor-pointer border-b border-gray-100 dark:border-gray-800 transition-colors relative",

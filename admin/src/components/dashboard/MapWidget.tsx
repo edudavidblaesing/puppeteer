@@ -22,7 +22,7 @@ interface MapWidgetProps {
 
 export function MapWidget({ events = [], cities = [] }: MapWidgetProps) {
     return (
-        <div className="bg-white dark:bg-gray-900 rounded-[2rem] border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden relative h-full flex flex-col">
+        <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden relative h-full flex flex-col">
 
             <div className="flex-1 w-full h-full min-h-[300px]">
                 <EventMap events={events} cities={cities} />

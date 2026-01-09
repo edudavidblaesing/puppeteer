@@ -1,6 +1,6 @@
 const socketIo = require('socket.io');
 const jwt = require('jsonwebtoken');
-const { pool } = require('../db');
+const { pool } = require('@social-events/shared').db;
 
 let io;
 

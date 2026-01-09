@@ -1,7 +1,8 @@
-const { pool } = require('../db');
+const { pool } = require('@social-events/shared').db;
 const { cleanVenueAddress } = require('../utils/stringUtils');
-const { geocodeAddress } = require('./geocoder');
-const { EVENT_STATES } = require('../models/eventStateMachine');
+const { geocodeAddress } = require('@social-events/shared').services.geocoder;
+const { EVENT_STATES } = require('@social-events/shared').models.eventStateMachine;
+const eventService = require('@social-events/shared').services.eventService;
 
 // Helper: Check for existing coordinates in DB
 async function checkExistingCoordinates(event) {
@@ -98,37 +99,92 @@ function artistsEqual(arr1, arr2) {
 }
 
 // Helper: Check if event has meaningful changes
-function hasEventChanged(existing, incoming) {
-    if (normalizeString(existing.title) !== normalizeString(incoming.title)) return true;
-    if (!datesEqual(existing.date, incoming.date)) return true;
-    if (normalizeTime(existing.start_time) !== normalizeTime(incoming.start_time)) return true;
-    if (normalizeTime(existing.end_time) !== normalizeTime(incoming.end_time)) return true;
-    if (normalizeString(existing.venue_name) !== normalizeString(incoming.venue_name)) return true;
-    if (normalizeString(existing.venue_city) !== normalizeString(incoming.venue_city)) return true;
+function calculateDiff(existing, incoming) {
+    const changes = {};
 
-    // Compare parsed JSON fields
-    // existing.artists_json is likely an object from PG driver
-    // incoming.artists_json is an object
-    // Use specialized comparison for artists
-    if (!artistsEqual(existing.artists_json, incoming.artists_json)) return true;
+    // Helper to check if a value is effectively empty
+    const isEmpty = (val) => val === null || val === undefined || val === '';
 
-    // Price info might be subtle, deepEqual is usually safe if structure is consistent
-    if (!deepEqual(existing.price_info, incoming.price_info)) return true;
+    // Standard string fields
+    const stringFields = ['title', 'venue_name', 'venue_city', 'venue_address', 'venue_country', 'content_url', 'flyer_front', 'description', 'ticket_url'];
+    for (const field of stringFields) {
+        // If incoming is empty but existing has value, IGNORE it (don't overwrite good data with bad)
+        // Unless it's a specific field we might want to clear? Generally for scrapers, missing data shouldn't wipe existing data.
+        if (isEmpty(incoming[field]) && !isEmpty(existing[field])) {
+            continue;
+        }
 
-    // Check URLs
-    if (normalizeString(existing.content_url) !== normalizeString(incoming.content_url)) return true;
-    if (normalizeString(existing.flyer_front) !== normalizeString(incoming.flyer_front)) return true;
-
-    // Check Lat/Lon ONLY if incoming has it and it differs significantly
-    // (Float comparison issue? Usually these are strings or exact floats)
-    if (incoming.venue_latitude && existing.venue_latitude) {
-        if (Math.abs(parseFloat(existing.venue_latitude) - parseFloat(incoming.venue_latitude)) > 0.0001) return true;
-    }
-    if (incoming.venue_longitude && existing.venue_longitude) {
-        if (Math.abs(parseFloat(existing.venue_longitude) - parseFloat(incoming.venue_longitude)) > 0.0001) return true;
+        if (normalizeString(existing[field]) !== normalizeString(incoming[field])) {
+            changes[field] = { old: existing[field], new: incoming[field] };
+        }
     }
 
-    return false;
+    // Date/Time
+    // Use loose equality for dates to handle timezone offset differences if they refer to same day
+    // But strict enough to catch actual day changes.
+    // Normalized date string YYYY-MM-DD should match.
+    const getYMD = (d) => {
+        if (!d) return '';
+        if (d instanceof Date) return d.toISOString().split('T')[0];
+        if (typeof d === 'string') return d.split('T')[0];
+        return '';
+    };
+
+    const existingYMD = getYMD(existing.date);
+    const incomingYMD = getYMD(incoming.date);
+    if (existingYMD !== incomingYMD) {
+        changes.date = { old: existingYMD, new: incomingYMD };
+    }
+
+    // Times: H:mm
+    if (normalizeTime(existing.start_time) !== normalizeTime(incoming.start_time)) {
+        changes.start_time = { old: existing.start_time, new: incoming.start_time };
+    }
+    if (normalizeTime(existing.end_time) !== normalizeTime(incoming.end_time)) {
+        changes.end_time = { old: existing.end_time, new: incoming.end_time };
+    }
+
+    // Complex Objects
+    // Artists - strict deep equal is fine
+    if (!artistsEqual(existing.artists_json, incoming.artists_json)) {
+        changes.artists_json = { old: existing.artists_json, new: incoming.artists_json };
+    }
+
+    // Price
+    if (!deepEqual(existing.price_info, incoming.price_info)) {
+        changes.price_info = { old: existing.price_info, new: incoming.price_info };
+    }
+
+    // Lat/Lon
+    // EXISTING LOGIC WAS FLAWED: it allowed updates to null.
+    // New Logic: 
+    // 1. If incoming is null/0, IGNORE (don't wipe existing coords).
+    // 2. If valid incoming, check diff.
+    const incomingLat = parseFloat(incoming.venue_latitude);
+    const incomingLon = parseFloat(incoming.venue_longitude);
+    const existingLat = parseFloat(existing.venue_latitude);
+    const existingLon = parseFloat(existing.venue_longitude);
+
+    const hasIncomingCoords = !isNaN(incomingLat) && !isNaN(incomingLon) && (incomingLat !== 0 || incomingLon !== 0);
+    const hasExistingCoords = !isNaN(existingLat) && !isNaN(existingLon) && (existingLat !== 0 || existingLon !== 0);
+
+    if (hasIncomingCoords) {
+        if (!hasExistingCoords) {
+            changes.venue_latitude = { old: existing.venue_latitude, new: incoming.venue_latitude };
+            changes.venue_longitude = { old: existing.venue_longitude, new: incoming.venue_longitude };
+        } else {
+            // Both have coords, check distance
+            const latDiff = Math.abs(existingLat - incomingLat);
+            const lonDiff = Math.abs(existingLon - incomingLon);
+            if (latDiff > 0.0001 || lonDiff > 0.0001) { // approx 11m difference
+                changes.venue_latitude = { old: existing.venue_latitude, new: incoming.venue_latitude };
+                changes.venue_longitude = { old: existing.venue_longitude, new: incoming.venue_longitude };
+            }
+        }
+    }
+    // If NO incoming coords, do nothing (preserve existing)
+
+    return changes;
 }
 
 // Process and save scraped events
@@ -276,9 +332,13 @@ async function processScrapedEvents(events, options = {}) {
                     stats.inserted++;
                 } else {
                     const existing = existingResult.rows[0];
-                    if (hasEventChanged(existing, event)) {
+                    const diff = calculateDiff(existing, event);
+
+                    if (Object.keys(diff).length > 0) {
                         shouldUpdate = true;
                         stats.updated++;
+                        event.changes = diff; // Store diff to save
+                        event.has_changes = true;
                     } else {
                         stats.unmodified++;
                     }
@@ -302,7 +362,7 @@ async function processScrapedEvents(events, options = {}) {
                     ]);
                 } else if (shouldUpdate) {
                     // Update Existing
-                    await pool.query(`
+                    const updatedScraped = await pool.query(`
                         UPDATE scraped_events SET
                             title = $1,
                             date = $2,
@@ -321,16 +381,46 @@ async function processScrapedEvents(events, options = {}) {
                             organizers_json = $15,
                             price_info = $16,
                             raw_data = $17,
-                            updated_at = CURRENT_TIMESTAMP
+                            updated_at = CURRENT_TIMESTAMP,
+                            has_changes = $20,
+                            changes = $21,
+                            is_dismissed = false
                         WHERE source_code = $18 AND source_event_id = $19
+                        RETURNING id
                     `, [
                         event.title, event.date,
                         event.start_time, event.end_time, event.content_url, event.flyer_front,
                         event.description, event.venue_name, event.venue_address, event.venue_city,
                         event.venue_country, venueLat, venueLon,
                         artistsJsonStr, organizersJsonStr, priceInfoJsonStr, event.raw_data,
-                        event.source_code, event.source_event_id
+                        event.source_code, event.source_event_id,
+                        true, // has_changes
+                        JSON.stringify(event.changes) // changes
                     ]);
+
+                    // AUTO-UPDATE LOGIC
+                    try {
+                        const scrapedId = updatedScraped.rows[0].id;
+                        // Find linked event
+                        const linkRes = await pool.query(`
+                            SELECT event_id FROM event_scraped_links WHERE scraped_event_id = $1
+                        `, [scrapedId]);
+
+                        if (linkRes.rows.length > 0) {
+                            const eventId = linkRes.rows[0].event_id;
+                            const eventRes = await pool.query(`SELECT status FROM events WHERE id = $1`, [eventId]);
+                            if (eventRes.rows.length > 0) {
+                                const currentStatus = eventRes.rows[0].status;
+                                // Auto-apply if Draft (Manual or Scraped)
+                                if (currentStatus === EVENT_STATES.SCRAPED_DRAFT || currentStatus === EVENT_STATES.MANUAL_DRAFT) {
+                                    console.log(`[Scraper] Auto-applying updates for Draft event ${eventId}`);
+                                    await eventService.applyChanges(eventId, scrapedId, Object.keys(event.changes), 'system');
+                                }
+                            }
+                        }
+                    } catch (autoUpdateErr) {
+                        console.error(`[Scraper] Failed to auto-update event linked to ${event.title}:`, autoUpdateErr);
+                    }
                 }
             }
 
@@ -450,8 +540,16 @@ async function processScrapedEvents(events, options = {}) {
             }
 
         } catch (err) {
-            console.error(`Error saving event ${event.title}: ${err.message}`);
+            console.error(`Error saving event ${event.title}:`, err);
         }
+    }
+
+    // --- 5. Auto-Reject Expired Drafts ---
+    // Clean up any drafts that have passed their date
+    try {
+        await eventService.rejectExpiredDrafts();
+    } catch (cleanupErr) {
+        console.warn('[Scraper] Failed to auto-reject expired drafts:', cleanupErr);
     }
 
     return stats;

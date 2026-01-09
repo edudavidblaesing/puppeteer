@@ -1,4 +1,4 @@
-const { pool } = require('../db');
+const { pool } = require('@social-events/shared').db;
 
 async function findXavier() {
     try {

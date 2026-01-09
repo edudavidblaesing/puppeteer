@@ -2,43 +2,48 @@ FROM ghcr.io/puppeteer/puppeteer:23.11.1
 
 USER root
 
-# Install socat (for port forwarding) and postgresql-client (for migrations)
-# We skip chromium/fonts related installs as they are in the base image
+# Install socat and postgresql-client
 RUN apt-get update \
     && apt-get install -y socat postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
-# Create app directory
 WORKDIR /usr/src/app
 
-# Skip Chromium download as it's in the base image
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
-# Use the chrome installed in the base image (usually set by the base image, but being explicit doesn't hurt if we knew the path, 
-# but rely on base image ENV which is safer)
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
 
-# Copy package files
-COPY package*.json ./
-COPY .puppeteerrc.cjs ./
+# Copy root package files
+COPY package.json package-lock.json ./
 
-# Install deps
-# Install deps (ignore scripts to prevent hangs, skip audit)
-# We use --no-bin-links because we don't need symlinks for executables in this env often, and it can help with FS issues
+# Copy workspace package.json files
+COPY backend/api/package.json ./backend/api/
+COPY backend/scraper/package.json ./backend/scraper/
+COPY backend/shared/package.json ./backend/shared/
+COPY admin/package.json ./admin/
+
+# Install dependencies from root
 RUN npm install --ignore-scripts --no-audit --no-fund --omit=optional
 
-# Copy source
-COPY . .
+# Copy source code
+COPY backend/shared ./backend/shared
+COPY backend/scraper ./backend/scraper
 
-# Make scripts executable
-RUN chmod +x entrypoint.sh run-migrations.sh
-
-# Fix permissions for the pptruser (default user in this image)
+# Fix permissions
 RUN chown -R pptruser:pptruser /usr/src/app
 
-# Switch to non-root user
 USER pptruser
 
-EXPOSE 3000
+WORKDIR /usr/src/app/backend/scraper
+
+# Make scripts executable (assuming we are owner)
+USER root
+RUN chmod +x entrypoint.sh run-migrations.sh
+USER pptruser
+
+EXPOSE 3008
 EXPOSE 9222
 EXPOSE 9223
 
 CMD [ "./entrypoint.sh" ]
+

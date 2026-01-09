@@ -38,7 +38,7 @@ import {
   GitPullRequest
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
-import { Select } from '@/components/ui/Select';
+import { RichSelect } from '@/components/ui/RichSelect';
 import { EventList } from '@/components/features/EventList';
 import { VenueList } from '@/components/features/VenueList';
 import { ArtistList } from '@/components/features/ArtistList';
@@ -163,6 +163,7 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
   const [venueTypeFilter, setVenueTypeFilter] = useState('');
   const [countryFilter, setCountryFilter] = useState('');
   const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'inactive'>('all');
+  const [hasUpdatesFilter, setHasUpdatesFilter] = useState('');
   const [countries, setCountries] = useState<{ name: string, code: string }[]>([]); // For dropdown
 
   // --- Navigation Stack State ---
@@ -367,7 +368,7 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
 
       if (historyData?.data) {
         const chartData = historyData.data.map((day: any) => ({
-          date: new Date(day.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          date: new Date(day.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
           fetched: parseInt(day.events_fetched || 0),
           new: parseInt(day.events_inserted || 0),
           updated: parseInt(day.events_updated || 0),
@@ -410,7 +411,8 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
             ...commonParams,
             city: cityFilter || undefined,
             status: statusFilter !== 'all' ? statusFilter : undefined,
-            timeFilter
+            timeFilter,
+            hasUpdates: hasUpdatesFilter || undefined
           }),
           fetchCities().catch(() => []),
           // fetchCities removed from here - was causing sources to be City[]
@@ -475,7 +477,7 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
       // Ensure global loading is off too if it was on
       setIsLoading(false);
     }
-  }, [activeTab, page, pageSize, searchQuery, cityFilter, statusFilter, sourceFilter, timeFilter, venueTypeFilter, countryFilter, activeFilter, countries.length]);
+  }, [activeTab, page, pageSize, searchQuery, cityFilter, statusFilter, sourceFilter, timeFilter, venueTypeFilter, countryFilter, activeFilter, countries.length, hasUpdatesFilter]);
 
   // Initial Load & Tab Change
   useEffect(() => {
@@ -486,7 +488,7 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
     }
   }, [activeTab, loadOverviewData, loadListData]);
 
-  // Bulk Keyboard Actions (A/R)
+  // Bulk Keyboard Actions (A/R/P)
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       // Only trigger if we have items selected
@@ -495,14 +497,35 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
       const target = e.target as HTMLElement;
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
 
+      // Intelligent "A" - Approve
+      // Only affects Drafts / Needs Details
       if (e.key.toLowerCase() === 'a' && activeTab === 'events') {
         e.preventDefault();
-        if (confirm(`Approve ${selectedIds.size} selected items?`)) {
-          const ids = Array.from(selectedIds);
-          setPublishStatus(ids, 'APPROVED_PENDING_DETAILS').then(() => { loadListData(true); setSelectedIds(new Set()); });
+        const drafts = events.filter(ev => selectedIds.has(ev.id) && ['SCRAPED_DRAFT', 'MANUAL_DRAFT', 'DRAFT', 'pending'].includes(ev.status || ''));
+
+        if (drafts.length > 0) {
+          if (confirm(`Approve ${drafts.length} selected drafts?`)) {
+            const ids = drafts.map(d => d.id);
+            setPublishStatus(ids, 'APPROVED_PENDING_DETAILS').then(() => { loadListData(true); setSelectedIds(new Set()); });
+          }
         }
       }
 
+      // Intelligent "P" - Publish
+      // Only affects READY items
+      if (e.key.toLowerCase() === 'p' && activeTab === 'events') {
+        e.preventDefault();
+        const readyItems = events.filter(ev => selectedIds.has(ev.id) && ev.status === 'READY_TO_PUBLISH');
+
+        if (readyItems.length > 0) {
+          if (confirm(`Publish ${readyItems.length} ready events?`)) {
+            const ids = readyItems.map(r => r.id);
+            setPublishStatus(ids, 'PUBLISHED').then(() => { loadListData(true); setSelectedIds(new Set()); });
+          }
+        }
+      }
+
+      // "R" - Reject
       if (e.key.toLowerCase() === 'r' && activeTab === 'events') {
         e.preventDefault();
         if (confirm(`Reject ${selectedIds.size} selected items?`)) {
@@ -514,7 +537,7 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
 
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [selectedIds, activeTab, loadListData]);
+  }, [selectedIds, activeTab, loadListData, events]);
 
   // Sync current view with list data (prevent stale state on quick actions)
   useEffect(() => {
@@ -692,6 +715,10 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
         <span>Select</span>
       </div>
       <div className="flex items-center gap-1">
+        <span className="px-1 py-0.5 bg-gray-100 dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">P</span>
+        <span>Publish</span>
+      </div>
+      <div className="flex items-center gap-1">
         <span className="px-1 py-0.5 bg-gray-100 dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">Esc</span>
         <span>Back / Clear</span>
       </div>
@@ -757,24 +784,46 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
             {/* Stats Row */}
             {stats && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <AnalyticsSummary stats={stats.events} scrapeStats={stats.scraping} history={history} />
+                <AnalyticsSummary
+                  stats={stats.events}
+                  scrapeStats={stats.scraping}
+                  history={history}
+                  onQuickFilter={(type) => {
+                    if (type === 'approved') {
+                      setStatusFilter('published');
+                    } else if (type === 'updated') {
+                      setHasUpdatesFilter('true');
+                      // Reset status to see updates, or keep 'all'? 
+                      // Usually updates are on existing, so 'all' or 'published' might hide drafts.
+                      // Let's set Status to All to show EVERYTHING with updates.
+                      setStatusFilter('all');
+                    } else if (type === 'pending') {
+                      setStatusFilter('draft'); // Or 'needs_details' + 'draft'?
+                      // User asked specifically for "Events to Approve" -> "draft" logic.
+                    } else if (type === 'live') {
+                      setStatusFilter('live');
+                    }
+                    // Switch to events tab
+                    setActiveTab('events');
+                  }}
+                />
               </div>
             )}
 
-            {/* Charts & Scraper */}
+            {/* Map Full Width - MOVED to Middle Row */}
+            <div className="grid grid-cols-12 gap-6 min-h-[500px]">
+              <div className="col-span-12 h-full relative rounded-2xl overflow-hidden border border-gray-200 dark:border-gray-800 shadow-sm">
+                <MapWidget events={mapEvents} cities={cities} />
+              </div>
+            </div>
+
+            {/* Charts & Scraper - MOVED to Bottom Row */}
             <div className="grid grid-cols-12 gap-6 min-h-[400px]">
               <div className="col-span-12 lg:col-span-8 h-full">
                 <ActivityChart data={history} />
               </div>
               <div className="col-span-12 lg:col-span-4 h-full">
                 {stats && <ScrapeWidget stats={stats.scraping} onScrapeComplete={() => window.location.reload()} />}
-              </div>
-            </div>
-
-            {/* Map Full Width */}
-            <div className="grid grid-cols-12 gap-6 min-h-[600px]">
-              <div className="col-span-12 h-full relative rounded-2xl overflow-hidden border border-gray-200 dark:border-gray-800 shadow-sm">
-                <MapWidget events={mapEvents} cities={cities} />
               </div>
             </div>
           </div>
@@ -792,148 +841,158 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
 
               {/* Status & Time Filter (Events only) */}
               {activeTab === 'events' && (
-                <div className="px-2 py-2 border-b dark:border-gray-800 flex gap-2 overflow-x-auto">
-                  <Select
-                    fullWidth={false}
-                    containerClassName="w-auto min-w-[100px]"
-                    value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value as any)}
-                    className="text-xs py-1"
-                  >
-                    <option value="all">Status: All</option>
-                    <option value="draft">Draft</option>
-                    <option value="needs_details">Needs Details</option>
-                    <option value="ready">Ready to Publish</option>
-                    <option value="published">Published</option>
-                    <option value="cancelled">Cancelled</option>
-                    <option value="rejected">Rejected</option>
-                  </Select>
+                <div className="px-2 py-2 border-b dark:border-gray-800 flex gap-2 overflow-x-auto items-center">
+                  {/* Has Updates Filter */}
+                  <RichSelect
+                    value={hasUpdatesFilter}
+                    onChange={setHasUpdatesFilter}
+                    placeholder="Updates"
+                    className="w-[130px]"
+                    options={[
+                      { value: '', label: 'All Items', icon: <Layers className="w-4 h-4" /> },
+                      { value: 'true', label: 'Has Updates', icon: <GitPullRequest className="w-4 h-4" />, description: 'Pending Review' },
+                      { value: 'dismissed', label: 'Dismissed', icon: <EyeOff className="w-4 h-4" />, description: 'Previously ignored' }
+                    ]}
+                  />
 
-                  <Select
-                    fullWidth={false}
-                    containerClassName="w-auto min-w-[100px]"
+                  <RichSelect
+                    value={statusFilter}
+                    onChange={(val) => setStatusFilter(val as any)}
+                    placeholder="Status"
+                    className="w-[140px]"
+                    options={[
+                      { value: 'all', label: 'All Statuses', badgeColor: 'bg-gray-200' },
+                      { value: 'live', label: 'Live Now', badgeColor: 'bg-red-500 animate-pulse' },
+                      { value: 'draft', label: 'Drafts', badgeColor: 'bg-gray-400' },
+                      { value: 'needs_details', label: 'Needs Review', badgeColor: 'bg-amber-500' },
+                      { value: 'ready', label: 'Ready', badgeColor: 'bg-blue-500' },
+                      { value: 'published', label: 'Published', badgeColor: 'bg-green-500' },
+                      { value: 'ended', label: 'Ended', badgeColor: 'bg-gray-500' },
+                      { value: 'rejected', label: 'Rejected', badgeColor: 'bg-red-500' },
+                      { value: 'cancelled', label: 'Canceled', badgeColor: 'bg-red-700' },
+                    ]}
+                  />
+
+                  <RichSelect
                     value={timeFilter}
-                    onChange={(e) => setTimeFilter(e.target.value as any)}
-                    className="text-xs py-1"
-                  >
-                    <option value="upcoming">Upcoming</option>
-                    <option value="past">Past</option>
-                    <option value="all">Time: All</option>
-                  </Select>
+                    onChange={(val) => setTimeFilter(val as any)}
+                    placeholder="Time"
+                    className="w-[120px]"
+                    options={[
+                      { value: 'upcoming', label: 'Upcoming', icon: <Clock className="w-4 h-4" /> },
+                      { value: 'today', label: 'Today', icon: <Calendar className="w-4 h-4" /> },
+                      { value: 'past', label: 'Past', icon: <Clock className="w-4 h-4" /> },
+                      { value: 'all', label: 'All Time', icon: <Database className="w-4 h-4" /> },
+                    ]}
+                  />
 
                   {/* City Filter */}
-                  <Select
-                    fullWidth={false}
-                    containerClassName="w-auto min-w-[100px]"
+                  <RichSelect
                     value={cityFilter}
-                    onChange={(e) => setCityFilter(e.target.value)}
-                    className="text-xs py-1"
-                  >
-                    <option value="">City: All</option>
-                    {cities.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-                  </Select>
+                    onChange={setCityFilter}
+                    placeholder="City"
+                    className="w-[140px]"
+                    options={[
+                      { value: '', label: 'All Cities', icon: <Globe className="w-4 h-4" /> },
+                      ...cities.map(c => ({ value: c.name, label: c.name, icon: <MapPin className="w-4 h-4" /> }))
+                    ]}
+                  />
 
-                  <Select
-                    fullWidth={false}
-                    containerClassName="w-auto min-w-[100px]"
+                  <RichSelect
                     value={sourceFilter}
-                    onChange={(e) => setSourceFilter(e.target.value)}
-                    className="text-xs py-1"
-                  >
-                    <option value="">Source: All</option>
-                    {sources.map(s => (
-                      <option key={s} value={s}>{SOURCE_FILTER_MAP[s] || s}</option>
-                    ))}
-                  </Select>
+                    onChange={setSourceFilter}
+                    placeholder="Source"
+                    className="w-[130px]"
+                    options={[
+                      { value: '', label: 'All Sources', icon: <Globe className="w-4 h-4" /> },
+                      ...sources.map(s => ({ value: s, label: SOURCE_FILTER_MAP[s] || s, sourceCode: s }))
+                    ]}
+                  />
                 </div>
               )}
 
               {/* Venue Filters */}
               {activeTab === 'venues' && (
-                <div className="px-2 py-2 border-b dark:border-gray-800 flex gap-2 overflow-x-auto">
-                  <Select
-                    fullWidth={false}
-                    containerClassName="w-auto min-w-[100px]"
+                <div className="px-2 py-2 border-b dark:border-gray-800 flex gap-2 overflow-x-auto items-center">
+                  <RichSelect
                     value={cityFilter}
-                    onChange={(e) => setCityFilter(e.target.value)}
-                    className="text-xs py-1"
-                  >
-                    <option value="">City: All</option>
-                    {cities.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-                  </Select>
+                    onChange={setCityFilter}
+                    placeholder="City: All"
+                    className="w-[140px]"
+                    options={[
+                      { value: '', label: 'All Cities', icon: <Globe className="w-4 h-4" /> },
+                      ...cities.map(c => ({ value: c.name, label: c.name, icon: <MapPin className="w-4 h-4" /> }))
+                    ]}
+                  />
 
-                  <Select
-                    fullWidth={false}
-                    containerClassName="w-auto min-w-[100px]"
+                  <RichSelect
                     value={venueTypeFilter}
-                    onChange={(e) => setVenueTypeFilter(e.target.value)}
-                    className="text-xs py-1"
-                  >
-                    <option value="">Type: All</option>
-                    <option value="club">Club</option>
-                    <option value="bar">Bar</option>
-                    <option value="concert_hall">Concert Hall</option>
-                    <option value="festival">Festival</option>
-                    <option value="other">Other</option>
-                  </Select>
+                    onChange={setVenueTypeFilter}
+                    placeholder="Type"
+                    className="w-[140px]"
+                    options={[
+                      { value: '', label: 'All Types' },
+                      { value: 'club', label: 'Club', icon: <Music className="w-4 h-4" /> },
+                      { value: 'bar', label: 'Bar', icon: <Music className="w-4 h-4" /> },
+                      { value: 'concert_hall', label: 'Concert Hall', icon: <Music className="w-4 h-4" /> },
+                      { value: 'festival', label: 'Festival', icon: <Music className="w-4 h-4" /> },
+                      { value: 'other', label: 'Other' },
+                    ]}
+                  />
 
-                  <Select
-                    fullWidth={false}
-                    containerClassName="w-auto min-w-[100px]"
+                  <RichSelect
                     value={sourceFilter}
-                    onChange={(e) => setSourceFilter(e.target.value)}
-                    className="text-xs py-1"
-                  >
-                    <option value="">Source: All</option>
-                    {sources.map(s => (
-                      <option key={s} value={s}>{SOURCE_FILTER_MAP[s] || s}</option>
-                    ))}
-                  </Select>
+                    onChange={setSourceFilter}
+                    placeholder="Source"
+                    className="w-[130px]"
+                    options={[
+                      { value: '', label: 'All Sources', icon: <Globe className="w-4 h-4" /> },
+                      ...sources.map(s => ({ value: s, label: SOURCE_FILTER_MAP[s] || s, sourceCode: s }))
+                    ]}
+                  />
                 </div>
               )}
 
               {/* Other Filters (Artists/Cities) - Exclude Events AND Venues */}
               {activeTab !== 'events' && activeTab !== 'venues' && (
-                <div className="px-2 py-2 border-b dark:border-gray-800 flex gap-2 overflow-x-auto">
+                <div className="px-2 py-2 border-b dark:border-gray-800 flex gap-2 overflow-x-auto items-center">
                   {(activeTab === 'artists' || activeTab === 'cities') && (
-                    <Select
-                      fullWidth={false}
-                      containerClassName="w-auto min-w-[100px]"
+                    <RichSelect
                       value={countryFilter}
-                      onChange={(e) => setCountryFilter(e.target.value)}
-                      className="text-xs py-1"
-                    >
-                      <option value="">Country: All</option>
-                      {countries.map(c => <option key={c.code} value={c.name}>{c.name}</option>)}
-                    </Select>
+                      onChange={setCountryFilter}
+                      placeholder="Country"
+                      className="w-[140px]"
+                      options={[
+                        { value: '', label: 'All Countries', icon: <Globe className="w-4 h-4" /> },
+                        ...countries.map(c => ({ value: c.name, label: c.name, icon: <Globe className="w-4 h-4" /> }))
+                      ]}
+                    />
                   )}
                   {activeTab === 'cities' && (
-                    <Select
-                      fullWidth={false}
-                      containerClassName="w-auto min-w-[100px]"
+                    <RichSelect
                       value={activeFilter}
-                      onChange={(e) => setActiveFilter(e.target.value as any)}
-                      className="text-xs py-1"
-                    >
-                      <option value="all">Active: All</option>
-                      <option value="active">Active Only</option>
-                      <option value="inactive">Inactive Only</option>
-                    </Select>
+                      onChange={(val) => setActiveFilter(val as any)}
+                      placeholder="Status"
+                      className="w-[140px]"
+                      options={[
+                        { value: 'all', label: 'Active: All' },
+                        { value: 'active', label: 'Active Only', badgeColor: 'bg-green-500' },
+                        { value: 'inactive', label: 'Inactive Only', badgeColor: 'bg-red-500' },
+                      ]}
+                    />
                   )}
 
                   {activeTab !== 'cities' && (
-                    <Select
-                      fullWidth={false}
-                      containerClassName="w-auto min-w-[100px]"
+                    <RichSelect
                       value={sourceFilter}
-                      onChange={(e) => setSourceFilter(e.target.value)}
-                      className="text-xs py-1"
-                    >
-                      <option value="">Source: All</option>
-                      {sources.map(s => (
-                        <option key={s} value={s}>{SOURCE_FILTER_MAP[s] || s}</option>
-                      ))}
-                    </Select>
+                      onChange={setSourceFilter}
+                      placeholder="Source"
+                      className="w-[130px]"
+                      options={[
+                        { value: '', label: 'All Sources', icon: <Globe className="w-4 h-4" /> },
+                        ...sources.map(s => ({ value: s, label: SOURCE_FILTER_MAP[s] || s, sourceCode: s }))
+                      ]}
+                    />
                   )}
                 </div>
               )}
@@ -952,6 +1011,8 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
                       const newSet = new Set(selectedIds);
                       if (newSet.has(id)) newSet.delete(id); else newSet.add(id);
                       setSelectedIds(newSet);
+                      const idx = events.findIndex(e => e.id === id);
+                      if (idx >= 0) setSelectedIndex(idx);
                     }}
                     onSelectAll={() => {
                       if (selectedIds.size === events.length) setSelectedIds(new Set());
@@ -966,6 +1027,15 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
                       e?.stopPropagation();
                       setPublishStatus([id], 'REJECTED').then(() => loadListData(true));
                     }}
+                    onPublish={(id, e) => {
+                      e?.stopPropagation();
+                      if (confirm('Publish this event?')) {
+                        setPublishStatus([id], 'PUBLISHED').then(() => loadListData(true));
+                      }
+                    }}
+                    onItemRef={(index, node) => {
+                      itemRefs.current[index] = node;
+                    }}
                     focusedId={currentView?.type === 'event' && currentView.id ? currentView.id : ((activeTab === 'events' && selectedIndex >= 0 && events[selectedIndex]) ? events[selectedIndex].id : null)}
                   />
                 ) : activeTab === 'venues' ? (
@@ -977,6 +1047,8 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
                       const newSet = new Set(selectedIds);
                       if (newSet.has(id)) newSet.delete(id); else newSet.add(id);
                       setSelectedIds(newSet);
+                      const idx = venues.findIndex(v => v.id === id);
+                      if (idx >= 0) setSelectedIndex(idx);
                     }}
                     onSelectAll={() => {
                       if (selectedIds.size === venues.length) setSelectedIds(new Set());
@@ -994,6 +1066,8 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
                       const newSet = new Set(selectedIds);
                       if (newSet.has(id)) newSet.delete(id); else newSet.add(id);
                       setSelectedIds(newSet);
+                      const idx = artists.findIndex(a => a.id === id);
+                      if (idx >= 0) setSelectedIndex(idx);
                     }}
                     onSelectAll={() => {
                       if (selectedIds.size === artists.length) setSelectedIds(new Set());
@@ -1011,6 +1085,8 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
                       const newSet = new Set(selectedIds);
                       if (newSet.has(id)) newSet.delete(id); else newSet.add(id);
                       setSelectedIds(newSet);
+                      const idx = adminCities.findIndex(c => String(c.id) === id);
+                      if (idx >= 0) setSelectedIndex(idx);
                     }}
                     onSelectAll={() => {
                       if (selectedIds.size === adminCities.length) setSelectedIds(new Set());
@@ -1028,6 +1104,8 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
                       const newSet = new Set(selectedIds);
                       if (newSet.has(id)) newSet.delete(id); else newSet.add(id);
                       setSelectedIds(newSet);
+                      const idx = organizers.findIndex(o => String(o.id) === id);
+                      if (idx >= 0) setSelectedIndex(idx);
                     }}
                     onSelectAll={() => {
                       if (selectedIds.size === organizers.length) setSelectedIds(new Set());
@@ -1045,6 +1123,8 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
                       const newSet = new Set(selectedIds);
                       if (newSet.has(id)) newSet.delete(id); else newSet.add(id);
                       setSelectedIds(newSet);
+                      const idx = guestUsers.findIndex(u => u.id === id);
+                      if (idx >= 0) setSelectedIndex(idx);
                     }}
                     onSelectAll={() => {
                       if (selectedIds.size === guestUsers.length) setSelectedIds(new Set());
@@ -1062,6 +1142,8 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
                       const newSet = new Set(selectedIds);
                       if (newSet.has(id)) newSet.delete(id); else newSet.add(id);
                       setSelectedIds(newSet);
+                      const idx = reports.findIndex(r => String(r.id) === id);
+                      if (idx >= 0) setSelectedIndex(idx);
                     }}
                     onSelectAll={() => {
                       if (selectedIds.size === reports.length) setSelectedIds(new Set());
@@ -1101,27 +1183,52 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
                     <span className="text-xs font-semibold">
                       {selectedIds.size} selected
                     </span>
-                    <div className="flex items-center gap-3">
-                      {/* Bulk Actions for Events */}
+                    <div className="flex items-center gap-2">
+                      {/* Smart Actions based on selection */}
                       {activeTab === 'events' && (
-                        <>
-                          <button onClick={() => {
-                            if (confirm(`Approve ${selectedIds.size} selected?`)) {
-                              const ids = Array.from(selectedIds);
-                              setPublishStatus(ids, 'APPROVED_PENDING_DETAILS').then(() => { loadListData(); setSelectedIds(new Set()); });
-                            }
-                          }} className="text-xs hover:text-green-300 font-medium flex items-center gap-1">
-                            Approve <span className="opacity-50 text-[10px] ml-0.5 mb-0.5">[A]</span>
-                          </button>
-                          <button onClick={() => {
-                            if (confirm(`Reject ${selectedIds.size} selected?`)) {
-                              const ids = Array.from(selectedIds);
-                              setPublishStatus(ids, 'REJECTED').then(() => { loadListData(); setSelectedIds(new Set()); });
-                            }
-                          }} className="text-xs hover:text-red-300 font-medium flex items-center gap-1">
-                            Reject <span className="opacity-50 text-[10px] ml-0.5 mb-0.5">[R]</span>
-                          </button>
-                        </>
+                        (() => {
+                          const selectedEvents = events.filter(e => selectedIds.has(e.id));
+                          const hasDrafts = selectedEvents.some(e => ['DRAFT', 'MANUAL_DRAFT', 'SCRAPED_DRAFT', 'pending'].includes(e.status || ''));
+                          const hasReady = selectedEvents.some(e => e.status === 'READY_TO_PUBLISH');
+                          const hasPendingReview = selectedEvents.some(e => e.status === 'APPROVED_PENDING_DETAILS');
+
+                          return (
+                            <>
+                              {(hasDrafts || hasPendingReview) && (
+                                <button onClick={() => {
+                                  const drafts = selectedEvents.filter(e => ['DRAFT', 'MANUAL_DRAFT', 'SCRAPED_DRAFT', 'pending'].includes(e.status || ''));
+                                  if (confirm(`Approve ${drafts.length} drafts?`)) {
+                                    const ids = drafts.map(e => e.id);
+                                    setPublishStatus(ids, 'APPROVED_PENDING_DETAILS').then(() => { loadListData(); setSelectedIds(new Set()); });
+                                  }
+                                }} className="px-2 py-1 bg-green-600 hover:bg-green-500 rounded text-[10px] font-bold uppercase tracking-wide flex items-center gap-1 transition-colors">
+                                  Approve <span className="opacity-75">[A]</span>
+                                </button>
+                              )}
+
+                              {(hasReady) && (
+                                <button onClick={() => {
+                                  const ready = selectedEvents.filter(e => e.status === 'READY_TO_PUBLISH');
+                                  if (confirm(`Publish ${ready.length} events?`)) {
+                                    const ids = ready.map(e => e.id);
+                                    setPublishStatus(ids, 'PUBLISHED').then(() => { loadListData(); setSelectedIds(new Set()); });
+                                  }
+                                }} className="px-2 py-1 bg-blue-600 hover:bg-blue-500 rounded text-[10px] font-bold uppercase tracking-wide flex items-center gap-1 transition-colors">
+                                  Publish <span className="opacity-75">[P]</span>
+                                </button>
+                              )}
+
+                              <button onClick={() => {
+                                if (confirm(`Reject ${selectedIds.size} items?`)) {
+                                  const ids = Array.from(selectedIds);
+                                  setPublishStatus(ids, 'REJECTED').then(() => { loadListData(); setSelectedIds(new Set()); });
+                                }
+                              }} className="px-2 py-1 bg-red-600 hover:bg-red-500 rounded text-[10px] font-bold uppercase tracking-wide flex items-center gap-1 transition-colors">
+                                Reject <span className="opacity-75">[R]</span>
+                              </button>
+                            </>
+                          );
+                        })()
                       )}
 
                       {/* Generic Clear */}

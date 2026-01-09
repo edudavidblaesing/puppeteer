@@ -13,7 +13,11 @@ export interface EventListItemProps {
   onEdit: (event: Event) => void;
   onApprove?: (id: string, e: React.MouseEvent | React.KeyboardEvent) => void;
   onReject?: (id: string, e: React.MouseEvent | React.KeyboardEvent) => void;
+  onPublish?: (id: string, e: React.MouseEvent | React.KeyboardEvent) => void;
+  onVenueClick?: (id: string) => void;
+  onArtistClick?: (name: string) => void;
   isFocused?: boolean;
+  onRef?: (node: HTMLDivElement | null) => void;
 }
 
 export function EventListItem({
@@ -23,7 +27,11 @@ export function EventListItem({
   onEdit,
   onApprove,
   onReject,
-  isFocused
+  onPublish,
+  onVenueClick,
+  onArtistClick,
+  isFocused,
+  onRef
 }: EventListItemProps) {
   // Get unique sources
   const sources = item.source_references?.reduce((acc: string[], ref: any) => {
@@ -101,7 +109,8 @@ export function EventListItem({
     }
 
     const isDraftState = ['MANUAL_DRAFT', 'SCRAPED_DRAFT', 'DRAFT', 'draft', 'pending'].includes(s);
-    const showHoverActions = isDraftState && onApprove && onReject;
+    const isReadyState = s === 'READY_TO_PUBLISH' || s === 'ready';
+    const showHoverActions = (isDraftState && onApprove && onReject) || (isReadyState && onPublish);
 
     return (
       <div className="flex items-center gap-2 justify-end min-h-[22px]">
@@ -116,23 +125,36 @@ export function EventListItem({
           {badgeText}
         </span>
 
-        {/* Actions: Shown on hover if draft */}
+        {/* Actions: Shown on hover */}
         {showHoverActions && (
           <div className="hidden group-hover:flex items-center gap-1">
-            <button
-              onClick={(e) => { e.stopPropagation(); onApprove(item.id, e); }}
-              className="h-5 px-2 flex items-center justify-center rounded-full border border-green-200 bg-green-50 text-green-700 hover:bg-green-100 dark:border-green-900/50 dark:bg-green-900/20 dark:text-green-400 dark:hover:bg-green-900/40 text-[10px] uppercase font-bold tracking-wide transition-colors"
-              title="Approve (A)"
-            >
-              Approve
-            </button>
-            <button
-              onClick={(e) => { e.stopPropagation(); onReject(item.id, e); }}
-              className="h-5 px-2 flex items-center justify-center rounded-full border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/40 text-[10px] uppercase font-bold tracking-wide transition-colors"
-              title="Reject (R)"
-            >
-              Reject
-            </button>
+            {isDraftState && (
+              <>
+                <button
+                  onClick={(e) => { e.stopPropagation(); onApprove && onApprove(item.id, e); }}
+                  className="h-5 px-2 flex items-center justify-center rounded-full border border-green-200 bg-green-50 text-green-700 hover:bg-green-100 dark:border-green-900/50 dark:bg-green-900/20 dark:text-green-400 dark:hover:bg-green-900/40 text-[10px] uppercase font-bold tracking-wide transition-colors"
+                  title="Approve (A)"
+                >
+                  Approve
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); onReject && onReject(item.id, e); }}
+                  className="h-5 px-2 flex items-center justify-center rounded-full border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/40 text-[10px] uppercase font-bold tracking-wide transition-colors"
+                  title="Reject (R)"
+                >
+                  Reject
+                </button>
+              </>
+            )}
+            {isReadyState && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onPublish && onPublish(item.id, e); }}
+                className="h-5 px-2 flex items-center justify-center rounded-full border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-blue-900/50 dark:bg-blue-900/20 dark:text-blue-400 dark:hover:bg-blue-900/40 text-[10px] uppercase font-bold tracking-wide transition-colors"
+                title="Publish (P)"
+              >
+                Publish
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -155,22 +177,25 @@ export function EventListItem({
         </div>
       }
       subtitle={
-        <div className="flex items-center gap-x-2 gap-y-1 flex-wrap">
+        <div className="flex flex-col gap-0.5 mt-0.5">
           {item.venue_name && (
-            <span className="text-gray-600 dark:text-gray-400">
+            <span
+              className={clsx("text-xs text-gray-600 dark:text-gray-400 font-medium", onVenueClick && "cursor-pointer hover:underline hover:text-primary-600")}
+              onClick={(e) => {
+                if (onVenueClick && item.venue_id) {
+                  e.stopPropagation();
+                  onVenueClick(item.venue_id);
+                }
+              }}
+            >
               {item.venue_name}
             </span>
           )}
           {artistsList.length > 0 && (
-            <>
-              <span className="text-gray-300 dark:text-gray-600 mx-1">•</span>
-              <div className="flex gap-1">
-                {artistsList.slice(0, 2).map((a, i) => (
-                  <span key={i} className="text-gray-500 dark:text-gray-400 px-1.5 rounded text-[10px]">{a}</span>
-                ))}
-                {artistsList.length > 2 && <span className="text-[10px]">+{artistsList.length - 2}</span>}
-              </div>
-            </>
+            <div className="text-[11px] text-gray-500 dark:text-gray-500 truncate">
+              {artistsList.slice(0, 3).join(', ')}
+              {artistsList.length > 3 && ` + ${artistsList.length - 3} more`}
+            </div>
           )}
         </div>
       }
@@ -184,8 +209,8 @@ export function EventListItem({
       className={clsx(isFocused && "ring-2 ring-primary-500 z-10")}
 
       statusBadge={<StatusBadge />}
-      // Actions: implicitly handled by StatusBadge returning buttons for drafts
-      actions={undefined}
+      // Actions: implicitly handled by StatusBadge returning buttons on hover
+      actionsHover={undefined}
 
       metaRight={
         <>
@@ -200,6 +225,7 @@ export function EventListItem({
           </div>
         </>
       }
+      domRef={onRef}
     />
   );
 }
@@ -213,7 +239,11 @@ interface EventListProps {
   onEdit: (event: Event) => void;
   onApprove?: (id: string, e: React.MouseEvent | React.KeyboardEvent) => void;
   onReject?: (id: string, e: React.MouseEvent | React.KeyboardEvent) => void;
+  onPublish?: (id: string, e: React.MouseEvent | React.KeyboardEvent) => void; // Added onPublish
+  onVenueClick?: (id: string) => void;
+  onArtistClick?: (name: string) => void;
   focusedId?: string | null;
+  onItemRef?: (index: number, node: HTMLDivElement | null) => void;
 }
 
 export function EventList({
@@ -225,7 +255,11 @@ export function EventList({
   onEdit,
   onApprove,
   onReject,
-  focusedId
+  onPublish, // Destructure onPublish
+  onVenueClick,
+  onArtistClick,
+  focusedId,
+  onItemRef
 }: EventListProps) {
 
   if (isLoading) {
@@ -248,16 +282,20 @@ export function EventList({
   return (
     <div className="bg-white dark:bg-gray-900 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-800">
       <div className="divide-y divide-gray-200 dark:divide-gray-800">
-        {events.map((item) => (
+        {events.map((item, index) => (
           <EventListItem
             key={item.id}
             event={item}
             selected={selectedIds.has(item.id)}
             onSelect={onSelect}
-            onEdit={onEdit}
-            onApprove={onApprove}
-            onReject={onReject}
+            onEdit={onEdit} // Pass onEdit directly, as it expects the event object
+            onApprove={onApprove ? (id, e) => onApprove(id, e) : undefined} // Pass id and event
+            onReject={onReject ? (id, e) => onReject(id, e) : undefined} // Pass id and event
+            onPublish={onPublish ? (id, e) => onPublish(id, e) : undefined} // Pass onPublish
+            onVenueClick={onVenueClick}
+            onArtistClick={onArtistClick}
             isFocused={focusedId === item.id}
+            onRef={(node) => onItemRef?.(index, node)}
           />
         ))}
       </div>

@@ -1,39 +1,8 @@
 version: '3.8'
 
 services:
-  # Event Scraper Service
-  event-scraper:
-    build: ./backend/scraper
-    container_name: event-scraper-service
-    ports:
-      - "3007:3000"
-      - "9225:9223"
-    environment:
-      - PORT=3000
-      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
-      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
-      - PROXY_SERVER=NONE
-      - API_KEY=${API_KEY:-your-secure-api-key-here}
-      - TICKETMASTER_API_KEY=${TICKETMASTER_API_KEY:-nxUv3tE9qx64KGji30MwrYZFSxfb9p6r}
-      - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID}
-      - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET}
-      - DATABASE_URL=postgresql://eventuser:eventpass@postgres:5432/socialevents
-      # For migration script
-      - PGHOST=postgres
-      - PGPORT=5432
-      - PGUSER=eventuser
-      - PGPASSWORD=eventpass
-      - PGDATABASE=socialevents
-      # Postgres admin credentials for database creation
-      - POSTGRES_USER=eventuser
-      - POSTGRES_PASSWORD=eventpass
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: unless-stopped
-
   # PostgreSQL Database
-  postgres:
+  database:
     image: postgres:15-alpine
     container_name: socialevents-db
     environment:
@@ -51,19 +20,97 @@ services:
       retries: 5
     restart: unless-stopped
 
+  # API Service
+  api:
+    build:
+      context: .
+      dockerfile: backend/api/Dockerfile
+    container_name: social-events-api
+    ports:
+      - "3007:3007"
+    environment:
+      - PORT=3007
+      - DATABASE_URL=postgresql://eventuser:eventpass@database:5432/socialevents
+      - SCRAPER_URL=http://scraper-service:3008
+      - JWT_SECRET=${JWT_SECRET:-your-secret-key}
+      # Email Env
+      - EMAIL_SERVICE=${EMAIL_SERVICE}
+      - EMAIL_USER=${EMAIL_USER}
+      - EMAIL_PASS=${EMAIL_PASS}
+      # DB Connection (for shared lib)
+      - PGHOST=database
+      - PGPORT=5432
+      - PGUSER=eventuser
+      - PGPASSWORD=eventpass
+      - PGDATABASE=socialevents
+    command: npm run dev
+    volumes:
+      - ./backend/api:/usr/src/app/backend/api
+      - ./backend/shared:/usr/src/app/backend/shared
+    depends_on:
+      database:
+        condition: service_healthy
+      scraper-service:
+        condition: service_started
+    restart: unless-stopped
+
+  # Scraper Service (Worker)
+  scraper-service:
+    build:
+      context: .
+      dockerfile: backend/scraper/Dockerfile
+    container_name: social-events-scraper
+    ports:
+      - "3008:3008"
+      - "9225:9223"
+    environment:
+      - PORT=3008
+      - DATABASE_URL=postgresql://eventuser:eventpass@database:5432/socialevents
+      # Migration Vars
+      - PGHOST=database
+      - PGPORT=5432
+      - PGUSER=eventuser
+      - PGPASSWORD=eventpass
+      - PGDATABASE=socialevents
+      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      - API_KEY=${API_KEY:-your-secure-api-key-here}
+      - TICKETMASTER_API_KEY=${TICKETMASTER_API_KEY:-nxUv3tE9qx64KGji30MwrYZFSxfb9p6r}
+      - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID}
+      - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET}
+    command: >
+      sh -c "./run-migrations.sh && 
+             socat TCP-LISTEN:9223,fork,reuseaddr TCP:127.0.0.1:9222 & 
+             npm run dev"
+    volumes:
+      - ./backend/scraper:/usr/src/app/backend/scraper
+      - ./backend/shared:/usr/src/app/backend/shared
+    depends_on:
+      database:
+        condition: service_healthy
+    restart: unless-stopped
+
   # Admin Dashboard
   admin:
     build:
       context: ./admin
+      target: deps
       args:
         - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:3007}
         - NEXT_PUBLIC_API_KEY=${API_KEY:-your-secure-api-key-here}
-    container_name: events-admin
+    container_name: social-events-admin
     ports:
-      - "3008:3000"
+      - "3000:3000"
     environment:
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:3007}
       - NEXT_PUBLIC_API_KEY=${API_KEY:-your-secure-api-key-here}
+    command: npm run dev
+    volumes:
+      - ./admin:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - api
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.events-admin.rule=Host(`eventadmin.davidblaesing.com`)"

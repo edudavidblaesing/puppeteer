@@ -1,6 +1,14 @@
 const { Pool } = require('pg');
-const { processScrapedEvents } = require('../src/services/scraperProcessor');
 const { v4: uuidv4 } = require('uuid');
+
+// Set env vars for shared pool used by scraperProcessor
+process.env.PGUSER = process.env.PGUSER || 'eventuser';
+process.env.PGHOST = process.env.PGHOST || 'localhost';
+process.env.PGDATABASE = process.env.PGDATABASE || 'socialevents';
+process.env.PGPASSWORD = process.env.PGPASSWORD || 'eventpass';
+process.env.PGPORT = process.env.PGPORT || '5433';
+
+const { processScrapedEvents } = require('../src/services/scraperProcessor');
 
 const pool = new Pool({
     user: process.env.PGUSER,
@@ -93,6 +101,32 @@ async function run() {
 
         } else {
             console.log('✅ SUCCESS: No phantom updates detected.');
+        }
+
+        // 5. Third Pass: Real Update
+        console.log('Running Third Pass (Changed Data)...');
+        const testEvent3 = { ...testEvent, title: 'Phantom Test Event UPDATED' };
+
+        const stats3 = await processScrapedEvents([testEvent3], { scopes: ['event'] });
+        console.log('Pass 3 Stats:', stats3);
+
+        if (stats3.updated === 1) {
+            console.log('✅ SUCCESS: Real update detected.');
+
+            // Verify DB content
+            const res = await pool.query('SELECT * FROM scraped_events WHERE source_code = $1 AND source_event_id = $2', [sourceCode, sourceEventId]);
+            const stored = res.rows[0];
+
+            if (stored.has_changes && stored.changes && stored.changes.title) {
+                console.log('✅ SUCCESS: changes JSON and has_changes flag set correctly.');
+                console.log('Changes:', JSON.stringify(stored.changes));
+            } else {
+                console.error('❌ FAILURE: has_changes or changes column missing/incorrect.');
+                console.log('Stored:', JSON.stringify(stored, null, 2));
+            }
+
+        } else {
+            console.error('❌ FAILURE: Real update NOT detected!');
         }
 
     } catch (err) {

@@ -1,5 +1,5 @@
 
-const { pool } = require('../db');
+const { pool } = require('@social-events/shared').db;
 
 const EVENT_STATES = {
     SCRAPED_DRAFT: 'SCRAPED_DRAFT',

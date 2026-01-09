@@ -2,7 +2,7 @@ import React from 'react';
 import { ResetSectionButton } from '@/components/ui/ResetSectionButton';
 
 interface FormSectionProps {
-    title: string;
+    title: React.ReactNode;
     icon?: React.ReactNode;
     children?: React.ReactNode;
 

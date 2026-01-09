@@ -1,0 +1,2 @@
+ALTER TABLE scraped_artists
+ADD COLUMN IF NOT EXISTS bio TEXT;

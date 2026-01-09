@@ -1,4 +1,4 @@
-const { pool } = require('../db');
+const { pool } = require('@social-events/shared').db;
 const { stringSimilarity } = require('../utils/stringUtils');
 
 // Source priority (lower = higher priority)

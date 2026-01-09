@@ -38,6 +38,10 @@ async function getEvent(id) {
                 contentUrl
                 flyerFront
                 flyerBack
+                images {
+                    filename
+                    type
+                }
                 isTicketed
                 venue {
                     id
@@ -149,6 +153,10 @@ async function getListings(filters, pageSize) {
                         endTime
                         contentUrl
                         flyerFront
+                        images {
+                            filename
+                            type
+                        }
                         content
                         venue {
                             id
