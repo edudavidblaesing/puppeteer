@@ -15,66 +15,56 @@ const generateCode = () => Math.floor(100000 + Math.random() * 900000).toString(
 
 // Register
 const register = async (req, res) => {
-    const { email, password, username, full_name } = req.body;
+    const { email, password, username, full_name, phone_number } = req.body;
+
+    if (!phone_number) return res.status(400).json({ error: 'Phone number is required' });
 
     try {
-        // Check if user exists
-        const userCheck = await pool.query('SELECT * FROM users WHERE email = $1 OR username = $2', [email, username]);
+        // Check if user exists (by email, username OR phone)
+        const userCheck = await pool.query(
+            'SELECT * FROM users WHERE email = $1 OR username = $2 OR phone_number = $3',
+            [email, username, phone_number]
+        );
 
         if (userCheck.rows.length > 0) {
             const existingUser = userCheck.rows[0];
 
-            // If user exists and is verified, blocked
             if (existingUser.is_verified) {
-                return res.status(409).json({ error: 'User with this email or username already exists' });
+                return res.status(409).json({ error: 'User already exists' });
             }
 
-            // If user exists but NOT verified, we resend the code (and update it)
-            // We can also update the password if they changed it, but let's stick to resending logic for now
-            // Actually, better to update the record with new details in case they fixed a typo in name/password
+            // Resend logic (update phone if provided)
             const hashedPassword = await hashPassword(password);
             const code = generateCode();
-            const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 mins
+            const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
 
-            // Send Email
             await sendVerificationEmail(email, code);
 
             await pool.query(
                 `UPDATE users 
-                 SET password_hash = $1, full_name = $2, verification_code = $3, verification_expires_at = $4, username = $5
-                 WHERE id = $6`,
-                [hashedPassword, full_name, code, expiresAt, username, existingUser.id]
+                 SET password_hash = $1, full_name = $2, verification_code = $3, 
+                     verification_expires_at = $4, username = $5, phone_number = $6
+                 WHERE id = $7`,
+                [hashedPassword, full_name, code, expiresAt, username, phone_number, existingUser.id]
             );
 
-            return res.status(200).json({
-                success: true,
-                message: 'Verification sender (resend)',
-                email: email
-            });
+            return res.status(200).json({ success: true, message: 'Verification resend', email });
         }
 
         const hashedPassword = await hashPassword(password);
         const code = generateCode();
-        const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 mins
+        const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
 
-        // ...
-
-        // Mock Send Email (Log to console) -> Now real send
-        // console.log(`[EMAIL MOCK] To: ${email}, Code: ${code}`);
         await sendVerificationEmail(email, code);
 
-        const result = await pool.query(
-            `INSERT INTO users (email, password_hash, username, full_name, is_verified, verification_code, verification_expires_at) 
-             VALUES ($1, $2, $3, $4, false, $5, $6) 
-             RETURNING id, email, username, full_name, created_at`,
-            [email, hashedPassword, username, full_name, code, expiresAt]
+        await pool.query(
+            `INSERT INTO users (email, password_hash, username, full_name, phone_number, is_verified, verification_code, verification_expires_at) 
+             VALUES ($1, $2, $3, $4, $5, false, $6, $7) 
+             RETURNING id`,
+            [email, hashedPassword, username, full_name, phone_number, code, expiresAt]
         );
 
-        res.status(201).json({
-            success: true,
-            message: 'Verification code sent',
-            email: email
-        });
+        res.status(201).json({ success: true, message: 'Verification code sent', email });
 
     } catch (e) {
         console.error('Register error:', e);
@@ -156,7 +146,12 @@ const login = async (req, res) => {
 // Get Profile (Me)
 const getMe = async (req, res) => {
     try {
-        const result = await pool.query('SELECT * FROM users WHERE id = $1', [req.user.id]);
+        const result = await pool.query(`
+            SELECT u.*,
+                   (SELECT COUNT(*) FROM follows WHERE following_id = u.id) as followers_count,
+                   (SELECT COUNT(*) FROM follows WHERE follower_id = u.id) as following_count
+            FROM users u WHERE u.id = $1
+        `, [req.user.id]);
         const user = result.rows[0];
 
         if (!user) return res.status(404).json({ error: 'User not found' });
@@ -168,7 +163,10 @@ const getMe = async (req, res) => {
     }
 };
 
-// Update Profile
+// ...
+
+
+
 const updateProfile = async (req, res) => {
     const { full_name, bio, avatar_url, location_lat, location_lng, fcm_token } = req.body;
     const userId = req.user.id;
@@ -183,6 +181,7 @@ const updateProfile = async (req, res) => {
     if (location_lat !== undefined) { fields.push(`location_lat = $${idx++}`); values.push(location_lat); }
     if (location_lng !== undefined) { fields.push(`location_lng = $${idx++}`); values.push(location_lng); }
     if (fcm_token !== undefined) { fields.push(`fcm_token = $${idx++}`); values.push(fcm_token); }
+    if (req.body.interests !== undefined) { fields.push(`interests = $${idx++}`); values.push(req.body.interests); }
 
     if (fields.length === 0) return res.status(400).json({ error: 'No fields to update' });
 
@@ -241,68 +240,82 @@ const verifyGuestToken = (req, res, next) => {
 };
 
 // Friendships
-const sendFriendRequest = async (req, res) => {
+// Friendships & Follows
+const syncContacts = async (req, res) => {
     const userId = req.user.id;
-    const { targetUserId } = req.body;
+    const { contacts } = req.body; // Array of phone numbers
 
-    if (userId === targetUserId) return res.status(400).json({ error: 'Cannot add yourself' });
+    if (!contacts || !Array.isArray(contacts)) return res.status(400).json({ error: 'Contacts array required' });
 
     try {
-        await pool.query(
-            `INSERT INTO friendships (user_id_1, user_id_2, status) 
-             VALUES (LEAST($1::uuid, $2::uuid), GREATEST($1::uuid, $2::uuid), 'pending')
-             ON CONFLICT (user_id_1, user_id_2) DO NOTHING`,
-            [userId, targetUserId]
-        );
-        res.json({ success: true, message: 'Request sent' });
-    } catch (e) {
-        console.error('SendFriendRequest Error:', e);
-        console.error('UserId:', userId, 'TargetUserId:', targetUserId);
-        res.status(500).json({ error: e.message, details: e.toString() });
-    }
-};
-
-const respondToFriendRequest = async (req, res) => {
-    const userId = req.user.id;
-    const { targetUserId, status } = req.body; // status: 'accepted' or 'rejected'
-
-    if (!['accepted', 'rejected'].includes(status)) return res.status(400).json({ error: 'Invalid status' });
-
-    try {
-        if (status === 'rejected') {
-            await pool.query(
-                `DELETE FROM friendships 
-                 WHERE user_id_1 = LEAST($1, $2) AND user_id_2 = GREATEST($1, $2)`,
-                [userId, targetUserId]
-            );
-            return res.json({ success: true, message: 'Request rejected' });
-        }
-
+        // Find users matching phone numbers
         const result = await pool.query(
-            `UPDATE friendships 
-             SET status = 'accepted', updated_at = NOW() 
-             WHERE user_id_1 = LEAST($1, $2) AND user_id_2 = GREATEST($1, $2) 
-             RETURNING *`,
-            [userId, targetUserId]
+            `SELECT id, username, full_name, avatar_url, phone_number 
+             FROM users 
+             WHERE phone_number = ANY($1) AND id != $2`,
+            [contacts, userId]
         );
 
-        if (result.rows.length === 0) return res.status(404).json({ error: 'Friendship request not found' });
+        const foundUsers = result.rows;
 
-        res.json({ success: true, message: 'Friend accepted' });
+        // Check which ones we already follow
+        const followsCheck = await pool.query(
+            'SELECT following_id FROM follows WHERE follower_id = $1',
+            [userId]
+        );
+        const followingIds = new Set(followsCheck.rows.map(r => r.following_id));
 
+        const usersWithStatus = foundUsers.map(u => ({
+            ...u,
+            is_following: followingIds.has(u.id)
+        }));
+
+        res.json({ data: usersWithStatus });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
 };
 
-const getFriends = async (req, res) => {
+const followUser = async (req, res) => {
+    const userId = req.user.id;
+    const { targetUserId } = req.body;
+
+    if (userId === targetUserId) return res.status(400).json({ error: 'Cannot follow yourself' });
+
+    try {
+        await pool.query(
+            'INSERT INTO follows (follower_id, following_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+            [userId, targetUserId]
+        );
+        res.json({ success: true, message: 'Followed' });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+};
+
+const unfollowUser = async (req, res) => {
+    const userId = req.user.id;
+    const { targetUserId } = req.body;
+
+    try {
+        await pool.query(
+            'DELETE FROM follows WHERE follower_id = $1 AND following_id = $2',
+            [userId, targetUserId]
+        );
+        res.json({ success: true, message: 'Unfollowed' });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+};
+
+const getFollowing = async (req, res) => {
     const userId = req.user.id;
     try {
         const result = await pool.query(
             `SELECT u.id, u.username, u.full_name, u.avatar_url 
-             FROM friendships f
-             JOIN users u ON (u.id = CASE WHEN f.user_id_1 = $1 THEN f.user_id_2 ELSE f.user_id_1 END)
-             WHERE (f.user_id_1 = $1 OR f.user_id_2 = $1) AND f.status = 'accepted'`,
+             FROM follows f
+             JOIN users u ON f.following_id = u.id
+             WHERE f.follower_id = $1`,
             [userId]
         );
         res.json({ data: result.rows });
@@ -373,12 +386,9 @@ const getEventsForMap = async (req, res) => {
                            'avatar_url', u.avatar_url
                        )) as friends
                 FROM event_attendance ea
-                JOIN friendships f ON (f.user_id_1 = $1 OR f.user_id_2 = $1) AND f.status = 'accepted'
+                JOIN follows f ON (f.following_id = ea.user_id AND f.follower_id = $1)
                 JOIN users u ON ea.user_id = u.id
-                WHERE (
-                    (ea.user_id = f.user_id_1 AND f.user_id_2 = $1) OR 
-                    (ea.user_id = f.user_id_2 AND f.user_id_1 = $1)
-                ) AND ea.status = 'going'
+                WHERE ea.status = 'going'
                 GROUP BY ea.event_id
             )
             SELECT e.id, e.title, e.date, e.venue_name, 
@@ -405,6 +415,18 @@ const getEventsForMap = async (req, res) => {
             query += `, 0 as distance `;
         }
 
+        // Time Filter (today, tomorrow, this_week)
+        const { time_filter } = req.query;
+        let dateClause = "AND e.date > (NOW() - INTERVAL '24 hours')"; // Default: Recent + Upcoming
+
+        if (time_filter === 'today') {
+            dateClause = "AND e.date >= CURRENT_DATE AND e.date < CURRENT_DATE + INTERVAL '1 day'";
+        } else if (time_filter === 'tomorrow') {
+            dateClause = "AND e.date >= CURRENT_DATE + INTERVAL '1 day' AND e.date < CURRENT_DATE + INTERVAL '2 days'";
+        } else if (time_filter === 'this_week') {
+            dateClause = "AND e.date >= CURRENT_DATE AND e.date < CURRENT_DATE + INTERVAL '7 days'";
+        }
+
         query += `
             FROM events e
             LEFT JOIN friend_attendance fa ON e.id = fa.event_id
@@ -412,7 +434,7 @@ const getEventsForMap = async (req, res) => {
               e.status = 'PUBLISHED' 
               AND e.latitude IS NOT NULL 
               AND e.longitude IS NOT NULL
-              AND e.date > (NOW() - INTERVAL '24 hours') -- Show upcoming + recently ended (24h)
+              ${dateClause}
         `;
 
         if (lat && lng) {
@@ -468,12 +490,15 @@ const getEventDetails = async (req, res) => {
 
         let query = `
             WITH ratings_stats AS(
-            SELECT AVG(rating):: numeric(2, 1) as avg_rating, COUNT(*) as rating_count FROM event_ratings WHERE event_id = $1
-        ),
+                SELECT AVG(rating):: numeric(2, 1) as avg_rating, COUNT(*) as rating_count FROM event_ratings WHERE event_id = $1
+            ),
             all_attendees_count AS(
                 SELECT COUNT(*) as count FROM event_attendance WHERE event_id = $1 AND status = 'going'
+            ),
+            all_interested_count AS(
+                SELECT COUNT(*) as count FROM event_attendance WHERE event_id = $1 AND status = 'interested'
             )
-                `;
+        `;
 
         if (userId) {
             params.push(userId);
@@ -483,47 +508,61 @@ const getEventDetails = async (req, res) => {
                 my_attendance AS(
                     SELECT status FROM event_attendance WHERE user_id = $2 AND event_id = $1
                 ),
-                    friend_attendance AS(
-                        SELECT ea.event_id,
-                        json_agg(json_build_object(
-                            'id', u.id,
-                            'username', u.username,
-                            'full_name', u.full_name,
-                            'avatar_url', u.avatar_url
-                        )) as friends
-                FROM event_attendance ea
-                JOIN friendships f ON(f.user_id_1 = $2 OR f.user_id_2 = $2) AND f.status = 'accepted'
-                JOIN users u ON ea.user_id = u.id
-                WHERE(
-                            (ea.user_id = f.user_id_1 AND f.user_id_2 = $2) OR
-                        (ea.user_id = f.user_id_2 AND f.user_id_1 = $2)
-                    ) AND ea.status = 'going' AND ea.event_id = $1
-                GROUP BY ea.event_id
-            ),
-            my_rating AS(
-                        SELECT rating FROM event_ratings WHERE user_id = $2 AND event_id = $1
-                    )
-    `;
+                friend_attendance AS(
+                    SELECT ea.event_id,
+                           json_agg(json_build_object(
+                               'id', u.id, 
+                               'username', u.username, 
+                               'full_name', u.full_name, 
+                               'avatar_url', u.avatar_url
+                           )) as friends
+                    FROM event_attendance ea
+                    JOIN follows f ON (f.following_id = ea.user_id AND f.follower_id = $2)
+                    JOIN users u ON ea.user_id = u.id
+                    WHERE ea.status = 'going' AND ea.event_id = $1
+                    GROUP BY ea.event_id
+                ),
+                friend_interested AS(
+                    SELECT ea.event_id,
+                           json_agg(json_build_object(
+                               'id', u.id, 
+                               'username', u.username, 
+                               'full_name', u.full_name, 
+                               'avatar_url', u.avatar_url
+                           )) as friends
+                    FROM event_attendance ea
+                    JOIN follows f ON (f.following_id = ea.user_id AND f.follower_id = $2)
+                    JOIN users u ON ea.user_id = u.id
+                    WHERE ea.status = 'interested' AND ea.event_id = $1
+                    GROUP BY ea.event_id
+                ),
+                my_rating AS(
+                    SELECT rating FROM event_ratings WHERE user_id = $2 AND event_id = $1
+                )
+            `;
         } else {
             // Null CTEs if no user
             query += `,
-    my_attendance AS(SELECT null:: text as status WHERE false),
-        friend_attendance AS(SELECT null:: json as friends WHERE false),
-            my_rating AS(SELECT null:: int as rating WHERE false)
-                `;
+                my_attendance AS(SELECT null:: text as status WHERE false),
+                friend_attendance AS(SELECT null:: json as friends WHERE false),
+                friend_interested AS(SELECT null:: json as friends WHERE false),
+                my_rating AS(SELECT null:: int as rating WHERE false)
+            `;
         }
 
         query += `
             SELECT e.*,
-    (SELECT status FROM my_attendance) as my_rsvp_status,
-        COALESCE((SELECT friends FROM friend_attendance), '[]'::json) as friends_attending,
-            (SELECT count FROM all_attendees_count) as total_attendees,
+                (SELECT status FROM my_attendance) as my_rsvp_status,
+                COALESCE((SELECT friends FROM friend_attendance), '[]'::json) as friends_attending,
+                COALESCE((SELECT friends FROM friend_interested), '[]'::json) as friends_interested,
+                (SELECT count FROM all_attendees_count) as total_attendees,
+                (SELECT count FROM all_interested_count) as total_interested,
                 (SELECT avg_rating FROM ratings_stats) as average_rating,
-                    (SELECT rating_count FROM ratings_stats) as rating_count,
-                        (SELECT rating FROM my_rating) as my_rating
+                (SELECT rating_count FROM ratings_stats) as rating_count,
+                (SELECT rating FROM my_rating) as my_rating
             FROM events e
             WHERE e.id = $1
-    `;
+        `;
 
         const result = await pool.query(query, params);
 
@@ -540,7 +579,7 @@ const getEventDetails = async (req, res) => {
             JOIN artists a ON ea.artist_id = a.id
             WHERE ea.event_id = $1
             ORDER BY ea.billing_order ASC
-    `, [id]);
+        `, [id]);
 
         event.artists_list = artistsResult.rows;
 
@@ -550,7 +589,7 @@ const getEventDetails = async (req, res) => {
             FROM event_organizers eo
             JOIN organizers o ON eo.organizer_id = o.id
             WHERE eo.event_id = $1
-    `, [id]);
+        `, [id]);
 
         event.organizers_list = organizersResult.rows;
 
@@ -562,61 +601,7 @@ const getEventDetails = async (req, res) => {
 };
 
 // Comments & Ratings
-const addComment = async (req, res) => {
-    const userId = req.user.id;
-    const { id } = req.params;
-    const { content } = req.body;
 
-    if (!content) return res.status(400).json({ error: 'Content is required' });
-
-    try {
-        const result = await pool.query(
-            'INSERT INTO event_comments (event_id, user_id, content) VALUES ($1, $2, $3) RETURNING id, content, created_at',
-            [id, userId, content]
-        );
-        // Enrich with user info
-        const comment = result.rows[0];
-        const userRes = await pool.query('SELECT username, avatar_url FROM users WHERE id = $1', [userId]);
-        comment.user = userRes.rows[0];
-
-        res.json(comment);
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-};
-
-const deleteComment = async (req, res) => {
-    const userId = req.user.id;
-    const { commentId } = req.params;
-
-    try {
-        const result = await pool.query('DELETE FROM event_comments WHERE id = $1 AND user_id = $2 RETURNING id', [commentId, userId]);
-        if (result.rows.length === 0) return res.status(404).json({ error: 'Comment not found or unauthorized' });
-        res.json({ success: true });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-};
-
-const getComments = async (req, res) => {
-    const { id } = req.params;
-    const { limit = 50, offset = 0 } = req.query;
-
-    try {
-        const result = await pool.query(`
-            SELECT c.*, u.username, u.avatar_url, u.full_name
-            FROM event_comments c
-            JOIN users u ON c.user_id = u.id
-            WHERE c.event_id = $1
-            ORDER BY c.created_at DESC
-            LIMIT $2 OFFSET $3
-        `, [id, limit, offset]);
-
-        res.json({ data: result.rows });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-};
 
 const rateEvent = async (req, res) => {
     const userId = req.user.id;
@@ -684,18 +669,12 @@ const resendVerificationCode = async (req, res) => {
     }
 };
 
+
 const getFriendRequests = async (req, res) => {
     const userId = req.user.id;
     try {
-        const result = await pool.query(
-            `SELECT u.id, u.username, u.full_name, u.avatar_url, f.created_at
-             FROM friendships f
-             JOIN users u ON f.user_id_1 = u.id
-             WHERE f.user_id_2 = $1 AND f.status = 'pending'
-             ORDER BY f.created_at DESC`,
-            [userId]
-        );
-        res.json({ data: result.rows });
+        // Updated to returning blank given friend requests are deprecated in favor of follow
+        res.json({ data: [] });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -710,17 +689,19 @@ module.exports = {
     updateProfile,
     searchUsers,
     verifyGuestToken,
-    sendFriendRequest,
+    // Friends / Follows
+    syncContacts,
+    followUser,
+    unfollowUser,
+    getFollowing,
+    // getFriends is replaced or aliases getFollowing?
+    // Let's keep getFriends as getFollowing for compatibility if needed or deprecate
+    getFriends: getFollowing,
     getFriendRequests,
-    respondToFriendRequest,
-    getFriends,
     rsvpEvent,
     getMyEvents,
     getEventsForMap,
     getEventDetails,
-    addComment,
-    deleteComment,
-    getComments,
     rateEvent,
     reportContent,
     getUserUsage: async (req, res) => {
@@ -730,12 +711,12 @@ module.exports = {
 SELECT
     (SELECT COUNT(*) FROM event_attendance WHERE user_id = $1) as attendance_count,
     (SELECT COUNT(*) FROM event_ratings WHERE user_id = $1) as ratings_count,
-        (SELECT COUNT(*) FROM event_comments WHERE user_id = $1) as comments_count,
-            (SELECT COUNT(*) FROM friendships WHERE user_id_1 = $1 OR user_id_2 = $1) as friends_count
+    (SELECT COUNT(*) FROM follows WHERE follower_id = $1) as following_count,
+    (SELECT COUNT(*) FROM follows WHERE following_id = $1) as followers_count
                 `, [id]);
 
             const counts = result.rows[0];
-            const usage = parseInt(counts.attendance_count) + parseInt(counts.ratings_count) + parseInt(counts.comments_count) + parseInt(counts.friends_count);
+            const usage = parseInt(counts.attendance_count) + parseInt(counts.ratings_count) + parseInt(counts.following_count);
 
             res.json({ usage, details: counts });
         } catch (e) {
@@ -748,24 +729,16 @@ SELECT
         try {
             await client.query('BEGIN');
 
-            // 1. Audit Log (as system/admin since guest users don't delete themselves this way usually)
-            // But this endpoint will be admin-only protected? "NewDashboard" implies Admin.
-            // Yes, user is in Admin Dashboard context.
-
-            // 2. Remove Dependencies
             await client.query('DELETE FROM event_attendance WHERE user_id = $1', [id]);
             await client.query('DELETE FROM event_ratings WHERE user_id = $1', [id]);
             await client.query('DELETE FROM event_comments WHERE user_id = $1', [id]);
-            await client.query('DELETE FROM friendships WHERE user_id_1 = $1 OR user_id_2 = $1', [id]);
+            await client.query('DELETE FROM follows WHERE follower_id = $1 OR following_id = $1', [id]);
             await client.query('DELETE FROM content_reports WHERE reporter_id = $1', [id]);
 
-            // 3. Delete User
-            const result = await client.query('DELETE FROM users WHERE id = $1 RETURNING id', [id]);
+            await client.query('DELETE FROM users WHERE id = $1', [id]);
 
             await client.query('COMMIT');
-
-            if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
-            res.json({ success: true, id });
+            res.json({ success: true });
         } catch (e) {
             await client.query('ROLLBACK');
             res.status(500).json({ error: e.message });
@@ -774,3 +747,4 @@ SELECT
         }
     }
 };
+

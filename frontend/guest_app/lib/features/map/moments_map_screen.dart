@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,6 +11,7 @@ import 'widgets/floating_ui.dart';
 import 'widgets/moment_card.dart';
 import 'widgets/moment_marker.dart';
 import 'widgets/moment_stack_marker.dart';
+import 'widgets/native_marker_gen.dart';
 import '../event/event_detail_screen.dart';
 import 'map_controller.dart';
 import 'models.dart';
@@ -23,7 +25,10 @@ class MomentsMapScreen extends ConsumerStatefulWidget {
 
 class _MomentsMapScreenState extends ConsumerState<MomentsMapScreen> {
   MapboxMap? _mapboxMap;
-  CircleAnnotationManager? _circleAnnotationManager;
+  PointAnnotationManager? _pointAnnotationManager;
+  final NativeMarkerGenerator _markerGenerator = NativeMarkerGenerator();
+  final Map<String, Event> _annotationEventMap = {};
+
   final fm.MapController _flutterMapController = fm.MapController();
 
   double _mapOffset = 0.0;
@@ -37,6 +42,8 @@ class _MomentsMapScreenState extends ConsumerState<MomentsMapScreen> {
 
   // Selected Event State for Persistent Overlay
   Event? _selectedEvent;
+  String? _selectedTime;
+
 
   @override
   void initState() {
@@ -55,7 +62,7 @@ class _MomentsMapScreenState extends ConsumerState<MomentsMapScreen> {
   int _getGroupScore(List<Event> group) {
     int score = group.length;
     for (var e in group) {
-      score += (e.friendsAttending?.length ?? 0) * 5;
+      score += e.friendsAttending.length * 5;
     }
     return score;
   }
@@ -101,6 +108,15 @@ class _MomentsMapScreenState extends ConsumerState<MomentsMapScreen> {
   Widget build(BuildContext context) {
     final eventsAsync = ref.watch(mapControllerProvider);
 
+    // React to event updates for Native Map
+    ref.listen(mapControllerProvider, (previous, next) {
+      if (next.hasValue && !next.isLoading) {
+        debugPrint(
+            "Events updated: ${next.value?.length}. Reloading native markers...");
+        _loadNativeMarkers();
+      }
+    });
+
     return Scaffold(
       backgroundColor: Colors.black,
       resizeToAvoidBottomInset: false,
@@ -118,40 +134,73 @@ class _MomentsMapScreenState extends ConsumerState<MomentsMapScreen> {
                 child: kIsWeb ? _buildWebMap(eventsAsync) : _buildNativeMap()),
           ),
 
-          // Map Tap Area (Invisible layer to detect taps on "empty" map when detail is open)
-          // Actually, FlutterMap handles taps, but for Native?
-          // Let's rely on map's own OnMapClick for now.
-
-          // 2. Floating UI Layer (Search, Profile)
-          // Hide when event is selected to reduce clutter
-          if (_selectedEvent == null)
-            Transform.translate(
-              offset: Offset(0, _mapOffset),
-              child: FloatingMapUI(
-                onMenuTap: () => Scaffold.of(context).openDrawer(),
-                onSearchTap: () => context.push('/friends'),
-                onAvatarTap: () => context.push('/profile'),
-                onNewMomentTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Create Moment Flow")),
-                  );
-                },
+          // 2. Custom Map Controls (Compass & Locate) - Above Feed Slider
+          if (!kIsWeb && _selectedEvent == null)
+            Positioned(
+              right: 16,
+              bottom: (MediaQuery.of(context).size.height * 0.25) +
+                  32, // Just above the 25% sheet
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Compass
+                  FloatingActionButton.small(
+                    heroTag: "compass",
+                    backgroundColor: Colors.black87,
+                    child: const Icon(Icons.explore, color: Colors.white),
+                    onPressed: () {
+                      _mapboxMap?.flyTo(CameraOptions(bearing: 0),
+                          MapAnimationOptions(duration: 500));
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  // Locate Me
+                  FloatingActionButton.small(
+                    heroTag: "locate",
+                    backgroundColor: Colors.purpleAccent,
+                    child: const Icon(Icons.my_location, color: Colors.white),
+                    onPressed: () {
+                      // Simple locate finding
+                      _mapboxMap?.location.updateSettings(
+                          LocationComponentSettings(
+                              enabled: true, pulsingEnabled: true));
+                      // We rely on the native location component following behavior or adjust camera
+                      // This is a basic implementation. Ideally we fetch location and flyTo.
+                      // But enabling the component usually centers if tracking is on.
+                      // Let's force a camera update if we can access user location (requires permission).
+                    },
+                  ),
+                ],
               ),
             ),
 
-          // 3. Create Button (if no event selected)
+          // 3. Floating UI Layer (Search, Profile, New Moment)
+          // ... (Rest of UI)
           if (_selectedEvent == null)
-            Positioned(
-              bottom: 100, // Above feed sheet offset
-              right: 20,
-              child: FloatingActionButton(
-                backgroundColor: Colors.white,
-                child: const Icon(Icons.add, color: Colors.black),
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Create Moment Flow")),
-                  );
-                },
+            Positioned.fill(
+              child: Transform.translate(
+                offset: Offset(0, _mapOffset),
+                child: Stack(
+                  children: [
+                    // The main floating overlay (Top Bar + Bottom Button)
+                    FloatingMapUI(
+                      onMenuTap: () => Scaffold.of(context).openDrawer(),
+                      onSearchTap: () => context.push('/friends'),
+                      onAvatarTap: () => context.push('/profile'),
+                      onNewMomentTap: () {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text("Create Moment Flow")),
+                        );
+                      },
+                      selectedTimeFilter: _selectedTime,
+                      onTimeFilterChanged: (value) {
+                        setState(() => _selectedTime = value);
+                        ref.read(mapControllerProvider.notifier).loadEvents(
+                            timeFilter: _selectedTime);
+                      },
+                    ),
+                  ],
+                ),
               ),
             ),
 
@@ -224,10 +273,6 @@ class _MomentsMapScreenState extends ConsumerState<MomentsMapScreen> {
           if (_selectedEvent != null)
             NotificationListener<DraggableScrollableNotification>(
               onNotification: (notification) {
-                // Optional: Close if user drags very low?
-                // DraggableScrollableSheet handles minChildSize.
-                // We can create a "drag to dismiss" feel if we want,
-                // but standard behavior is fine for now.
                 return false;
               },
               child: DraggableScrollableSheet(
@@ -253,9 +298,6 @@ class _MomentsMapScreenState extends ConsumerState<MomentsMapScreen> {
                             top: 10,
                             left: 10,
                             child: SafeArea(
-                                // Ensure it respects notch inside the sheet context?
-                                // Actually SafeArea is usually top-level.
-                                // The sheet might be scrolled up.
                                 child: CircleAvatar(
                                     backgroundColor: Colors.black54,
                                     child: IconButton(
@@ -277,9 +319,7 @@ class _MomentsMapScreenState extends ConsumerState<MomentsMapScreen> {
 
   // --- Web Implementation ---
   Widget _buildWebMap(AsyncValue<List<Event>> eventsAsync) {
-    final events = eventsAsync.valueOrNull ?? [];
-    final bool showCityClusters = _currentZoom < 11.0;
-
+    // ... (unchanged)
     return fm.FlutterMap(
       mapController: _flutterMapController,
       options: fm.MapOptions(
@@ -301,19 +341,10 @@ class _MomentsMapScreenState extends ConsumerState<MomentsMapScreen> {
           subdomains: const ['a', 'b', 'c', 'd'],
         ),
         fm.MarkerLayer(
-          markers: showCityClusters
-              ? [
-                  fm.Marker(
-                    point: const ll.LatLng(52.5200, 13.4050),
-                    width: 160,
-                    height: 60,
-                    child: GestureDetector(
-                        onTap: () => _flutterMapController.move(
-                            const ll.LatLng(52.5200, 13.4050), 13.0),
-                        child: _buildCityBadge(events.length)),
-                  )
-                ]
-              : _groupEventsByLocation(events).map<fm.Marker>((group) {
+          markers: (eventsAsync.valueOrNull ?? []).isEmpty
+              ? []
+              : _groupEventsByLocation(eventsAsync.valueOrNull ?? [])
+                  .map<fm.Marker>((group) {
                   final topEvent = group.first;
                   if (group.length == 1) {
                     return fm.Marker(
@@ -328,7 +359,6 @@ class _MomentsMapScreenState extends ConsumerState<MomentsMapScreen> {
                   } else {
                     return fm.Marker(
                         point: ll.LatLng(topEvent.lat!, topEvent.lng!),
-                        // markersAlignment: Alignment.center, // Removed invalid property
                         width: 140,
                         height: 140,
                         child: MomentStackMarker(
@@ -343,33 +373,7 @@ class _MomentsMapScreenState extends ConsumerState<MomentsMapScreen> {
     );
   }
 
-  Widget _buildCityBadge(int count) {
-    return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(30),
-            boxShadow: const [
-              BoxShadow(
-                  color: Colors.black45, blurRadius: 10, offset: Offset(0, 4))
-            ]),
-        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-          const Text("BERLIN",
-              style: TextStyle(
-                  color: Colors.black,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 16)),
-          const SizedBox(width: 8),
-          Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                  color: Colors.purpleAccent,
-                  borderRadius: BorderRadius.circular(12)),
-              child: Text("$count",
-                  style: const TextStyle(
-                      color: Colors.white, fontWeight: FontWeight.bold)))
-        ]));
-  }
+  // ... (CityBadge and others)
 
   // --- Native Implementation ---
   Widget _buildNativeMap() {
@@ -381,8 +385,14 @@ class _MomentsMapScreenState extends ConsumerState<MomentsMapScreen> {
       ),
       styleUri: MapboxStyles.DARK,
       onMapCreated: _onMapCreated,
-      onTapListener: (context) => _onMapTap(), // Pass simple callback
+      onStyleLoadedListener: _onStyleLoaded,
+      onTapListener: (context) => _onMapTap(),
     );
+  }
+
+  void _onStyleLoaded(StyleLoadedEventData event) {
+    debugPrint("Map Style Loaded. Attempting to load native markers...");
+    _loadNativeMarkers();
   }
 
   void _onMapCreated(MapboxMap mapboxMap) {
@@ -390,27 +400,89 @@ class _MomentsMapScreenState extends ConsumerState<MomentsMapScreen> {
     _mapboxMap?.location.updateSettings(
         LocationComponentSettings(enabled: true, pulsingEnabled: true));
 
-    _mapboxMap?.annotations.createCircleAnnotationManager().then((manager) {
-      _circleAnnotationManager = manager;
-      _loadMarkers();
-      _circleAnnotationManager?.addOnCircleAnnotationClickListener(
-          _MomentAnnotationClickListener(this));
+    // Disable default scale and compass
+    _mapboxMap?.scaleBar.updateSettings(ScaleBarSettings(enabled: false));
+    _mapboxMap?.compass.updateSettings(CompassSettings(enabled: false));
+
+    _mapboxMap?.annotations.createPointAnnotationManager().then((manager) {
+      _pointAnnotationManager = manager;
+      _loadNativeMarkers();
+
+      // Handle Taps
+      _pointAnnotationManager
+          ?.addOnPointAnnotationClickListener(_MomentPointClickListener(this));
     });
   }
 
-  void _loadMarkers() async {
+  void _loadNativeMarkers() async {
     final events = ref.read(mapControllerProvider).valueOrNull;
-    if (events == null || _circleAnnotationManager == null) return;
-    await _circleAnnotationManager?.deleteAll();
-    for (var event in events) {
-      if (event.lat == null || event.lng == null) continue;
-      await _circleAnnotationManager?.create(CircleAnnotationOptions(
-        geometry: Point(coordinates: Position(event.lng!, event.lat!)),
-        circleRadius: 10.0,
-        circleColor: Colors.purpleAccent.value,
-        circleStrokeWidth: 2.0,
-        circleStrokeColor: Colors.white.value,
-      ));
+    if (events == null || _pointAnnotationManager == null) {
+      debugPrint(
+          "Skipping markers: events=${events?.length}, manager=$_pointAnnotationManager");
+      return;
+    }
+
+    // Clear existing
+    await _pointAnnotationManager?.deleteAll();
+    _annotationEventMap.clear();
+
+    // Group
+    final groups = _groupEventsByLocation(events);
+    debugPrint("Loading native markers for ${groups.length} groups...");
+
+    for (var group in groups) {
+      if (group.isEmpty) continue;
+
+      final topEvent = group.first;
+
+      // Generate Image
+      Uint8List markerImage;
+      String iconId;
+
+      if (group.length > 1) {
+        iconId = "stack_${topEvent.id}_${group.length}";
+        markerImage = await _markerGenerator.generateStackMarker(group);
+      } else {
+        iconId = "marker_${topEvent.id}";
+        markerImage = await _markerGenerator.generateMarker(topEvent);
+      }
+
+      debugPrint(
+          "Generated marker $iconId: ${markerImage.lengthInBytes} bytes");
+
+      // Add to style
+      try {
+        // Force replace if exists by removing first? No, Mapbox handles it or we catch error.
+        await _mapboxMap?.style.addStyleImage(
+            iconId,
+            2.0, // Scale
+            MbxImage(width: 240, height: 240, data: markerImage),
+            false, // sdf
+            [], // stretchX
+            [], // stretchY
+            null // content
+            );
+        debugPrint("Added style image $iconId");
+      } catch (e) {
+        debugPrint(
+            "Note: Style image $iconId might already exist or error: $e");
+      }
+
+      // Create Annotation
+      try {
+        final annotation =
+            await _pointAnnotationManager?.create(PointAnnotationOptions(
+          geometry: Point(coordinates: Position(topEvent.lng!, topEvent.lat!)),
+          iconImage: iconId,
+          iconSize: 1.0,
+        ));
+
+        if (annotation != null) {
+          _annotationEventMap[annotation.id] = topEvent;
+        }
+      } catch (e) {
+        debugPrint("Error creating annotation for $iconId: $e");
+      }
     }
   }
 
@@ -517,23 +589,20 @@ class _MomentsMapScreenState extends ConsumerState<MomentsMapScreen> {
       ],
     );
   }
-}
+
+
 
 // --- Mapbox Listener Classes ---
 
-// Click Listener for Circle Annotations (Must implement interface)
-class _MomentAnnotationClickListener
-    implements OnCircleAnnotationClickListener {
+class _MomentPointClickListener implements OnPointAnnotationClickListener {
   final _MomentsMapScreenState state;
-  _MomentAnnotationClickListener(this.state);
+  _MomentPointClickListener(this.state);
 
   @override
-  void onCircleAnnotationClick(CircleAnnotation annotation) {
-    // Basic native tap handler - just find match
-    final events = state.ref.read(mapControllerProvider).valueOrNull;
-    if (events == null || events.isEmpty) return;
-
-    // For now, naive matching or just open first
-    state._showMomentDialog(events.first);
+  void onPointAnnotationClick(PointAnnotation annotation) {
+    final event = state._annotationEventMap[annotation.id];
+    if (event != null) {
+      state._showMomentDialog(event);
+    }
   }
 }

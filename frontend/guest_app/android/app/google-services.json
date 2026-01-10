@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1095171762056",
+    "project_id": "social-event-guest-app",
+    "storage_bucket": "social-event-guest-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1095171762056:android:12c89521012eda1d4b7c3d",
+        "android_client_info": {
+          "package_name": "com.example.guest_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAAM_r7Rfv7mLB-m1kkkp7NK8-XG3H6f4I"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

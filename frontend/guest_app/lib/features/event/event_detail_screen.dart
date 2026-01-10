@@ -5,7 +5,6 @@ import 'dart:math' as math;
 import '../../core/auth_guard.dart';
 import '../map/models.dart';
 import 'event_controller.dart';
-import '../chat/chat_repository.dart';
 
 class EventDetailScreen extends ConsumerStatefulWidget {
   final String eventId;
@@ -272,21 +271,32 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                                 color: Colors.white,
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold)),
-                        TextButton(
-                            onPressed: () {},
-                            child: const Text("See all",
-                                style: TextStyle(color: Colors.purpleAccent)))
+                        Text(
+                            "${event.totalAttendees} Going • ${event.totalInterested} Interested",
+                            style: const TextStyle(
+                                color: Colors.grey, fontSize: 14))
                       ],
                     ),
                     const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        _buildAttendeeStack(event.friendsAttending),
-                        const Spacer(),
-                        const Text("Hosted by Social",
-                            style: TextStyle(color: Colors.grey))
-                      ],
-                    ),
+                    if (event.friendsAttending.isNotEmpty) ...[
+                      const Text("Friends Going",
+                          style:
+                              TextStyle(color: Colors.white70, fontSize: 12)),
+                      const SizedBox(height: 8),
+                      _buildAttendeeStack(event.friendsAttending),
+                      const SizedBox(height: 16),
+                    ],
+                    if (event.friendsInterested.isNotEmpty) ...[
+                      const Text("Friends Interested",
+                          style:
+                              TextStyle(color: Colors.white70, fontSize: 12)),
+                      const SizedBox(height: 8),
+                      _buildAttendeeStack(event.friendsInterested),
+                    ],
+                    if (event.friendsAttending.isEmpty &&
+                        event.friendsInterested.isEmpty)
+                      const Text("Be the first friend to join!",
+                          style: TextStyle(color: Colors.grey)),
 
                     const SizedBox(height: 30),
 
@@ -328,8 +338,9 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                             icon: Icons.star_border,
                             isSelected: rsvpStatus == 'interested',
                             onTap: () async {
-                          if (await AuthGuard.ensureLoggedIn(context, ref))
+                          if (await AuthGuard.ensureLoggedIn(context, ref)) {
                             controller.rsvp('interested');
+                          }
                         }),
                         const SizedBox(width: 12),
                         _buildStatusButton(context,
@@ -341,14 +352,51 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                     ),
 
                     const SizedBox(height: 40),
-                    // Placeholder for Chat/Content
-                    const Text("Discussion",
-                        style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 16),
-                    _buildDiscussionPreview(),
+                    const SizedBox(height: 40),
+                    Center(
+                      child: ElevatedButton.icon(
+                        onPressed: () async {
+                          if (await AuthGuard.ensureLoggedIn(context, ref)) {
+                            try {
+                              final roomId = await controller.joinChat();
+                              if (roomId != null && context.mounted) {
+                                context.push('/chat/$roomId',
+                                    extra:
+                                        event.title); // Pass title for header
+                              }
+                            } catch (e) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context)
+                                    .showSnackBar(SnackBar(
+                                  content: Text(e
+                                      .toString()
+                                      .replaceAll('Exception: ', '')),
+                                  backgroundColor: Colors.redAccent,
+                                  behavior: SnackBarBehavior.floating,
+                                  action: SnackBarAction(
+                                    label: 'Join',
+                                    textColor: Colors.white,
+                                    onPressed: () {
+                                      controller.rsvp('interested');
+                                    },
+                                  ),
+                                ));
+                              }
+                            }
+                          }
+                        },
+                        icon: const Icon(Icons.chat_bubble_outline),
+                        label: const Text("Join Discussion"),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white10,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 32, vertical: 16),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(30)),
+                        ),
+                      ),
+                    ),
                     const SizedBox(height: 100), // Bottom padding
                   ],
                 ),
@@ -422,13 +470,13 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
   Widget _buildAttendeeStack(List<dynamic> friends) {
     // Logic for stacked avatars
     return SizedBox(
-      width: 120,
+      width: double.infinity,
       height: 40,
       child: Stack(
         children: [
-          for (int i = 0; i < math.min(friends.length, 3); i++)
+          for (int i = 0; i < math.min(friends.length, 5); i++)
             Positioned(
-              left: i * 24.0,
+              left: i * 28.0,
               child: CircleAvatar(
                 radius: 18,
                 backgroundColor: Colors.white,
@@ -456,37 +504,6 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                 ),
               ),
             )
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDiscussionPreview() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-          color: Colors.white10, borderRadius: BorderRadius.circular(20)),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-                color: Colors.blue.withOpacity(0.2), shape: BoxShape.circle),
-            child: const Icon(Icons.chat_bubble, color: Colors.blueAccent),
-          ),
-          const SizedBox(width: 16),
-          const Expanded(
-              child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text("General Chat",
-                  style: TextStyle(
-                      color: Colors.white, fontWeight: FontWeight.bold)),
-              Text("Mike: Anyone near the bar?",
-                  style: TextStyle(color: Colors.grey, fontSize: 12))
-            ],
-          )),
-          const Text("2m", style: TextStyle(color: Colors.grey, fontSize: 12))
         ],
       ),
     );

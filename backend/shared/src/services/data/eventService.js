@@ -1,6 +1,7 @@
 const { pool } = require('../../db');
 const { saveOriginalEntry, linkToUnified } = require('../unifiedService');
 const { EVENT_STATES, canTransition, validateEventForPublish, transitionEvent } = require('../../models/eventStateMachine');
+const { extractColorsFromImage } = require('../colorService');
 
 class EventService {
     async findEvents(params) {
@@ -15,7 +16,8 @@ class EventService {
         let query = `
             SELECT e.*, 
                    v.latitude as venue_latitude,
-                   v.longitude as venue_longitude
+                   v.longitude as venue_longitude,
+                   e.colors
              FROM events e
             LEFT JOIN venues v ON e.venue_id = v.id
             LEFT JOIN cities c ON v.city_id = c.id
@@ -508,7 +510,7 @@ class EventService {
             }
 
             // Track content changes
-            const allowedFields = ['title', 'date', 'start_time', 'end_date', 'end_time', 'description', 'content_url', 'flyer_front', 'venue_id', 'venue_name', 'venue_address', 'venue_city', 'venue_country', 'ticket_url', 'is_published', 'status', 'event_type'];
+            const allowedFields = ['title', 'date', 'start_time', 'end_date', 'end_time', 'description', 'content_url', 'flyer_front', 'venue_id', 'venue_name', 'venue_address', 'venue_city', 'venue_country', 'ticket_url', 'is_published', 'status', 'event_type', 'colors'];
             for (const [key, value] of Object.entries(updates)) {
                 if (allowedFields.includes(key)) {
                     // Add to update query
@@ -545,12 +547,32 @@ class EventService {
                         newVal = normTime(newVal);
                     }
 
+                    if (key === 'flyer_front' && newVal && (!currentEvent.colors || Object.keys(currentEvent.colors).length === 0)) {
+                        // Auto-extract colors if flyer is set and no colors exist
+                        try {
+                            const extracted = await extractColorsFromImage(newVal);
+                            if (extracted) {
+                                setClauses.push(`colors = $${paramIndex++}::jsonb`);
+                                values.push(JSON.stringify(extracted));
+                                changes['colors'] = { old: null, new: extracted };
+                            }
+                        } catch (e) {
+                            console.warn('Auto-color extraction failed:', e);
+                        }
+                    }
+
                     // Treat null vs undefined vs empty string similarly for text fields
                     const isEmpty = (v) => v === null || v === undefined || v === '';
                     if (isEmpty(oldVal) && isEmpty(newVal)) continue;
 
                     if (String(oldVal) !== String(newVal)) {
                         changes[key] = { old: oldVal, new: newVal };
+
+                        if (key === 'colors') {
+                            // Handle JSON comparison or just force update if present in input
+                            // This block will catch explicit 'colors' updates from allowedFields loop
+                            changes[key] = { old: oldVal, new: newVal };
+                        }
                     }
                 }
             }

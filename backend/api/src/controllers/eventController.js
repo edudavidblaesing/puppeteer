@@ -1,8 +1,7 @@
-const { v4: uuidv4 } = require('uuid');
-const { pool } = require('@social-events/shared').db;
-const { geocodeAddress } = require('@social-events/shared').services.geocoder;
+const { catchAsync, AppError } = require('@social-events/shared');
+const { extractColorsFromImage } = require('@social-events/shared/src/services/colorService');
 const { services: { eventService } } = require('@social-events/shared');
-const { EVENT_STATES } = require('@social-events/shared').models.eventStateMachine;
+const eventStateMachine = require('@social-events/shared').models.eventStateMachine;
 
 
 async function listEvents(req, res) {
@@ -103,6 +102,25 @@ async function updateEvent(req, res) {
         if (error.message === 'Event not found') return res.status(404).json({ error: 'Event not found' });
         if (error.message.startsWith('Invalid state')) return res.status(400).json({ error: error.message });
         if (error.message.startsWith('Missing fields')) return res.status(400).json({ error: error.message });
+        res.status(500).json({ error: error.message });
+    }
+}
+
+async function extractEventColors(req, res) {
+    try {
+        const event = await eventService.findById(req.params.id);
+        if (!event) return res.status(404).json({ error: 'Event not found' });
+
+        if (!event.flyer_front) return res.status(400).json({ error: 'Event has no flyer image' });
+
+        const colors = await extractColorsFromImage(event.flyer_front);
+
+        // Persist
+        const updated = await eventService.update(req.params.id, { colors }, req.user);
+
+        res.json({ status: 'success', data: { colors: updated.colors } });
+    } catch (error) {
+        console.error('Extract colors error:', error);
         res.status(500).json({ error: error.message });
     }
 }
@@ -291,6 +309,8 @@ module.exports = {
     syncEvents,
     syncVenueCoords,
     cleanupExpired,
+    cleanupExpired,
     searchSource,
-    linkSource
+    linkSource,
+    extractEventColors
 };

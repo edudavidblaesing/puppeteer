@@ -5,6 +5,7 @@ class User {
   final String? avatarUrl;
   final String? email;
   final String? bio;
+  final List<String> interests;
 
   User({
     required this.id,
@@ -13,6 +14,7 @@ class User {
     this.avatarUrl,
     this.email,
     this.bio,
+    this.interests = const [],
   });
 
   factory User.fromJson(Map<String, dynamic> json) {
@@ -23,6 +25,8 @@ class User {
       avatarUrl: json['avatar_url'],
       email: json['email'],
       bio: json['bio'],
+      interests:
+          (json['interests'] as List?)?.map((e) => e.toString()).toList() ?? [],
     );
   }
 }

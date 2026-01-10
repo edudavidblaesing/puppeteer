@@ -815,3 +815,17 @@ export async function deleteReportedContent(id: string, deleteContent: boolean) 
   });
 }
 
+
+export async function rewriteContent(text: string, type: 'title' | 'description', context?: any) {
+  return request<string>('/ai/rewrite', {
+    method: 'POST',
+    body: JSON.stringify({ text, type, context }),
+  });
+}
+
+export async function extractEventColors(id: string) {
+  const response = await request<{ status: string; data: { colors: any } }>(`/db/events/${id}/extract-colors`, {
+    method: 'POST',
+  });
+  return response.data;
+}

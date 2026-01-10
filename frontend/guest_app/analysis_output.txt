@@ -1,0 +1,57 @@
+Analyzing guest_app...                                          
+
+warning • Unused import: 'scaffold_with_navbar.dart' • lib/core/app_router.dart:15:8 • unused_import
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/core/scaffold_with_navbar.dart:20:56 • deprecated_member_use
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/core/widgets.dart:22:44 • deprecated_member_use
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/core/widgets.dart:30:51 • deprecated_member_use
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/core/widgets.dart:104:38 • deprecated_member_use
+warning • The value of the local variable 'response' isn't used • lib/features/auth/auth_controller.dart:35:13 • unused_local_variable
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/features/auth/login_screen.dart:50:55 • deprecated_member_use
+   info • Don't use 'BuildContext's across async gaps • lib/features/auth/login_screen.dart:135:42 • use_build_context_synchronously
+   info • Don't use 'BuildContext's across async gaps • lib/features/auth/login_screen.dart:136:40 • use_build_context_synchronously
+   info • Don't use 'BuildContext's across async gaps • lib/features/auth/login_screen.dart:138:40 • use_build_context_synchronously
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/features/auth/register_screen.dart:46:56 • deprecated_member_use
+   info • Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check • lib/features/auth/register_screen.dart:150:64 • use_build_context_synchronously
+   info • Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check • lib/features/auth/register_screen.dart:160:45 • use_build_context_synchronously
+   info • Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check • lib/features/auth/register_screen.dart:180:66 • use_build_context_synchronously
+   info • Don't invoke 'print' in production code • lib/features/auth/session_provider.dart:23:11 • avoid_print
+   info • Don't invoke 'print' in production code • lib/features/auth/session_provider.dart:25:11 • avoid_print
+   info • Don't invoke 'print' in production code • lib/features/auth/session_provider.dart:50:10 • avoid_print
+   info • Don't invoke 'print' in production code • lib/features/auth/session_provider.dart:54:7 • avoid_print
+   info • Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check • lib/features/auth/verification_screen.dart:137:51 • use_build_context_synchronously
+warning • Unused import: '../chat/chat_repository.dart' • lib/features/event/event_detail_screen.dart:8:8 • unused_import
+   info • Statements in an if should be enclosed in a block • lib/features/event/event_detail_screen.dart:343:29 • curly_braces_in_flow_control_structures
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/features/event/event_detail_screen.dart:392:55 • deprecated_member_use
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/features/event/event_detail_screen.dart:485:36 • deprecated_member_use
+warning • The value of the local variable 'dateFormat' isn't used • lib/features/feed/event_card.dart:25:11 • unused_local_variable
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/features/feed/event_card.dart:36:35 • deprecated_member_use
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/features/feed/event_card.dart:83:43 • deprecated_member_use
+warning • Unused import: 'dart:ui' • lib/features/map/map_screen.dart:8:8 • unused_import
+warning • Unused import: 'dart:typed_data' • lib/features/map/map_screen.dart:9:8 • unused_import
+   info • 'addOnCircleAnnotationClickListener' is deprecated and shouldn't be used. Use [tapEvents] instead • lib/features/map/map_screen.dart:272:35 • deprecated_member_use
+   info • 'value' is deprecated and shouldn't be used. Use component accessors like .r or .g, or toARGB32 for an explicit conversion • lib/features/map/map_screen.dart:291:40 • deprecated_member_use
+   info • 'value' is deprecated and shouldn't be used. Use component accessors like .r or .g, or toARGB32 for an explicit conversion • lib/features/map/map_screen.dart:293:41 • deprecated_member_use
+   info • 'OnCircleAnnotationClickListener' is deprecated and shouldn't be used. This is deprecated and will be removed in future releases. Use annotations [tapEvents] instead • lib/features/map/map_screen.dart:341:47 • deprecated_member_use
+warning • The receiver can't be null, so the null-aware operator '?.' is unnecessary • lib/features/map/moments_map_screen.dart:58:35 • invalid_null_aware_operator
+   info • Statements in an if should be enclosed in a block • lib/features/map/moments_map_screen.dart:199:31 • curly_braces_in_flow_control_structures
+warning • The operand can't be 'null', so the condition is always 'true' • lib/features/map/moments_map_screen.dart:290:24 • unnecessary_null_comparison
+warning • The '!' will have no effect because the receiver can't be null • lib/features/map/moments_map_screen.dart:290:44 • unnecessary_non_null_assertion
+warning • The '!' will have no effect because the receiver can't be null • lib/features/map/moments_map_screen.dart:292:38 • unnecessary_non_null_assertion
+   info • 'addOnCircleAnnotationClickListener' is deprecated and shouldn't be used. Use [tapEvents] instead • lib/features/map/moments_map_screen.dart:396:33 • deprecated_member_use
+   info • 'value' is deprecated and shouldn't be used. Use component accessors like .r or .g, or toARGB32 for an explicit conversion • lib/features/map/moments_map_screen.dart:410:42 • deprecated_member_use
+   info • 'value' is deprecated and shouldn't be used. Use component accessors like .r or .g, or toARGB32 for an explicit conversion • lib/features/map/moments_map_screen.dart:412:41 • deprecated_member_use
+   info • 'OnCircleAnnotationClickListener' is deprecated and shouldn't be used. This is deprecated and will be removed in future releases. Use annotations [tapEvents] instead • lib/features/map/moments_map_screen.dart:526:16 • deprecated_member_use
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/features/map/widgets/floating_ui.dart:33:32 • deprecated_member_use
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/features/map/widgets/floating_ui.dart:96:54 • deprecated_member_use
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/features/map/widgets/floating_ui.dart:148:31 • deprecated_member_use
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/features/map/widgets/floating_ui.dart:151:50 • deprecated_member_use
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/features/map/widgets/moment_card.dart:58:37 • deprecated_member_use
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/features/map/widgets/moment_card.dart:64:40 • deprecated_member_use
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/features/map/widgets/moment_card.dart:100:38 • deprecated_member_use
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/features/map/widgets/moment_card.dart:101:38 • deprecated_member_use
+warning • The left operand can't be null, so the right operand is never executed • lib/features/map/widgets/moment_marker.dart:19:47 • dead_null_aware_expression
+warning • The value of the local variable 'random' isn't used • lib/features/map/widgets/moment_stack_marker.dart:27:11 • unused_local_variable
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/features/map/widgets/moment_stack_marker.dart:42:56 • deprecated_member_use
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/features/map/widgets/moment_stack_marker.dart:50:56 • deprecated_member_use
+   info • Don't use 'BuildContext's across async gaps • lib/features/profile/profile_screen.dart:157:38 • use_build_context_synchronously
+

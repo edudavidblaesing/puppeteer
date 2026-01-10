@@ -4,7 +4,6 @@ import '../features/auth/login_screen.dart';
 import '../features/auth/register_screen.dart';
 import '../features/auth/verification_screen.dart';
 import '../features/map/moments_map_screen.dart';
-import '../features/feed/feed_screen.dart';
 import '../features/event/event_detail_screen.dart';
 import '../features/profile/profile_screen.dart';
 import '../features/event/my_events_screen.dart';
@@ -12,7 +11,8 @@ import '../features/profile/settings_screen.dart';
 import '../features/friends/friend_screen.dart';
 import '../features/chat/chat_screen.dart';
 import '../features/profile/edit_profile_screen.dart';
-import 'scaffold_with_navbar.dart';
+import '../features/friends/find_friends_screen.dart';
+import '../features/onboarding/onboarding_screen.dart';
 
 // Simple Riverpod provider for router (placeholder for now)
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -40,18 +40,18 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           return VerificationScreen(email: email);
         },
       ),
+      GoRoute(
+        path: '/find-friends',
+        builder: (context, state) => const FindFriendsScreen(),
+      ),
+      GoRoute(
+        path: '/onboarding',
+        builder: (context, state) => const OnboardingScreen(),
+      ),
       // Main Application Routes (No Shell/Tabs)
       GoRoute(
         path: '/map',
         builder: (context, state) => const MomentsMapScreen(),
-      ),
-      // Feed is now integrated in Map, but keeping route if needed for deep link?
-      // User said "feed moves to bottom" implying it's part of the screen.
-      // We can keep /feed as a standalone for now or redirect?
-      // Let's redirect /feed to /map? Or keep it accessible.
-      GoRoute(
-        path: '/feed',
-        builder: (context, state) => const FeedScreen(),
       ),
       GoRoute(
         path: '/friends',

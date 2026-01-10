@@ -6,6 +6,8 @@ class FloatingMapUI extends StatelessWidget {
   final VoidCallback onSearchTap;
   final VoidCallback onAvatarTap;
   final VoidCallback onNewMomentTap;
+  final String? selectedTimeFilter;
+  final ValueChanged<String?> onTimeFilterChanged;
 
   const FloatingMapUI({
     super.key,
@@ -13,6 +15,8 @@ class FloatingMapUI extends StatelessWidget {
     required this.onSearchTap,
     required this.onAvatarTap,
     required this.onNewMomentTap,
+    required this.selectedTimeFilter,
+    required this.onTimeFilterChanged,
   });
 
   @override
@@ -41,15 +45,18 @@ class FloatingMapUI extends StatelessWidget {
               children: [
                 _GlassIconButton(icon: Icons.menu, onTap: onMenuTap),
                 const Spacer(),
-                const Text(
-                  "Moments",
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    shadows: [Shadow(color: Colors.black26, blurRadius: 4)],
-                  ),
-                ).animate().fadeIn(duration: 400.ms).slideY(begin: -0.5),
+                // Time Filter Dropdown (Centered)
+                _GlassDropdown(
+                    value: selectedTimeFilter,
+                    items: const [
+                      DropdownMenuItem(value: null, child: Text("All Time")),
+                      DropdownMenuItem(value: 'today', child: Text("Today")),
+                      DropdownMenuItem(
+                          value: 'tomorrow', child: Text("Tomorrow")),
+                      DropdownMenuItem(
+                          value: 'this_week', child: Text("This Week")),
+                    ],
+                    onChanged: onTimeFilterChanged),
                 const Spacer(),
                 _GlassIconButton(icon: Icons.search, onTap: onSearchTap),
                 const SizedBox(width: 12),
@@ -153,5 +160,42 @@ class _GlassIconButton extends StatelessWidget {
         child: Icon(icon, color: Colors.white, size: 24),
       ),
     );
+  }
+}
+
+class _GlassDropdown extends StatelessWidget {
+  final String? value;
+  final List<DropdownMenuItem<String?>> items;
+  final ValueChanged<String?> onChanged;
+
+  const _GlassDropdown({
+    required this.value,
+    required this.items,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.black54,
+        borderRadius: BorderRadius.circular(30),
+        border: Border.all(color: Colors.white24),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String?>(
+          value: value,
+          items: items,
+          onChanged: onChanged,
+          dropdownColor: Colors.grey[900],
+          style: const TextStyle(
+              color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+          icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white70),
+          isDense: true,
+          alignment: Alignment.center,
+        ),
+      ),
+    ).animate().fadeIn(duration: 400.ms).slideY(begin: -0.5);
   }
 }

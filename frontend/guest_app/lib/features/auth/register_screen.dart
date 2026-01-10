@@ -17,6 +17,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   final _passwordController = TextEditingController();
   final _usernameController = TextEditingController();
   final _nameController = TextEditingController();
+  final _phoneController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
 
   @override
@@ -26,7 +27,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
     ref.listen(authControllerProvider, (previous, next) {
       if (next.hasError) {
-        // We handle errors inline in the button press usually, 
+        // We handle errors inline in the button press usually,
         // but this listener is a backup
       }
     });
@@ -35,20 +36,20 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-           // Decoration
+          // Decoration
           Positioned(
-             top: -50,
-             left: -50,
-             child: Container(
-               width: 200,
-               height: 200,
-               decoration: BoxDecoration(
-                 color: Theme.of(context).primaryColor.withOpacity(0.15),
-                 borderRadius: BorderRadius.circular(100),
-               ),
-             ),
+            top: -50,
+            left: -50,
+            child: Container(
+              width: 200,
+              height: 200,
+              decoration: BoxDecoration(
+                color: Theme.of(context).primaryColor.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(100),
+              ),
+            ),
           ),
-          
+
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.all(24.0),
@@ -59,7 +60,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                     children: [
                       IconButton(
                         onPressed: () => context.pop(),
-                        icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
+                        icon: const Icon(Icons.arrow_back_ios,
+                            color: Colors.white),
                       ),
                       const Spacer(),
                       const Text(
@@ -85,53 +87,60 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                             const SizedBox(height: 32),
                             Text(
                               'Join the Experience',
-                              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                              ),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .headlineSmall
+                                  ?.copyWith(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                               textAlign: TextAlign.center,
                             ).animate().fadeIn(delay: 200.ms).moveY(begin: 20),
-                            
                             const SizedBox(height: 40),
-                            
                             CustomTextField(
                               controller: _nameController,
                               hintText: 'Full Name',
                               prefixIcon: Icons.person_outline,
-                              validator: (v) => v!.isEmpty ? 'Name is required' : null,
+                              validator: (v) =>
+                                  v!.isEmpty ? 'Name is required' : null,
                             ).animate().fadeIn(delay: 300.ms).moveX(begin: -20),
-                            
                             const SizedBox(height: 16),
-                            
                             CustomTextField(
                               controller: _usernameController,
                               hintText: 'Username',
                               prefixIcon: Icons.alternate_email,
-                              validator: (v) => v!.isEmpty ? 'Username is required' : null,
+                              validator: (v) =>
+                                  v!.isEmpty ? 'Username is required' : null,
                             ).animate().fadeIn(delay: 400.ms).moveX(begin: 20),
-                            
                             const SizedBox(height: 16),
-                            
+                            CustomTextField(
+                              controller: _phoneController,
+                              hintText: 'Phone Number',
+                              keyboardType: TextInputType.phone,
+                              prefixIcon: Icons.phone,
+                              validator: (v) => v!.isEmpty
+                                  ? 'Phone number is required'
+                                  : null,
+                            ).animate().fadeIn(delay: 550.ms).moveX(begin: -20),
+                            const SizedBox(height: 16),
                             CustomTextField(
                               controller: _emailController,
                               hintText: 'Email',
                               keyboardType: TextInputType.emailAddress,
                               prefixIcon: Icons.email_outlined,
-                              validator: (v) => v!.isEmpty ? 'Email is required' : null,
+                              validator: (v) =>
+                                  v!.isEmpty ? 'Email is required' : null,
                             ).animate().fadeIn(delay: 500.ms).moveX(begin: -20),
-                            
                             const SizedBox(height: 16),
-                            
                             CustomTextField(
                               controller: _passwordController,
                               hintText: 'Password',
                               obscureText: true,
                               prefixIcon: Icons.lock_outline,
-                              validator: (v) => v!.isEmpty ? 'Password is required' : null,
+                              validator: (v) =>
+                                  v!.isEmpty ? 'Password is required' : null,
                             ).animate().fadeIn(delay: 600.ms).moveX(begin: 20),
-                            
                             const SizedBox(height: 40),
-                            
                             GradientButton(
                               isLoading: isLoading,
                               onPressed: isLoading
@@ -139,49 +148,74 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                                   : () async {
                                       if (_formKey.currentState!.validate()) {
                                         final success = await ref
-                                            .read(authControllerProvider.notifier)
+                                            .read(
+                                                authControllerProvider.notifier)
                                             .register(
                                               _emailController.text,
                                               _passwordController.text,
                                               _usernameController.text,
                                               _nameController.text,
+                                              _phoneController.text, // Added
                                             );
                                         if (success && mounted) {
-                                          ScaffoldMessenger.of(context).showSnackBar(
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
                                             const SnackBar(
-                                              content: Text('Verification code sent! Check your email.', style: TextStyle(color: Colors.white)),
+                                              content: Text(
+                                                  'Verification code sent! Check your email.',
+                                                  style: TextStyle(
+                                                      color: Colors.white)),
                                               backgroundColor: Colors.green,
-                                              behavior: SnackBarBehavior.floating,
+                                              behavior:
+                                                  SnackBarBehavior.floating,
                                             ),
                                           );
                                           // Give user a moment to see the message
-                                          await Future.delayed(const Duration(milliseconds: 500));
+                                          await Future.delayed(const Duration(
+                                              milliseconds: 500));
                                           if (mounted) {
-                                            context.push('/verify', extra: _emailController.text);
+                                            context.push('/verify',
+                                                extra: _emailController.text);
                                           }
                                         } else {
                                           if (mounted) {
-                                            final error = ref.read(authControllerProvider).error;
-                                            String errorMessage = 'Registration failed. Please try again.';
-                                            
+                                            final error = ref
+                                                .read(authControllerProvider)
+                                                .error;
+                                            String errorMessage =
+                                                'Registration failed. Please try again.';
+
                                             // Extract meaningful message from DioException/API response if possible
                                             if (error != null) {
-                                              String rawError = error.toString();
+                                              String rawError =
+                                                  error.toString();
                                               if (rawError.contains('409')) {
-                                                errorMessage = 'This email or username is already taken.';
-                                              } else if (rawError.contains('Network')) {
-                                                errorMessage = 'Network error. Check your connection.';
+                                                errorMessage =
+                                                    'This email or username is already taken.';
+                                              } else if (rawError
+                                                  .contains('Network')) {
+                                                errorMessage =
+                                                    'Network error. Check your connection.';
                                               } else {
-                                                 // Try to clean up "Exception: ..."
-                                                 errorMessage = rawError.replaceAll('Exception: ', '').replaceAll('DioException', '');
+                                                // Try to clean up "Exception: ..."
+                                                errorMessage = rawError
+                                                    .replaceAll(
+                                                        'Exception: ', '')
+                                                    .replaceAll(
+                                                        'DioException', '');
                                               }
                                             }
-                                            
-                                            ScaffoldMessenger.of(context).showSnackBar(
+
+                                            ScaffoldMessenger.of(context)
+                                                .showSnackBar(
                                               SnackBar(
-                                                content: Text(errorMessage, style: const TextStyle(color: Colors.white)),
-                                                backgroundColor: Colors.redAccent,
-                                                behavior: SnackBarBehavior.floating,
+                                                content: Text(errorMessage,
+                                                    style: const TextStyle(
+                                                        color: Colors.white)),
+                                                backgroundColor:
+                                                    Colors.redAccent,
+                                                behavior:
+                                                    SnackBarBehavior.floating,
                                               ),
                                             );
                                           }
@@ -190,7 +224,6 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                                     },
                               child: const Text('Sign Up'),
                             ).animate().fadeIn(delay: 700.ms).moveY(begin: 20),
-                            
                             const SizedBox(height: 24),
                           ],
                         ),

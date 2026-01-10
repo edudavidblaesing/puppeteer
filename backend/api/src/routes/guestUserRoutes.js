@@ -51,19 +51,19 @@ router.get('/auth/me', guestUserController.getMe);
 router.patch('/profile', guestUserController.updateProfile);
 router.get('/search', guestUserController.searchUsers);
 
-// Friends
-router.post('/friends/request', guestUserController.sendFriendRequest);
-router.post('/friends/respond', guestUserController.respondToFriendRequest);
-router.get('/friends/requests', guestUserController.getFriendRequests);
+// Follows & Contacts
+router.post('/contacts/sync', guestUserController.syncContacts);
+router.post('/users/follow', guestUserController.followUser);
+router.post('/users/unfollow', guestUserController.unfollowUser);
+router.get('/me/following', guestUserController.getFollowing);
+// Backward compatibility / Alias
 router.get('/friends', guestUserController.getFriends);
 
 // Events
 router.get('/events/map', guestUserController.getEventsForMap);
 router.post('/events/:eventId/rsvp', guestUserController.rsvpEvent);
 
-router.post('/events/:id/comments', guestUserController.addComment);
-router.get('/events/:id/comments', guestUserController.getComments);
-router.delete('/events/:id/comments/:commentId', guestUserController.deleteComment);
+
 router.post('/events/:id/rate', guestUserController.rateEvent);
 router.post('/report', guestUserController.reportContent);
 

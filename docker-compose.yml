@@ -43,6 +43,7 @@ services:
       - PGUSER=eventuser
       - PGPASSWORD=eventpass
       - PGDATABASE=socialevents
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
     command: npm run dev
     volumes:
       - ./backend/api:/usr/src/app/backend/api

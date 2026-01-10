@@ -113,6 +113,8 @@ class _MomentCardState extends State<MomentCard> {
                     child: Transform.rotate(
                       angle: 0.1,
                       child: Container(
+                        constraints:
+                            const BoxConstraints(maxWidth: 140), // Limit width
                         padding: const EdgeInsets.symmetric(
                             horizontal: 12, vertical: 6),
                         decoration: BoxDecoration(
@@ -129,13 +131,12 @@ class _MomentCardState extends State<MomentCard> {
                         child: Text(
                           widget.event.title.toUpperCase(),
                           style: const TextStyle(
-                            fontFamily:
-                                'Impact', // Fallback if custom font not loaded
-                            fontWeight: FontWeight.bold,
+                            fontFamily: 'Roboto', // Use standard font
+                            fontWeight: FontWeight.w900,
                             color: Colors.black,
-                            fontSize: 12,
+                            fontSize: 14, // Slightly bigger
                           ),
-                          maxLines: 1,
+                          maxLines: 2, // Allow 2 lines
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),

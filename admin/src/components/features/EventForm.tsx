@@ -4,7 +4,8 @@ import dynamic from 'next/dynamic';
 import {
   MapPin, Calendar, Clock, Search, Plus, Users, Music, AlertTriangle, Star,
   Image as ImageIcon, Link as LinkIcon, Ticket, X, History, Check, RotateCcw,
-  GitPullRequest, Info, ArrowLeft, ArrowRight, Save, ExternalLink, Trash2
+  GitPullRequest, Info, ArrowLeft, ArrowRight, Save, ExternalLink, Trash2, Sparkles,
+  RefreshCw, Palette
 } from 'lucide-react';
 import { Event, EVENT_TYPES, EventType, Venue, Artist, EventStatus, SourceReference } from '@/types';
 import { EVENT_STATES, EventStatusState, canTransition } from '@/lib/eventStateMachine';
@@ -21,6 +22,7 @@ import { FormLayout } from '@/components/ui/FormLayout';
 import { FormSection } from '@/components/ui/FormSection';
 import { SourceIcon } from '@/components/ui/SourceIcon';
 import { getBestSourceForField } from '@/lib/smartMerge';
+import { similarityPercentage } from '@/lib/stringUtils';
 import * as api from '@/lib/api';
 import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import { useDeleteWithUsage } from '@/hooks/useDeleteWithUsage';
@@ -66,6 +68,60 @@ export function EventForm({
   const [pendingChanges, setPendingChanges] = useState<any>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSourceModal, setShowSourceModal] = useState(false);
+  // AI Rewrite
+  const [isRewriting, setIsRewriting] = useState<'title' | 'description' | null>(null);
+  const [isExtractingColors, setIsExtractingColors] = useState(false);
+
+  const handleAIRewrite = async (field: 'title' | 'description') => {
+    const text = field === 'title' ? formData.title : formData.description;
+    if (!text) return showError('No text to rewrite');
+
+    setIsRewriting(field);
+    try {
+      const rewritten = await api.rewriteContent(text, field, { venue: formData.venue_name, city: formData.venue_city });
+      if (field === 'title') {
+        setFormData(prev => ({ ...prev, title: rewritten }));
+        if (validationErrors.title) setValidationErrors(prev => ({ ...prev, title: false }));
+      } else {
+        setFormData(prev => ({ ...prev, description: rewritten }));
+        if (validationErrors.description) setValidationErrors(prev => ({ ...prev, description: false }));
+      }
+      success('Content rewritten by AI');
+    } catch (e: any) {
+      showError(e.message || 'Failed to rewrite content');
+    } finally {
+      setIsRewriting(null);
+    }
+  };
+
+  const handleExtractColors = async () => {
+    // Basic check: need an ID to query extract-colors endpoint
+    // If it's a new draft (saved), it has an ID. If it's pure 'new', we can't call API easily unless we pass URL.
+    if (!initialData?.id || initialData.id === 'new') return showError('Please save the event first to generate a theme.');
+
+    setIsExtractingColors(true);
+    try {
+      const res = await api.extractEventColors(initialData.id);
+      if (res && res.colors) {
+        setFormData(prev => {
+          // Force a new object reference for colors to ensure re-render
+          const newColors = { ...res.colors };
+          return {
+            ...prev,
+            colors: newColors
+          };
+        });
+        success('Theme generated successfully');
+      } else {
+        showError('No colors returned. The image might be inaccessible.');
+      }
+    } catch (e: any) {
+      console.error(e);
+      showError(e.message || 'Failed to extract colors');
+    } finally {
+      setIsExtractingColors(false);
+    }
+  };
 
   const [formData, setFormData] = useState<Partial<Event>>(() => {
     if (!initialData) {
@@ -217,15 +273,20 @@ export function EventForm({
     if (finalStartTime && finalStartTime.includes('T')) {
       finalStartTime = finalStartTime.split('T')[1].substring(0, 5);
     }
+    // Convert empty string to null to prevent DB errors
+    if (finalStartTime === '') finalStartTime = null;
 
     let finalEndTime = formData.end_time;
     if (finalEndTime && finalEndTime.includes('T')) {
       finalEndTime = finalEndTime.split('T')[1].substring(0, 5);
     }
+    if (finalEndTime === '') finalEndTime = null;
 
-    // Auto-promote to PUBLISHED if currently READY and user clicked "Publish"
+    // Auto-promote to PUBLISHED only if currently READY (saved) and user clicked "Publish"
     let finalStatus = formData.status;
-    if (formData.status === EventStatusValues.READY_TO_PUBLISH) {
+    const isAlreadyReady = initialData?.status === EventStatusValues.READY_TO_PUBLISH;
+
+    if (formData.status === EventStatusValues.READY_TO_PUBLISH && isAlreadyReady) {
       // Check validation before publishing
       if (!validateContentUniqueness(formData.title || undefined, formData.description || undefined)) {
         throw new Error("Validation failed: Content must be unique.");
@@ -243,6 +304,7 @@ export function EventForm({
     };
 
     setSaveError(null);
+    setValidationErrors({}); // Clear previous errors
     await onSubmit(finalData);
   };
 
@@ -253,11 +315,23 @@ export function EventForm({
       await internalSave();
       success('Event saved successfully');
       // Explicit save button closes the form
-      onCancel(true);
+      // onCancel(true);
     } catch (err: any) {
       console.error('Failed to save event:', err);
-      setSaveError(err.message || 'Failed to save event');
-      showError(err.message || 'Failed to save event');
+      const msg = err.message || 'Failed to save event';
+
+      // Heuristic to catch DB time format errors and highlight the field
+      if (msg.includes('invalid input syntax for type time')) {
+        // Try to deduce which field. Usually start_time or end_time.
+        // Since we sanitized in internalSave, this might be a mismatch or edge case.
+        // But let's highlight both to be safe or parse context if possible.
+        setValidationErrors(prev => ({ ...prev, start_time: true, end_time: true }));
+        showError('Invalid time format. Please check start/end times.');
+      } else {
+        setSaveError(msg);
+        showError(msg);
+      }
+
       // Scroll to top
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } finally {
@@ -382,22 +456,29 @@ export function EventForm({
 
   const validateContentUniqueness = (title?: string, description?: string) => {
     setValidationErrors({});
-    const normalize = (s: string | undefined | null) => (s || '').toLowerCase().trim();
-    const currentTitle = normalize(title);
-    const currentDesc = normalize(description);
+
+    // Similarity Threshold: > 95% means it's too similar and needs rewrite
+    const THRESHOLD = 95;
 
     for (const source of initialData?.source_references || []) {
-      if (source.title && normalize(source.title) === currentTitle) {
-        setTransitionError(`Title matches source "${source.source_code}". Please rewrite to be unique.`);
-        setValidationErrors(prev => ({ ...prev, title: true }));
-        setTimeout(() => setTransitionError(null), 5000);
-        return false;
+      if (source.title) {
+        const sim = similarityPercentage(title || '', source.title);
+        if (sim > THRESHOLD) {
+          setTransitionError(`Title is ${Math.round(sim)}% similar to source "${source.source_code}". Please rewrite to be unique.`);
+          setValidationErrors(prev => ({ ...prev, title: true }));
+          setTimeout(() => setTransitionError(null), 5000);
+          return false;
+        }
       }
-      if (source.description && currentDesc && normalize(source.description) === currentDesc) {
-        setTransitionError(`Description matches source "${source.source_code}". Please rewrite to be unique.`);
-        setValidationErrors(prev => ({ ...prev, description: true }));
-        setTimeout(() => setTransitionError(null), 5000);
-        return false;
+      if (source.description) {
+        const sim = similarityPercentage(description || '', source.description);
+        // Only enforce for descriptions longer than 50 chars to avoid flagging strict factual stubs
+        if (description && description.length > 50 && sim > THRESHOLD) {
+          setTransitionError(`Description is ${Math.round(sim)}% similar to source "${source.source_code}". Please rewrite significantly.`);
+          setValidationErrors(prev => ({ ...prev, description: true }));
+          setTimeout(() => setTransitionError(null), 5000);
+          return false;
+        }
       }
     }
     return true;
@@ -664,7 +745,7 @@ export function EventForm({
         onDelete={initialData && onDelete ? () => promptBeforeAction(() => handleDeleteClick(initialData.id)) : undefined}
         isLoading={isLoading || isSubmitting}
         headerExtras={headerExtras}
-        saveLabel={formData.status === EventStatusValues.READY_TO_PUBLISH ? 'Publish' : 'Save & Close'}
+        saveLabel={formData.status === EventStatusValues.READY_TO_PUBLISH && initialData?.status === EventStatusValues.READY_TO_PUBLISH ? 'Publish' : 'Save'}
       >
         {activeTab === 'history' ? (
           <div className="py-6"><HistoryPanel entityId={initialData?.id || ''} entityType="event" /></div>
@@ -885,6 +966,24 @@ export function EventForm({
                       error={validationErrors.title ? "Title matches source content. Please rewrite." : undefined}
                     />
                   </div>
+                  <div className="flex flex-col gap-2 pt-6">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="text-purple-600 hover:text-purple-700 hover:bg-purple-50"
+                      onClick={() => handleAIRewrite('title')}
+                      disabled={!!isRewriting || !formData.title}
+                      title="Rewrite title with AI"
+                    >
+                      {isRewriting === 'title' ? <span className="animate-spin h-4 w-4 border-2 border-purple-600 rounded-full border-t-transparent" /> : <Sparkles className="w-4 h-4" />}
+                    </Button>
+                    {pendingChanges?.changes?.[0]?.changes?.title && (
+                      <div className="text-xs text-amber-600 dark:text-amber-500 font-medium animate-pulse">
+                        ↑
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* Sources List & Add Button - Moved Up */}
@@ -950,7 +1049,13 @@ export function EventForm({
                 <div>
                   <div className="flex items-center gap-2">
                     <div className="flex-1">
-                      <Input label="Start Time" type="time" value={formData.start_time || ''} onChange={(e) => setFormData({ ...formData, start_time: e.target.value })} />
+                      <Input
+                        label="Start Time"
+                        type="time"
+                        value={formData.start_time || ''}
+                        onChange={(e) => setFormData({ ...formData, start_time: e.target.value })}
+                        className={validationErrors.start_time ? "border-red-500" : ""}
+                      />
                     </div>
                   </div>
                   <SourceFieldOptions
@@ -982,7 +1087,16 @@ export function EventForm({
                 <div>
                   <div className="flex items-center gap-2">
                     <div className="flex-1">
-                      <Input label="End Time" type="time" value={formData.end_time || ''} onChange={(e) => setFormData({ ...formData, end_time: e.target.value })} />
+                      <Input
+                        label="End Time"
+                        type="time"
+                        value={formData.end_time || ''}
+                        onChange={(e) => {
+                          setFormData({ ...formData, end_time: e.target.value });
+                          if (validationErrors.end_time) setValidationErrors(prev => ({ ...prev, end_time: false }));
+                        }}
+                        className={validationErrors.end_time ? "border-red-500" : ""}
+                      />
                     </div>
                   </div>
                   <SourceFieldOptions
@@ -1182,6 +1296,211 @@ export function EventForm({
               </div>
             </FormSection>
 
+            {/* Theme & Style */}
+            <FormSection
+              title="Theme & Style"
+              icon={<Palette className="w-4 h-4" />}
+            >
+              <div className="pt-4 space-y-8">
+                <div className="flex items-center justify-between border-b border-gray-100 dark:border-gray-800 pb-4">
+                  <div className="space-y-1">
+                    <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">Color Palette</h3>
+                    <p className="text-xs text-gray-500 max-w-lg">
+                      Auto-extract colors from the flyer or customize manually. Good contrast ensures readability.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="sm"
+                    className="bg-purple-600 hover:bg-purple-700 text-white shadow-sm"
+                    onClick={handleExtractColors}
+                    disabled={isExtractingColors || !formData.flyer_front}
+                    title={!formData.flyer_front ? "Add flyer first" : "Generate from Flyer"}
+                  >
+                    {isExtractingColors ? (
+                      <span className="animate-spin h-4 w-4 border-2 border-white rounded-full border-t-transparent mr-2" />
+                    ) : (
+                      <Sparkles className="w-4 h-4 mr-2" />
+                    )}
+                    Generate Theme
+                  </Button>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                  {/* Color Controls */}
+                  <div className="lg:col-span-7 space-y-8">
+                    {/* Brand Colors */}
+                    <div>
+                      <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">Brand Colors</h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                        {['primary', 'secondary', 'accent'].map((key) => {
+                          // @ts-ignore
+                          const value = formData.colors?.[key] || '#000000';
+                          return (
+                            <div key={key} className="space-y-2">
+                              <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 capitalize flex items-center gap-2">
+                                {key}
+                              </label>
+                              <div className="flex items-center gap-3">
+                                <div className="relative group">
+                                  <div
+                                    className="w-10 h-10 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden cursor-pointer hover:ring-2 hover:ring-purple-500 hover:ring-offset-2 transition-all"
+                                    style={{ backgroundColor: value }}
+                                  >
+                                    <input
+                                      type="color"
+                                      value={value}
+                                      onChange={(e) => setFormData(prev => ({
+                                        ...prev,
+                                        colors: { ...prev.colors, [key]: e.target.value } as any
+                                      }))}
+                                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                    />
+                                  </div>
+                                </div>
+                                <div className="flex-1 relative">
+                                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs font-mono">#</span>
+                                  <input
+                                    type="text"
+                                    value={value.replace('#', '')}
+                                    onChange={(e) => {
+                                      const val = '#' + e.target.value.replace('#', '');
+                                      setFormData(prev => ({
+                                        ...prev,
+                                        colors: { ...prev.colors, [key]: val } as any
+                                      }));
+                                    }}
+                                    className="w-full pl-6 pr-3 py-2 text-xs font-mono border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none uppercase transition-all"
+                                    placeholder="000000"
+                                    maxLength={6}
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* UI Colors */}
+                    <div>
+                      <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">Surface & Text</h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                        {['background', 'textPrimary', 'textSecondary'].map((key) => {
+                          // @ts-ignore
+                          const value = formData.colors?.[key] || (key === 'textSecondary' ? '#666666' : '#000000');
+                          const label = key === 'textPrimary' ? 'Text (Main)' : key === 'textSecondary' ? 'Text (Sub)' : 'Background';
+
+                          return (
+                            <div key={key} className="space-y-2">
+                              <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 capitalize flex items-center gap-2">
+                                {label}
+                              </label>
+                              <div className="flex items-center gap-3">
+                                <div className="relative group">
+                                  <div
+                                    className="w-10 h-10 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden cursor-pointer hover:ring-2 hover:ring-purple-500 hover:ring-offset-2 transition-all"
+                                    style={{ backgroundColor: value }}
+                                  >
+                                    <input
+                                      type="color"
+                                      value={value}
+                                      onChange={(e) => setFormData(prev => ({
+                                        ...prev,
+                                        colors: { ...prev.colors, [key]: e.target.value } as any
+                                      }))}
+                                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                    />
+                                  </div>
+                                </div>
+                                <div className="flex-1 relative">
+                                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs font-mono">#</span>
+                                  <input
+                                    type="text"
+                                    value={value.replace('#', '')}
+                                    onChange={(e) => {
+                                      const val = '#' + e.target.value.replace('#', '');
+                                      setFormData(prev => ({
+                                        ...prev,
+                                        colors: { ...prev.colors, [key]: val } as any
+                                      }));
+                                    }}
+                                    className="w-full pl-6 pr-3 py-2 text-xs font-mono border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none uppercase transition-all"
+                                    placeholder="000000"
+                                    maxLength={6}
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Live Preview */}
+                  <div className="lg:col-span-5">
+                    <div className="sticky top-6">
+                      <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">Live Preview</h4>
+                      <div
+                        className="rounded-xl overflow-hidden shadow-xl border border-gray-200 dark:border-gray-700 flex flex-col transition-all duration-300 aspect-[4/3] relative"
+                        style={{ backgroundColor: formData.colors?.background || '#ffffff' }}
+                      >
+                        {/* Art Area */}
+                        <div className="h-1/3 w-full bg-gradient-to-b from-black/10 to-transparent relative">
+                          <div className="absolute inset-0 flex items-center justify-center opacity-10">
+                            <Palette className="w-12 h-12" />
+                          </div>
+                        </div>
+
+                        <div className="p-6 flex flex-col flex-1 relative z-10">
+                          <div className="mb-auto">
+                            <span
+                              className="inline-flex items-center px-2.5 py-0.5 rounded text-[10px] font-bold tracking-wide uppercase mb-3"
+                              style={{ backgroundColor: formData.colors?.accent || '#000', color: '#fff' }}
+                            >
+                              Upcoming
+                            </span>
+                            <h3
+                              className="text-2xl font-extrabold leading-tight tracking-tight mb-2"
+                              style={{ color: formData.colors?.textPrimary || '#000' }}
+                            >
+                              {formData.title || 'Event Title'}
+                            </h3>
+                            <p
+                              className="text-sm font-medium line-clamp-2"
+                              style={{ color: formData.colors?.textSecondary || '#666' }}
+                            >
+                              {formData.venue_name || 'Venue Name'} • {formData.date ? new Date(formData.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : 'Date'}
+                            </p>
+                          </div>
+
+                          <div className="flex gap-3 mt-6 pt-6 border-t border-black/5">
+                            <button
+                              className="flex-1 py-2.5 rounded-lg text-sm font-bold shadow-md transform transition-all hover:scale-[1.02] active:scale-95 text-center"
+                              style={{ backgroundColor: formData.colors?.primary || '#000', color: '#fff' }}
+                            >
+                              Tickets
+                            </button>
+                            <button
+                              className="px-4 py-2.5 rounded-lg text-sm font-bold border-2 transition-all hover:bg-black/5 active:scale-95"
+                              style={{ borderColor: formData.colors?.secondary || '#000', color: formData.colors?.secondary || '#000' }}
+                            >
+                              Info
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-gray-400 mt-3 text-center">
+                        This preview demonstrates how your chosen palette applies to the event card component.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </FormSection>
+
             {/* Description */}
             <FormSection
               title="Description"
@@ -1203,11 +1522,25 @@ export function EventForm({
                       error={validationErrors.description ? "Description matches source content. Please rewrite." : undefined}
                     />
                   </div>
-                  {pendingChanges?.changes?.[0]?.changes?.description && (
-                    <div className="mt-2 text-xs text-amber-600 dark:text-amber-500 font-medium animate-pulse">
-                      Update available
-                    </div>
-                  )}
+
+                  <div className="flex flex-col gap-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="text-purple-600 hover:text-purple-700 hover:bg-purple-50 mt-1"
+                      onClick={() => handleAIRewrite('description')}
+                      disabled={!!isRewriting || !formData.description}
+                      title="Rewrite description with AI"
+                    >
+                      {isRewriting === 'description' ? <span className="animate-spin h-4 w-4 border-2 border-purple-600 rounded-full border-t-transparent" /> : <Sparkles className="w-4 h-4" />}
+                    </Button>
+                    {pendingChanges?.changes?.[0]?.changes?.description && (
+                      <div className="text-xs text-amber-600 dark:text-amber-500 font-medium animate-pulse">
+                        Update available
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <SourceFieldOptions
                   sources={sources}

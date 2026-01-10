@@ -9,8 +9,21 @@ import 'features/auth/session_provider.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'core/constants.dart';
 
-void main() {
+import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart';
+import 'core/notification_service.dart';
+
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+
+  // Initialize Notifications
+  await notificationService.initialize();
+  final fcmToken = await notificationService.getToken();
+  debugPrint("FCM Token: $fcmToken");
+
   if (!kIsWeb) {
     MapboxOptions.setAccessToken(AppConstants.mapboxAccessToken);
   }

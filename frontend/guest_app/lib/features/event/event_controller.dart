@@ -5,23 +5,19 @@ import 'event_repository.dart';
 
 // State class to hold UI data
 class EventDetailsState {
-  final AsyncValue<List<Comment>> comments;
   final AsyncValue<void> rsvpStatus;
   final AsyncValue<Event?> event;
 
   EventDetailsState({
-    this.comments = const AsyncValue.loading(),
     this.rsvpStatus = const AsyncValue.data(null),
     this.event = const AsyncValue.loading(),
   });
 
   EventDetailsState copyWith({
-    AsyncValue<List<Comment>>? comments,
     AsyncValue<void>? rsvpStatus,
     AsyncValue<Event?>? event,
   }) {
     return EventDetailsState(
-      comments: comments ?? this.comments,
       rsvpStatus: rsvpStatus ?? this.rsvpStatus,
       event: event ?? this.event,
     );
@@ -43,7 +39,6 @@ class EventController extends StateNotifier<EventDetailsState> {
   EventController(this._repo, this._ref, this._eventId)
       : super(EventDetailsState()) {
     loadEvent();
-    loadComments();
   }
 
   Future<void> loadEvent() async {
@@ -56,16 +51,6 @@ class EventController extends StateNotifier<EventDetailsState> {
       if (state.event.value == null) {
         state = state.copyWith(event: AsyncValue.error(e, st));
       }
-    }
-  }
-
-  Future<void> loadComments() async {
-    try {
-      state = state.copyWith(comments: const AsyncValue.loading());
-      final comments = await _repo.getComments(_eventId);
-      state = state.copyWith(comments: AsyncValue.data(comments));
-    } catch (e, st) {
-      state = state.copyWith(comments: AsyncValue.error(e, st));
     }
   }
 
@@ -85,12 +70,21 @@ class EventController extends StateNotifier<EventDetailsState> {
     }
   }
 
-  Future<void> addComment(String content) async {
+  Future<String?> joinChat() async {
+    final event = state.event.value;
+    if (event == null) return null;
+
+    final status = event.myRsvpStatus;
+    if (status != 'going' && status != 'interested') {
+      throw Exception(
+          "RSVP Required: Please join or mark interest to enter the chat.");
+    }
+
     try {
-      await _repo.addComment(_eventId, content);
-      loadComments(); // Refresh list
+      return await _repo.ensureEventChatRoom(_eventId);
     } catch (e) {
       // Handle error
+      return null;
     }
   }
 }

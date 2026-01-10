@@ -18,12 +18,21 @@ class MapController extends StateNotifier<AsyncValue<List<Event>>> {
   }
 
   Future<void> loadEvents(
-      {double? lat, double? lng, double radius = 20}) async {
+      {double? lat,
+      double? lng,
+      double radius = 20,
+      String? timeFilter,
+      String? typeFilter}) async {
+    // Added radius check
     try {
       state = const AsyncValue.loading();
       // If lat/lng provided, use them. Otherwise defaults (or could get user location here)
-      final events =
-          await _repo.getEventsInArea(lat: lat, lng: lng, radius: radius);
+      final events = await _repo.getEventsInArea(
+          lat: lat,
+          lng: lng,
+          radius: radius,
+          timeFilter: timeFilter,
+          typeFilter: typeFilter);
 
       if (mounted) state = AsyncValue.data(events);
     } catch (e, st) {

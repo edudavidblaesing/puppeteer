@@ -1,6 +1,7 @@
 const { pool, query } = require('./db');
 const { initializeDatabase } = require('./db/init');
-const { AppError, catchAsync } = require('./utils/AppError');
+const AppError = require('./utils/AppError');
+const catchAsync = require('./utils/catchAsync');
 
 // Services
 const eventService = require('./services/data/eventService');

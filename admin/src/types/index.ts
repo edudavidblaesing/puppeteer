@@ -52,6 +52,7 @@ export interface SourceReference {
   confidence?: number;
   updated_at?: string;
   last_synced_at?: string;
+  source_event_id?: string;
   // For other entities
   name?: string;
   address?: string;
@@ -97,6 +98,14 @@ export interface Event {
   content_url: string | null;
   flyer_front: string | null;
   description: string | null;
+  colors?: {
+    primary: string;
+    secondary: string;
+    accent: string;
+    background: string;
+    textPrimary: string;
+    textSecondary: string;
+  } | null;
   venue_id: string | null;
   venue_name: string | null;
   venue_address: string | null;

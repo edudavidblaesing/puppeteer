@@ -100,7 +100,6 @@ class _VerificationScreenState extends ConsumerState<VerificationScreen> {
                 style: TextStyle(color: Colors.grey[400], fontSize: 16),
               ).animate().fadeIn(delay: 100.ms).moveY(begin: 20),
               const SizedBox(height: 40),
-              
               Center(
                 child: Pinput(
                   controller: _pinController,
@@ -114,40 +113,42 @@ class _VerificationScreenState extends ConsumerState<VerificationScreen> {
                   onCompleted: (pin) => _verify(pin),
                 ),
               ).animate().fadeIn(delay: 200.ms).scale(),
-              
               const SizedBox(height: 40),
-              
               GradientButton(
-                onPressed: isLoading ? null : () => _verify(_pinController.text),
+                onPressed:
+                    isLoading ? null : () => _verify(_pinController.text),
                 isLoading: isLoading,
                 child: const Text('Verify'),
               ).animate().fadeIn(delay: 300.ms).moveY(begin: 20),
-
               const SizedBox(height: 24),
-
               Center(
                 child: TextButton(
-                  onPressed: _canResend 
-                    ? () async {
-                        // Resend logic
-                        final success = await ref.read(authControllerProvider.notifier)
-                            .resendVerificationCode(widget.email);
-                        if (success) {
-                           if (mounted) {
-                             ScaffoldMessenger.of(context).showSnackBar(
-                               const SnackBar(content: Text('Code resent!'), backgroundColor: Colors.green),
-                             );
-                             setState(() {
-                               startTimer();
-                             });
-                           }
+                  onPressed: _canResend
+                      ? () async {
+                          // Resend logic
+                          final success = await ref
+                              .read(authControllerProvider.notifier)
+                              .resendVerificationCode(widget.email);
+                          if (success) {
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                    content: Text('Code resent!'),
+                                    backgroundColor: Colors.green),
+                              );
+                              setState(() {
+                                startTimer();
+                              });
+                            }
+                          }
                         }
-                      } 
-                    : null,
+                      : null,
                   child: Text(
                     _canResend ? 'Resend Code' : 'Resend in ${_start}s',
                     style: TextStyle(
-                      color: _canResend ? Theme.of(context).primaryColor : Colors.grey,
+                      color: _canResend
+                          ? Theme.of(context).primaryColor
+                          : Colors.grey,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -162,19 +163,20 @@ class _VerificationScreenState extends ConsumerState<VerificationScreen> {
 
   Future<void> _verify(String code) async {
     if (code.length != 6) return;
-    
+
     final success = await ref.read(authControllerProvider.notifier).verifyEmail(
-      widget.email,
-      code,
-    );
+          widget.email,
+          code,
+        );
 
     if (success && mounted) {
-      context.go('/map');
+      context.go('/find-friends');
     } else if (mounted) {
-       ScaffoldMessenger.of(context).showSnackBar(
+      ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            ref.read(authControllerProvider).error?.toString() ?? 'Verification failed',
+            ref.read(authControllerProvider).error?.toString() ??
+                'Verification failed',
             style: const TextStyle(color: Colors.white),
           ),
           backgroundColor: Colors.redAccent,

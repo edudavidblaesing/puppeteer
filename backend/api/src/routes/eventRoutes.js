@@ -25,6 +25,7 @@ router.post('/changes/dismiss', verifyToken, asyncHandler(eventController.dismis
 
 router.get('/source/search', verifyToken, asyncHandler(eventController.searchSource));
 router.post('/:id/link-source', verifyToken, asyncHandler(eventController.linkSource));
+router.post('/:id/extract-colors', verifyToken, asyncHandler(eventController.extractEventColors));
 
 router.get('/:id', asyncHandler(eventController.getEvent));
 router.get('/', asyncHandler(eventController.listEvents));

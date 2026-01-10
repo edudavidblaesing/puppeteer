@@ -4,8 +4,8 @@ class AppConstants {
   // API Config
   // Use 10.0.2.2 for Android Emulator, localhost for iOS Simulator
   // In production, this would be the deployed URL
-  static const String baseUrl =
-      'http://localhost:3007'; // Update based on environment
+  static const String baseUrl = String.fromEnvironment('API_URL',
+      defaultValue: 'https://pptr.davidblaesing.com');
   static const String apiUrl = '$baseUrl/api/guest';
 
   // Mapbox

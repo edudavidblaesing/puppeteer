@@ -50,6 +50,7 @@ app.use('/db/guest-users', require('./routes/adminGuestRoutes'));
 app.use('/db/moderation', require('./routes/adminModerationRoutes'));
 app.use('/scraped', scrapedRoutes);
 app.use('/db/search', require('./routes/searchRoutes'));
+app.use('/api/ai', require('./routes/aiRoutes'));
 app.get('/search/external', require('./controllers/externalSearchController').search);
 
 // Guest App API

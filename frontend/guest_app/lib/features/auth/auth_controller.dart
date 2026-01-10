@@ -1,7 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/api_service.dart';
 
-final authControllerProvider = StateNotifierProvider<AuthController, AsyncValue<void>>((ref) {
+final authControllerProvider =
+    StateNotifierProvider<AuthController, AsyncValue<void>>((ref) {
   return AuthController(ref.watch(apiServiceProvider));
 });
 
@@ -20,7 +21,7 @@ class AuthController extends StateNotifier<AsyncValue<void>> {
 
       final token = response.data['token'];
       await _apiService.setToken(token);
-      
+
       state = const AsyncValue.data(null);
       return true;
     } catch (e, st) {
@@ -29,7 +30,8 @@ class AuthController extends StateNotifier<AsyncValue<void>> {
     }
   }
 
-  Future<bool> register(String email, String password, String username, String fullName) async {
+  Future<bool> register(String email, String password, String username,
+      String fullName, String phone) async {
     state = const AsyncValue.loading();
     try {
       final response = await _apiService.client.post('/auth/register', data: {
@@ -37,11 +39,12 @@ class AuthController extends StateNotifier<AsyncValue<void>> {
         'password': password,
         'username': username,
         'full_name': fullName,
+        'phone_number': phone,
       });
 
       // Backend now returns success: true, message: '...'
       // No token yet.
-      
+
       state = const AsyncValue.data(null);
       return true;
     } catch (e, st) {
@@ -60,7 +63,7 @@ class AuthController extends StateNotifier<AsyncValue<void>> {
 
       final token = response.data['token'];
       await _apiService.setToken(token);
-      
+
       state = const AsyncValue.data(null);
       return true;
     } catch (e, st) {
@@ -82,11 +85,12 @@ class AuthController extends StateNotifier<AsyncValue<void>> {
       return false;
     }
   }
+
   Future<bool> checkAuthStatus() async {
     state = const AsyncValue.loading();
     try {
       final token = await _apiService.getToken();
-      
+
       if (token != null) {
         // Optional: Verify token with backend /me endpoint here
         // For now, we trust storage for speed (offline first)
@@ -100,7 +104,9 @@ class AuthController extends StateNotifier<AsyncValue<void>> {
       return false;
     }
   }
-  Future<bool> updateProfile({String? fullName, String? username, String? bio}) async {
+
+  Future<bool> updateProfile(
+      {String? fullName, String? username, String? bio}) async {
     state = const AsyncValue.loading();
     try {
       final data = <String, dynamic>{};

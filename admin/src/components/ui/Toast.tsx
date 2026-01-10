@@ -41,7 +41,7 @@ export function ToastContainer({ toasts, removeToast }: ToastContainerProps) {
     if (!mounted) return null;
 
     return createPortal(
-        <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
+        <div className="fixed bottom-4 left-4 z-50 flex flex-col gap-2">
             {toasts.map((toast) => (
                 <div
                     key={toast.id}
