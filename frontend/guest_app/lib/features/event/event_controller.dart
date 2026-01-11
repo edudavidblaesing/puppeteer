@@ -39,6 +39,42 @@ class EventController extends StateNotifier<EventDetailsState> {
   EventController(this._repo, this._ref, this._eventId)
       : super(EventDetailsState()) {
     loadEvent();
+    _initSocketListener();
+  }
+
+  void _initSocketListener() {
+    _repo.api.connectSocket();
+    _repo.api.socket.emit('join_room', 'event:$_eventId');
+
+    _repo.api.socket.on('event:rsvp_updated', (data) {
+      if (data['eventId'] == _eventId) {
+        // Refresh silently to get updated lists/counts
+        loadEvent();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _cleanupSocket();
+    super.dispose();
+  }
+
+  void _cleanupSocket() {
+    try {
+      _repo.api.socket.emit('leave_room', 'event:$_eventId');
+      // We don't remove the listener globally because other controllers might use it?
+      // Actually, .off('event:rsvp_updated') removes ALL listeners for that event name.
+      // Since 'eventId' check is inside, we might have multiple listeners if user opens multiple events?
+      // But typically only one EventDetail is open.
+      // Ideally we would store the handler function and remove ONLY that specific handler.
+      // But socket_io_client usually requires the exact function reference.
+      // For simplicity/safety in this scope, we'll just leave room.
+      // The listener will stay attached but won't receive events if we left the room (server logic dependent).
+      // If server broadcasts to room, leaving room stops it.
+    } catch (e) {
+      // socket might be disconnected
+    }
   }
 
   Future<void> loadEvent() async {

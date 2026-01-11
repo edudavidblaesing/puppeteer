@@ -6,20 +6,20 @@ final eventRepositoryProvider =
     Provider((ref) => EventRepository(ref.watch(apiServiceProvider)));
 
 class EventRepository {
-  final ApiService _api;
-  EventRepository(this._api);
+  final ApiService api;
+  EventRepository(this.api);
 
   Future<void> rsvpEvent(String eventId, String status) async {
-    await _api.client.post('/events/$eventId/rsvp', data: {'status': status});
+    await api.client.post('/events/$eventId/rsvp', data: {'status': status});
   }
 
   Future<String> ensureEventChatRoom(String eventId) async {
-    final response = await _api.client.post('/chat/event/$eventId');
+    final response = await api.client.post('/chat/event/$eventId');
     return response.data['id'];
   }
 
   Future<List<Event>> getMyEvents() async {
-    final response = await _api.client.get('/events/my');
+    final response = await api.client.get('/events/my');
     final List<dynamic> data = response.data['data'];
     return data.map((json) {
       // Backend returns event_id, status, title, date, venue_name, flyer_front
@@ -39,7 +39,7 @@ class EventRepository {
   }
 
   Future<Event> getEventDetails(String eventId) async {
-    final response = await _api.client.get('/events/$eventId');
+    final response = await api.client.get('/events/$eventId');
     return Event.fromJson(response.data);
   }
 }

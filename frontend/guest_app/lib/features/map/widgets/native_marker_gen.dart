@@ -42,8 +42,8 @@ class NativeMarkerGenerator {
 
     // --- Main Polaroid rect ---
     // Width 70, Height 85 centered in 120x120
-    final double cardW = 70.0;
-    final double cardH = 85.0;
+    const double cardW = 70.0;
+    const double cardH = 85.0;
     final double cardX = (size - cardW) / 2;
     final double cardY = (size - cardH) / 2;
 
@@ -164,7 +164,7 @@ class NativeMarkerGenerator {
     final ui.Image baseImg = frame.image;
 
     // Draw base marker centered
-    final double offset = (size - 120) / 2;
+    const double offset = (size - 120) / 2;
     canvas.drawImage(baseImg, Offset(offset, offset), Paint());
 
     // Draw Red Badge at top right
@@ -215,7 +215,7 @@ class NativeMarkerGenerator {
   void _drawCountBadge(Canvas canvas, int count, double containerSize) {
     // Red circle at top right
     final double cx = containerSize - 30;
-    final double cy = 30;
+    const double cy = 30;
 
     final Paint redPaint = Paint()..color = Colors.red;
     canvas.drawCircle(Offset(cx, cy), 14, redPaint);

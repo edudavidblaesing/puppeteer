@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
+import 'package:socket_io_client/socket_io_client.dart' as IO;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -72,6 +73,52 @@ class ApiService {
   }
 
   Dio get client => _dio;
+
+  // --- Socket.IO ---
+  IO.Socket? _socket;
+
+  IO.Socket get socket {
+    if (_socket == null) {
+      _initSocket();
+    }
+    return _socket!;
+  }
+
+  void _initSocket() {
+    _socket = IO.io(
+        AppConstants.apiUrl,
+        IO.OptionBuilder()
+            .setTransports(['websocket'])
+            .disableAutoConnect()
+            .build());
+
+    _socket!.onConnect((_) {
+      debugPrint('Socket connected');
+    });
+
+    _socket!.onDisconnect((_) {
+      debugPrint('Socket disconnected');
+    });
+  }
+
+  void connectSocket() {
+    if (_socket == null) _initSocket();
+
+    if (_token != null) {
+      _socket!.io.options?['extraHeaders'] = {
+        'Authorization': 'Bearer $_token'
+      };
+      _socket!.io.options?['auth'] = {'token': _token};
+    }
+
+    if (!_socket!.connected) {
+      _socket!.connect();
+    }
+  }
+
+  void disconnectSocket() {
+    _socket?.disconnect();
+  }
 
   Future<String?> getToken() async {
     if (_token != null) return _token;

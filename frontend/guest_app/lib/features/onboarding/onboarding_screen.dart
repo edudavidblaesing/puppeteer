@@ -105,7 +105,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                     ),
                   ).animate().fadeIn().slideX(begin: -0.1),
 
-                  Text(
+                  const Text(
                     'no circus.',
                     style: TextStyle(
                       color: Colors.blueAccent,

@@ -755,13 +755,14 @@ export async function deleteOrganizer(id: string) {
 
 // ============== Guest Users API ==============
 
-export async function fetchGuestUsers(params?: { search?: string; limit?: number; offset?: number; sort?: string; order?: string }) {
+export async function fetchGuestUsers(params?: { search?: string; limit?: number; offset?: number; sort?: string; order?: string; status?: string }) {
   const searchParams = new URLSearchParams();
   if (params?.search) searchParams.set('search', params.search);
   if (params?.limit) searchParams.set('limit', params.limit.toString());
   if (params?.offset) searchParams.set('offset', params.offset.toString());
   if (params?.sort) searchParams.set('sort', params.sort);
   if (params?.order) searchParams.set('order', params.order);
+  if (params?.status) searchParams.set('status', params.status);
 
   return request(`/db/guest-users?${searchParams}`);
 }

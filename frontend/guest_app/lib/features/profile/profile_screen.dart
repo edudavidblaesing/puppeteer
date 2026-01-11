@@ -165,10 +165,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               backgroundImage: NetworkImage(
                   user.avatarUrl ?? 'https://i.pravatar.cc/300?u=${user.id}'),
               onBackgroundImageError: (_, __) {},
+              backgroundColor: Colors.black,
               child: user.avatarUrl == null
                   ? const Icon(Icons.person, size: 60, color: Colors.white54)
                   : null,
-              backgroundColor: Colors.black,
             ),
           ).animate().fadeIn().slideY(begin: 0.2),
 
@@ -329,7 +329,7 @@ class _ProfileMenuItem extends StatelessWidget {
           children: [
             Container(
               padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
+              decoration: const BoxDecoration(
                 color: Colors.white10,
                 shape: BoxShape.circle,
               ),

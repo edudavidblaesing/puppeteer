@@ -5,8 +5,6 @@ import 'package:latlong2/latlong.dart' as ll;
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'dart:ui' as ui;
-import 'dart:typed_data';
 import '../../core/constants.dart';
 import 'map_controller.dart';
 import 'models.dart';

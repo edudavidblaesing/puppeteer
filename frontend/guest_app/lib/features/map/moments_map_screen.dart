@@ -44,7 +44,6 @@ class _MomentsMapScreenState extends ConsumerState<MomentsMapScreen> {
   Event? _selectedEvent;
   String? _selectedTime;
 
-
   @override
   void initState() {
     super.initState();
@@ -195,8 +194,9 @@ class _MomentsMapScreenState extends ConsumerState<MomentsMapScreen> {
                       selectedTimeFilter: _selectedTime,
                       onTimeFilterChanged: (value) {
                         setState(() => _selectedTime = value);
-                        ref.read(mapControllerProvider.notifier).loadEvents(
-                            timeFilter: _selectedTime);
+                        ref
+                            .read(mapControllerProvider.notifier)
+                            .loadEvents(timeFilter: _selectedTime);
                       },
                     ),
                   ],
@@ -244,8 +244,9 @@ class _MomentsMapScreenState extends ConsumerState<MomentsMapScreen> {
                       Expanded(
                         child: eventsAsync.when(
                           data: (events) {
-                            if (events.isEmpty)
+                            if (events.isEmpty) {
                               return _buildEmptyFeedState(scrollController);
+                            }
                             return ListView.builder(
                               controller: scrollController,
                               physics: const AlwaysScrollableScrollPhysics(),
@@ -327,9 +328,9 @@ class _MomentsMapScreenState extends ConsumerState<MomentsMapScreen> {
         initialZoom: 13.0,
         onTap: (_, __) => _onMapTap(), // Handle map tap to close detail
         onPositionChanged: (pos, hasGesture) {
-          if (pos.zoom != null && (pos.zoom! - _currentZoom).abs() > 0.1) {
+          if ((pos.zoom - _currentZoom).abs() > 0.1) {
             setState(() {
-              _currentZoom = pos.zoom!;
+              _currentZoom = pos.zoom;
             });
           }
         },
@@ -589,8 +590,7 @@ class _MomentsMapScreenState extends ConsumerState<MomentsMapScreen> {
       ],
     );
   }
-
-
+}
 
 // --- Mapbox Listener Classes ---
 

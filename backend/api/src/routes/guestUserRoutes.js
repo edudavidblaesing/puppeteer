@@ -49,13 +49,14 @@ router.use(guestUserController.verifyGuestToken);
 // Protected Routes
 router.get('/auth/me', guestUserController.getMe);
 router.patch('/profile', guestUserController.updateProfile);
-router.get('/search', guestUserController.searchUsers);
+router.get('/users/search', guestUserController.searchUsers);
 
 // Follows & Contacts
 router.post('/contacts/sync', guestUserController.syncContacts);
 router.post('/users/follow', guestUserController.followUser);
 router.post('/users/unfollow', guestUserController.unfollowUser);
 router.get('/me/following', guestUserController.getFollowing);
+router.get('/me/followers', guestUserController.getFollowers);
 // Backward compatibility / Alias
 router.get('/friends', guestUserController.getFriends);
 

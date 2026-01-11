@@ -316,6 +316,8 @@ export interface GuestUser {
   full_name?: string;
   avatar_url?: string;
   is_verified: boolean;
+  is_blocked?: boolean;
+  blocked_reason?: string;
   created_at: string;
   last_active_at?: string;
   fcm_token?: string;

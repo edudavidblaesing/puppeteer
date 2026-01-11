@@ -164,6 +164,7 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
   const [countryFilter, setCountryFilter] = useState('');
   const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const [hasUpdatesFilter, setHasUpdatesFilter] = useState('');
+  const [userStatusFilter, setUserStatusFilter] = useState('');
   const [countries, setCountries] = useState<{ name: string, code: string }[]>([]); // For dropdown
 
   // --- Navigation Stack State ---
@@ -455,7 +456,7 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
         setSources([]); // No source filter for cities
       }
       else if (activeTab === 'users') {
-        const res = await fetchGuestUsers({ ...commonParams });
+        const res = await fetchGuestUsers({ ...commonParams, status: userStatusFilter });
         setGuestUsers(res.data || []);
         setTotal(res.total || 0);
         setSources([]); // No source filter for users
@@ -477,7 +478,7 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
       // Ensure global loading is off too if it was on
       setIsLoading(false);
     }
-  }, [activeTab, page, pageSize, searchQuery, cityFilter, statusFilter, sourceFilter, timeFilter, venueTypeFilter, countryFilter, activeFilter, countries.length, hasUpdatesFilter]);
+  }, [activeTab, page, pageSize, searchQuery, cityFilter, statusFilter, sourceFilter, timeFilter, venueTypeFilter, countryFilter, activeFilter, countries.length, hasUpdatesFilter, userStatusFilter]);
 
   // Initial Load & Tab Change
   useEffect(() => {
@@ -533,11 +534,45 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
           setPublishStatus(ids, 'REJECTED').then(() => { loadListData(true); setSelectedIds(new Set()); });
         }
       }
+
+      // Users: "V" - Verify
+      if (e.key.toLowerCase() === 'v' && activeTab === 'users') {
+        e.preventDefault();
+        const unverified = guestUsers.filter(u => selectedIds.has(u.id) && !u.is_verified);
+        if (unverified.length > 0) {
+          if (confirm(`Verify ${unverified.length} selected users?`)) {
+            Promise.all(unverified.map(u => updateGuestUser(u.id, { is_verified: true })))
+              .then(() => { loadListData(true); setSelectedIds(new Set()); });
+          }
+        }
+      }
+
+      // Users: "B" - Block
+      if (e.key.toLowerCase() === 'b' && activeTab === 'users') {
+        e.preventDefault();
+        const unblocked = guestUsers.filter(u => selectedIds.has(u.id) && !u.is_blocked);
+        if (unblocked.length > 0) {
+          const reason = prompt(`Block ${unblocked.length} users? Enter reason:`);
+          if (reason) {
+            Promise.all(unblocked.map(u => updateGuestUser(u.id, { is_blocked: true, blocked_reason: reason })))
+              .then(() => { loadListData(true); setSelectedIds(new Set()); });
+          }
+        }
+      }
+
+      // Users: "D" - Delete
+      if (e.key.toLowerCase() === 'd' && activeTab === 'users') {
+        e.preventDefault();
+        if (confirm(`Delete ${selectedIds.size} selected users?`)) {
+          Promise.all(Array.from(selectedIds).map(id => deleteGuestUser(id)))
+            .then(() => { loadListData(true); setSelectedIds(new Set()); });
+        }
+      }
     };
 
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [selectedIds, activeTab, loadListData, events]);
+  }, [selectedIds, activeTab, loadListData, events, guestUsers]);
 
   // Sync current view with list data (prevent stale state on quick actions)
   useEffect(() => {
@@ -982,6 +1017,21 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
                     />
                   )}
 
+                  {activeTab === 'users' && (
+                    <RichSelect
+                      value={userStatusFilter}
+                      onChange={setUserStatusFilter}
+                      placeholder="Status"
+                      className="w-[140px]"
+                      options={[
+                        { value: '', label: 'All Users', icon: <Users className="w-4 h-4" /> },
+                        { value: 'verified', label: 'Verified', badgeColor: 'bg-blue-500' },
+                        { value: 'unverified', label: 'Unverified', badgeColor: 'bg-gray-500' },
+                        { value: 'blocked', label: 'Blocked', badgeColor: 'bg-red-500' },
+                      ]}
+                    />
+                  )}
+
                   {activeTab !== 'cities' && (
                     <RichSelect
                       value={sourceFilter}
@@ -996,6 +1046,8 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
                   )}
                 </div>
               )}
+
+
 
 
 
@@ -1131,6 +1183,20 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
                       else setSelectedIds(new Set(guestUsers.map(u => u.id)));
                     }}
                     onEdit={(u) => switchToView('user', u.id, u, u.username || u.email)}
+                    onVerify={(id, e) => {
+                      e?.stopPropagation();
+                      if (confirm('Verify this user?')) updateGuestUser(id, { is_verified: true }).then(() => loadListData(true));
+                    }}
+                    onBlock={(id, e) => {
+                      e?.stopPropagation();
+                      const reason = prompt('Block this user? Enter reason:');
+                      if (reason) updateGuestUser(id, { is_blocked: true, blocked_reason: reason }).then(() => loadListData(true));
+                    }}
+                    onDelete={(id, e) => {
+                      e?.stopPropagation();
+                      const user = guestUsers.find(u => u.id === id);
+                      if (user) handleDelete(user);
+                    }}
                     focusedId={currentView?.type === 'user' && currentView.id ? currentView.id : ((activeTab === 'users' && selectedIndex >= 0 && guestUsers[selectedIndex]) ? guestUsers[selectedIndex].id : null)}
                   />
                 ) : activeTab === 'moderation' ? (
@@ -1225,6 +1291,46 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
                                 }
                               }} className="px-2 py-1 bg-red-600 hover:bg-red-500 rounded text-[10px] font-bold uppercase tracking-wide flex items-center gap-1 transition-colors">
                                 Reject <span className="opacity-75">[R]</span>
+                              </button>
+                            </>
+                          );
+                        })()
+                      )}
+
+                      {/* User Actions */}
+                      {activeTab === 'users' && (
+                        (() => {
+                          const selectedUsers = guestUsers.filter(u => selectedIds.has(u.id));
+                          const hasUnverified = selectedUsers.some(u => !u.is_verified);
+
+                          return (
+                            <>
+                              {hasUnverified && (
+                                <button onClick={() => {
+                                  if (confirm(`Verify ${selectedUsers.filter(u => !u.is_verified).length} users?`)) {
+                                    Promise.all(selectedUsers.filter(u => !u.is_verified).map(u => updateGuestUser(u.id, { is_verified: true })))
+                                      .then(() => { loadListData(true); setSelectedIds(new Set()); });
+                                  }
+                                }} className="px-2 py-1 bg-blue-600 hover:bg-blue-500 rounded text-[10px] font-bold uppercase tracking-wide flex items-center gap-1 transition-colors">
+                                  Verify <span className="opacity-75">[V]</span>
+                                </button>
+                              )}
+                              <button onClick={() => {
+                                const reason = prompt(`Block ${selectedUsers.length} users? Enter reason:`);
+                                if (reason) {
+                                  Promise.all(selectedUsers.map(u => updateGuestUser(u.id, { is_blocked: true, blocked_reason: reason })))
+                                    .then(() => { loadListData(true); setSelectedIds(new Set()); });
+                                }
+                              }} className="px-2 py-1 bg-amber-600 hover:bg-amber-500 rounded text-[10px] font-bold uppercase tracking-wide flex items-center gap-1 transition-colors">
+                                Block <span className="opacity-75">[B]</span>
+                              </button>
+                              <button onClick={() => {
+                                if (confirm(`Delete ${selectedIds.size} users?`)) {
+                                  Promise.all(Array.from(selectedIds).map(id => deleteGuestUser(id)))
+                                    .then(() => { loadListData(true); setSelectedIds(new Set()); });
+                                }
+                              }} className="px-2 py-1 bg-red-600 hover:bg-red-500 rounded text-[10px] font-bold uppercase tracking-wide flex items-center gap-1 transition-colors">
+                                Delete <span className="opacity-75">[D]</span>
                               </button>
                             </>
                           );
@@ -1494,8 +1600,34 @@ function DashboardContent({ initialTab }: NewDashboardProps) {
                         </>
                       )}
 
+                      {activeTab === 'users' && (
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => { setUserStatusFilter('verified'); }}
+                            className="flex-1 flex items-center justify-center gap-2 p-3 rounded-lg border border-gray-200 dark:border-gray-800 hover:border-blue-500 hover:ring-1 hover:ring-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/10 transition-all text-sm font-medium text-gray-700 dark:text-gray-200"
+                          >
+                            <Shield className="w-4 h-4 text-blue-500" />
+                            <span className="text-xs">Verified</span>
+                          </button>
+                          <button
+                            onClick={() => { setUserStatusFilter('unverified'); }}
+                            className="flex-1 flex items-center justify-center gap-2 p-3 rounded-lg border border-gray-200 dark:border-gray-800 hover:border-gray-500 hover:ring-1 hover:ring-gray-500 hover:bg-gray-50 dark:hover:bg-gray-900/10 transition-all text-sm font-medium text-gray-700 dark:text-gray-200"
+                          >
+                            <Users className="w-4 h-4 text-gray-500" />
+                            <span className="text-xs">Unverified</span>
+                          </button>
+                          <button
+                            onClick={() => { setUserStatusFilter('blocked'); }}
+                            className="flex-1 flex items-center justify-center gap-2 p-3 rounded-lg border border-gray-200 dark:border-gray-800 hover:border-red-500 hover:ring-1 hover:ring-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 transition-all text-sm font-medium text-gray-700 dark:text-gray-200"
+                          >
+                            <AlertTriangle className="w-4 h-4 text-red-500" />
+                            <span className="text-xs">Blocked</span>
+                          </button>
+                        </div>
+                      )}
+
                       {/* Fallback for others */}
-                      {!['events', 'venues'].includes(activeTab) && (
+                      {!['events', 'venues', 'users'].includes(activeTab) && (
                         <div className="text-center py-4 text-gray-400 text-sm italic">
                           Select an item from the list to view details
                         </div>

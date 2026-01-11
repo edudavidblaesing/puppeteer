@@ -117,6 +117,7 @@ const verifyEmail = async (req, res) => {
 };
 
 // Login
+// Login
 const login = async (req, res) => {
     const { email, password } = req.body;
 
@@ -125,6 +126,14 @@ const login = async (req, res) => {
         const user = result.rows[0];
 
         if (user && await bcrypt.compare(password, user.password_hash)) {
+            if (user.is_blocked) {
+                return res.status(403).json({
+                    error: 'Account blocked',
+                    code: 'USER_BLOCKED',
+                    message: user.blocked_reason || 'Your account has been blocked.'
+                });
+            }
+
             const token = jwt.sign({ id: user.id, role: 'guest' }, JWT_SECRET, { expiresIn: '7d' });
 
             // Update last active
@@ -220,7 +229,7 @@ const searchUsers = async (req, res) => {
 };
 
 // Middleware to verify Guest Token
-const verifyGuestToken = (req, res, next) => {
+const verifyGuestToken = async (req, res, next) => {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
         return res.status(401).json({ error: 'No token provided' });
@@ -232,6 +241,21 @@ const verifyGuestToken = (req, res, next) => {
         if (decoded.role !== 'guest') {
             return res.status(403).json({ error: 'Access denied' });
         }
+
+        // Check if user is still active/valid in DB to handle blocking/deletion
+        const result = await pool.query('SELECT is_blocked, blocked_reason FROM users WHERE id = $1', [decoded.id]);
+        if (result.rows.length === 0) {
+            return res.status(401).json({ error: 'User no longer exists' });
+        }
+
+        if (result.rows[0].is_blocked) {
+            return res.status(403).json({
+                error: 'Account blocked',
+                code: 'USER_BLOCKED',
+                message: result.rows[0].blocked_reason || 'Your account has been blocked.'
+            });
+        }
+
         req.user = decoded;
         next();
     } catch (e) {
@@ -324,6 +348,22 @@ const getFollowing = async (req, res) => {
     }
 };
 
+const getFollowers = async (req, res) => {
+    const userId = req.user.id;
+    try {
+        const result = await pool.query(
+            `SELECT u.id, u.username, u.full_name, u.avatar_url 
+             FROM follows f
+             JOIN users u ON f.follower_id = u.id
+             WHERE f.following_id = $1`,
+            [userId]
+        );
+        res.json({ data: result.rows });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+};
+
 // Event Attendance (RSVP)
 const rsvpEvent = async (req, res) => {
     const userId = req.user.id;
@@ -347,6 +387,17 @@ const rsvpEvent = async (req, res) => {
                 [userId, eventId, rsvpStatus]
             );
         }
+
+        // Emit Socket Event for real-time updates
+        const io = req.app.get('io');
+        if (io) {
+            io.to(`event:${eventId}`).emit('event:rsvp_updated', {
+                eventId,
+                userId,
+                status: rsvpStatus
+            });
+        }
+
         res.json({ success: true });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -538,6 +589,24 @@ const getEventDetails = async (req, res) => {
                 ),
                 my_rating AS(
                     SELECT rating FROM event_ratings WHERE user_id = $2 AND event_id = $1
+                ),
+                preview_attendance AS (
+                     SELECT json_agg(u_obj) as preview_list
+                     FROM (
+                         SELECT json_build_object(
+                               'id', u.id, 
+                               'username', u.username, 
+                               'full_name', u.full_name, 
+                               'avatar_url', u.avatar_url,
+                               'is_friend', (CASE WHEN f.following_id IS NOT NULL THEN true ELSE false END)
+                           ) as u_obj
+                         FROM event_attendance ea
+                         JOIN users u ON ea.user_id = u.id
+                         LEFT JOIN follows f ON (f.following_id = ea.user_id AND f.follower_id = $2)
+                         WHERE ea.event_id = $1 AND ea.status = 'going'
+                         ORDER BY (CASE WHEN f.following_id IS NOT NULL THEN 0 ELSE 1 END), ea.created_at DESC
+                         LIMIT 5
+                     ) sub
                 )
             `;
         } else {
@@ -546,15 +615,33 @@ const getEventDetails = async (req, res) => {
                 my_attendance AS(SELECT null:: text as status WHERE false),
                 friend_attendance AS(SELECT null:: json as friends WHERE false),
                 friend_interested AS(SELECT null:: json as friends WHERE false),
-                my_rating AS(SELECT null:: int as rating WHERE false)
+                my_rating AS(SELECT null:: int as rating WHERE false),
+                preview_attendance AS(
+                     SELECT json_agg(u_obj) as preview_list
+                     FROM (
+                         SELECT json_build_object(
+                               'id', u.id, 
+                               'username', u.username, 
+                               'full_name', u.full_name, 
+                               'avatar_url', u.avatar_url,
+                               'is_friend', false
+                           ) as u_obj
+                         FROM event_attendance ea
+                         JOIN users u ON ea.user_id = u.id
+                         WHERE ea.event_id = $1 AND ea.status = 'going'
+                         ORDER BY ea.created_at DESC
+                         LIMIT 5
+                     ) sub
+                )
             `;
         }
 
         query += `
-            SELECT e.*,
+            SELECT e.id, e.title, e.date, e.start_time, e.end_date, e.end_time, e.venue_name, e.venue_address, e.latitude, e.longitude, e.flyer_front, e.publish_status,
                 (SELECT status FROM my_attendance) as my_rsvp_status,
                 COALESCE((SELECT friends FROM friend_attendance), '[]'::json) as friends_attending,
                 COALESCE((SELECT friends FROM friend_interested), '[]'::json) as friends_interested,
+                COALESCE((SELECT preview_list FROM preview_attendance), '[]'::json) as preview_attendees,
                 (SELECT count FROM all_attendees_count) as total_attendees,
                 (SELECT count FROM all_interested_count) as total_interested,
                 (SELECT avg_rating FROM ratings_stats) as average_rating,
@@ -694,6 +781,7 @@ module.exports = {
     followUser,
     unfollowUser,
     getFollowing,
+    getFollowers,
     // getFriends is replaced or aliases getFollowing?
     // Let's keep getFriends as getFollowing for compatibility if needed or deprecate
     getFriends: getFollowing,

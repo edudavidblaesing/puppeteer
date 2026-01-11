@@ -29,7 +29,7 @@ exports.createGuestUser = async (req, res) => {
 
 exports.getGuestUsers = async (req, res) => {
     try {
-        const { search, limit = 50, offset = 0, sort = 'created_at', order = 'DESC' } = req.query;
+        const { search, limit = 50, offset = 0, sort = 'created_at', order = 'DESC', status } = req.query;
         let query = `
             SELECT u.*,
             (SELECT COUNT(*) FROM friendships f WHERE (f.user_id_1 = u.id OR f.user_id_2 = u.id) AND f.status = 'accepted') as friend_count,
@@ -39,6 +39,16 @@ exports.getGuestUsers = async (req, res) => {
         `;
         const params = [];
         let paramIndex = 1;
+
+        if (status) {
+            if (status === 'blocked') {
+                query += ` AND u.is_blocked = true`;
+            } else if (status === 'verified') {
+                query += ` AND u.is_verified = true AND u.is_blocked = false`;
+            } else if (status === 'unverified') {
+                query += ` AND u.is_verified = false AND u.is_blocked = false`;
+            }
+        }
 
         if (search) {
             query += ` AND (LOWER(u.username) LIKE $${paramIndex} OR LOWER(u.email) LIKE $${paramIndex} OR LOWER(u.full_name) LIKE $${paramIndex})`;
@@ -60,6 +70,16 @@ exports.getGuestUsers = async (req, res) => {
         let countQuery = 'SELECT COUNT(*) FROM users u WHERE 1=1';
         let countParams = [];
         let countParamIndex = 1;
+
+        if (status) {
+            if (status === 'blocked') {
+                countQuery += ` AND u.is_blocked = true`;
+            } else if (status === 'verified') {
+                countQuery += ` AND u.is_verified = true AND u.is_blocked = false`;
+            } else if (status === 'unverified') {
+                countQuery += ` AND u.is_verified = false AND u.is_blocked = false`;
+            }
+        }
 
         if (search) {
             countQuery += ` AND (LOWER(u.username) LIKE $${countParamIndex} OR LOWER(u.email) LIKE $${countParamIndex} OR LOWER(u.full_name) LIKE $${countParamIndex})`;
@@ -113,19 +133,31 @@ exports.getGuestUser = async (req, res) => {
 
 exports.updateGuestUser = async (req, res) => {
     const { id } = req.params;
-    const { is_verified, is_blocked } = req.body; // Potentially add is_blocked column later
+    const { is_verified, is_blocked, blocked_reason } = req.body;
 
-    // For now, only allow is_verified
     try {
         const result = await pool.query(
-            'UPDATE users SET is_verified = COALESCE($1, is_verified), updated_at = NOW() WHERE id = $2 RETURNING *',
-            [is_verified, id]
+            `UPDATE users 
+             SET 
+                is_verified = COALESCE($1, is_verified), 
+                is_blocked = COALESCE($2, is_blocked),
+                blocked_reason = COALESCE($3, blocked_reason),
+                updated_at = NOW() 
+             WHERE id = $4 
+             RETURNING *`,
+            [is_verified, is_blocked, blocked_reason, id]
         );
 
         if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
 
         const user = result.rows[0];
         delete user.password_hash;
+
+        // Force logout if blocked? 
+        // We can't easily invalidate JWTs without a blacklist or versioning.
+        // Assuming the auth middleware checks DB user status.
+        // If we want to force logout immediately, we might need to update a 'token_version' or similar, 
+        // but for now, the next time they hit an endpoint protected by 'protectGuest', it should check DB.
 
         res.json(user);
     } catch (e) {

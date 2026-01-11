@@ -25,6 +25,14 @@ class AuthController extends StateNotifier<AsyncValue<void>> {
       state = const AsyncValue.data(null);
       return true;
     } catch (e, st) {
+      // Extract nice message if possible
+      if (e.runtimeType.toString().contains('DioException')) {
+        final res = (e as dynamic).response;
+        if (res != null && res.data != null && res.data['error'] != null) {
+          state = AsyncValue.error(res.data['error'], st);
+          return false;
+        }
+      }
       state = AsyncValue.error(e, st);
       return false;
     }

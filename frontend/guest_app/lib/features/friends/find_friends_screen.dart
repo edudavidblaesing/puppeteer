@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/widgets.dart'; // For GradientButton
 import '../map/models.dart';
+import '../chat/chat_repository.dart';
 import 'contact_sync_service.dart';
 
 class FindFriendsScreen extends ConsumerStatefulWidget {
@@ -149,16 +150,45 @@ class _FindFriendsScreenState extends ConsumerState<FindFriendsScreen> {
                                 style: const TextStyle(color: Colors.white)),
                             subtitle: Text("@${user.username}",
                                 style: const TextStyle(color: Colors.grey)),
-                            trailing: IconButton(
-                              icon: Icon(
-                                user.isFollowing
-                                    ? Icons.check_circle
-                                    : Icons.add_circle_outline,
-                                color: user.isFollowing
-                                    ? Colors.green
-                                    : Colors.white,
-                              ),
-                              onPressed: () => _toggleFollow(user),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                // Chat Button
+                                IconButton(
+                                  icon: const Icon(Icons.chat_bubble_outline,
+                                      color: Colors.white70),
+                                  onPressed: () async {
+                                    // Identify self
+                                    // But we don't have my ID here easily unless from session.
+                                    // ChatRepository handles it.
+                                    try {
+                                      final roomId = await ref
+                                          .read(chatRepositoryProvider)
+                                          .createDirectChat(user.id);
+                                      if (context.mounted) {
+                                        context.push('/chat/$roomId');
+                                      }
+                                    } catch (e) {
+                                      if (context.mounted) {
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(SnackBar(
+                                                content: Text('Error: $e')));
+                                      }
+                                    }
+                                  },
+                                ),
+                                IconButton(
+                                  icon: Icon(
+                                    user.isFollowing
+                                        ? Icons.check_circle
+                                        : Icons.add_circle_outline,
+                                    color: user.isFollowing
+                                        ? Colors.green
+                                        : Colors.white,
+                                  ),
+                                  onPressed: () => _toggleFollow(user),
+                                ),
+                              ],
                             ),
                           );
                         },

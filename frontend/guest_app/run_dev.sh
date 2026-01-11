@@ -20,7 +20,7 @@ choice=${choice:-1}
 
 if [[ "$choice" == "1" ]]; then
     echo "Starting Flutter Web with persistent profile..."
-    flutter run -d chrome --web-port=4000 --web-browser-flag "--user-data-dir=/tmp/flutter_chrome_dev_social_event" --dart-define=API_URL=http://$IP:3007
+    flutter run -d chrome --web-port=4000 --web-browser-flag "--user-data-dir=/tmp/flutter_chrome_dev_social_event" --dart-define=API_URL=http://localhost:3007
 else
     echo "Starting Flutter interactively..."
     flutter run --dart-define=API_URL=http://$IP:3007
